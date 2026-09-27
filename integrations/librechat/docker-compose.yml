@@ -1,0 +1,44 @@
+# LibreChat + MongoDB dedicados ao Agent Hangar (não interfere em outro LibreChat que você já tenha).
+#   cd integrations/librechat && ./setup.sh && docker compose up -d      → http://localhost:3090
+name: hangar-librechat
+
+services:
+  mongodb:
+    image: mongo:7
+    command: mongod --noauth --quiet --logpath /dev/null
+    volumes:
+      - mongo:/data/db
+    restart: unless-stopped
+
+  librechat:
+    image: ghcr.io/danny-avila/librechat:${LIBRECHAT_VERSION:-latest}
+    depends_on: [mongodb]
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3080
+      MONGO_URI: mongodb://mongodb:27017/LibreChat
+      CONFIG_PATH: /app/librechat.yaml
+      SEARCH: "false"
+      ENDPOINTS: custom
+      ALLOW_EMAIL_LOGIN: "true"
+      ALLOW_SOCIAL_LOGIN: "false"
+      DOMAIN_CLIENT: ${LIBRECHAT_URL:-http://localhost:3090}
+      DOMAIN_SERVER: ${LIBRECHAT_URL:-http://localhost:3090}
+    volumes:
+      - ./librechat.yaml:/app/librechat.yaml:ro
+      - uploads:/app/uploads
+      - images:/app/client/public/images
+      - logs:/app/logs
+    ports:
+      - "127.0.0.1:${LIBRECHAT_PORT:-3090}:3080"
+    # o Agent Hangar é alcançado pela porta publicada no host (passa pelo gateway autenticado)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  mongo:
+  uploads:
+  images:
+  logs:

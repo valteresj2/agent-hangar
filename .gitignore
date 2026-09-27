@@ -32,3 +32,4 @@ Thumbs.db
 # saída do graphify
 graphify-out/
 docs/MELHORIAS.md
+examples/data-studio/.invoke_key

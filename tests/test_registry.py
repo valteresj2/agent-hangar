@@ -93,3 +93,16 @@ def test_apply_template_multi_agent(db):
     out = svc.apply_template(db, "research-team")
     orch = svc.get_agent(db, "research-team")
     assert orch.kind == "multi" and len([o for o in out if o["kind"] == "agent"]) == 4
+
+
+def test_data_studio_template_in_sync():
+    """templates/data-studio.yaml é gerado de examples/data-studio/*.md — rode make_template.py ao editá-los."""
+    import pathlib
+
+    import yaml
+    root = pathlib.Path(__file__).parent.parent
+    t = yaml.safe_load((root / "templates" / "data-studio.yaml").read_text(encoding="utf-8"))
+    agent = t["document"]["agents"][0]
+    assert agent["spec"]["instructions"] == (root / "examples/data-studio/instructions.md").read_text(encoding="utf-8")
+    contents = {s["name"]: s["content"] for s in t["document"]["skills"]}
+    assert contents["dashboard-design"] == (root / "examples/data-studio/skill-dashboard.md").read_text(encoding="utf-8")

@@ -8,6 +8,8 @@ llm:                      # chat agents only (mutually exclusive with harness.co
   connection: my-litellm  # name of a connection in the catalog (protocol openai); empty = mock
   model: ""               # empty = the connection's default model
   temperature: 0.2
+  max_steps: 6            # tool-calling rounds per message (1–40); data agents need 20–30
+  vision: true            # false: attached images go only to the workspace (MCP), not to the LLM
   stage: {model: cheap-model}         # optional per-environment overrides: connection / model / temperature
   prod: {connection: prod-gateway}
 harness:                  # harness agents only

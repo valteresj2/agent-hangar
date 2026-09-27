@@ -123,6 +123,7 @@ Details: [concepts](docs/concepts.md) · [spec reference](docs/spec.md) · [harn
 | `ticket-triage` | chat | Structured JSON classification + first reply, regex + judge tests |
 | `sql-analyst` | chat (+ your DB MCP) | Read-only SQL generation with safety rules |
 | `code-fixer` | harness (Codex) | Fix code in an ephemeral container, returns a diff |
+| `data-studio` | chat + Data Studio MCP | Python/DuckDB analyst: reads spreadsheets, PDFs and images, edits data, builds dashboards and PPTX/HTML decks. Powers LibreChat out of the box |
 | `research-team` | multi-agent | Orchestrator + researcher + critic + writer over A2A |
 
 `hangar templates apply doc-qa --connection my-litellm` or **Templates** in the UI. Templates are plain YAML in
@@ -147,6 +148,24 @@ curl http://localhost:8090/gw/doc-qa/v1/chat/completions \
 | MCP | `POST /gw/<slug>/mcp` (one tool named after the agent) |
 
 Use `/gw-stage/<slug>/…` to talk to the stage version. Send `X-Channel: slack` (or any name) to get per-channel metrics.
+
+## Data Studio + LibreChat
+
+A complete example of an agent as the **engine behind a chat UI**. [LibreChat](https://librechat.ai) talks to the
+`data-studio` agent through the OpenAI-compatible gateway. Each conversation gets its own workspace and Python kernel
+in the [Data Studio MCP server](mcp-servers/data-studio/):
+- Attached spreadsheets, PDFs and images are saved there automatically.
+- The agent answers with verified numbers and links to generated **dashboards (HTML)**, **presentations (PPTX with
+  native charts + HTML)**, **edited spreadsheets** and **reports (DOCX)**.
+
+```bash
+docker compose --profile data-studio up -d --build
+hangar templates apply data-studio --connection <conn> && hangar ship data-studio
+cd integrations/librechat && ./setup.sh && docker compose up -d     # http://localhost:3090
+```
+
+See [integrations/librechat](integrations/librechat/) for how the pieces connect and why this is the recommended
+integration.
 
 ## CLI and GitOps
 

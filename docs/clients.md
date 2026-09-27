@@ -42,7 +42,7 @@ ship it."*
 
 ## Consumers (a shipped agent)
 
-**LibreChat** (`librechat.yaml`)
+**LibreChat**: the full kit, with per-conversation workspaces, attachments and a Docker Compose file, is in [integrations/librechat](../integrations/librechat/). Minimal `librechat.yaml`:
 ```yaml
 endpoints:
   custom:

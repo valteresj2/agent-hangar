@@ -72,6 +72,16 @@ Harnesses de código são opcionais porque as imagens são grandes:
 - **Governado como software.** Chaves com escopo (admin × invoke só de certos agentes), tokens internos por
   agente, auditoria, GitOps (`hangar apply -f agents.yaml`) e JSON Schema da spec.
 
+## Data Studio + LibreChat
+
+Exemplo completo de agente como **motor de uma interface de chat**:
+- O LibreChat conversa com o agente `data-studio`.
+- Cada conversa ganha um workspace próprio, com Python e DuckDB.
+- Os anexos (planilhas, PDFs, imagens) são gravados lá automaticamente.
+- O agente devolve dashboards HTML, apresentações PPTX/HTML, planilhas editadas e relatórios, como links.
+
+Veja [integrations/librechat](integrations/librechat/).
+
 ## Documentação
 
 [Conceitos](docs/concepts.md) · [Referência da spec](docs/spec.md) · [Harnesses](docs/harnesses.md) ·

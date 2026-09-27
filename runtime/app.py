@@ -8,7 +8,11 @@ Protocolos expostos:
                          Claude Desktop/Code, OpenCode etc. o usarem como ferramenta externa
 """
 import ast
+import asyncio
+import contextvars
+import hashlib
 import json
+import mimetypes
 import operator
 import os
 import re
@@ -37,7 +41,24 @@ INTERNAL_HEADERS = {"Authorization": f"Bearer {INTERNAL_TOKEN}", "X-Agent-Slug":
 LLM = SPEC.get("llm", {})
 MODEL = LLM.get("model", "mock/echo")
 PRICES = LLM.get("prices") or [None, None]  # US$ por 1M tokens (entrada, saída), da conexão do catálogo
-MAX_STEPS = 6
+MAX_STEPS = int(LLM.get("max_steps") or 6)
+VISION = LLM.get("vision", True)  # False: imagens não vão ao LLM (só ao workspace, para OCR/análise por tool)
+LLM_TIMEOUT_S = 300
+TOOL_OUTPUT_LIMIT = 16000
+# Sessão (conversa) do request atual: vem do cliente (X-Session-Id / X-Conversation-Id, p.ex. o id da conversa no
+# LibreChat) e é repassada aos MCPs, que a usam para separar workspaces, arquivos e estado por conversa.
+SESSION = contextvars.ContextVar("session", default="")
+CHANNEL = contextvars.ContextVar("channel", default="")
+# Clientes que renderizam LaTeX com $…$ (LibreChat) transformam "R$ 10 … R$ 20" em fórmula. Para eles, o $ de
+# valores monetários sai escapado (\$), que o markdown exibe como "$". Fórmulas ($x^2$) não são afetadas.
+LATEX_DOLLAR_CHANNELS = {c.strip() for c in os.environ.get("LATEX_DOLLAR_CHANNELS", "librechat").split(",") if c}
+_CURRENCY = re.compile(r"(?<![\\$])\$(?=\s?-?\d)")
+
+
+def render_for_channel(text: str) -> str:
+    if CHANNEL.get() in LATEX_DOLLAR_CHANNELS and "$" in text:
+        return _CURRENCY.sub(r"\\$", text)
+    return text
 TOOLS_TTL_S = 300  # a lista de tools dos MCPs externos é reconstruída de tempos em tempos
 
 
@@ -63,8 +84,10 @@ def _safe(name: str) -> str:
 
 
 class Tool:
-    def __init__(self, name, description, parameters, fn):
+    def __init__(self, name, description, parameters, fn, hidden=False):
         self.name, self.description, self.parameters, self.fn = name, description, parameters, fn
+        # hidden: usada só pelo runtime (ex.: ingest_file recebe os anexos), não é oferecida ao LLM
+        self.hidden = hidden
 
     def schema(self):
         return {"type": "function", "function": {
@@ -91,20 +114,30 @@ async def _dashboard_call(args):
     return r.text[:6000]
 
 
+def _mcp_headers() -> dict:
+    h = {"X-Agent-Slug": SLUG}
+    if SESSION.get():
+        h["X-Session-Id"] = SESSION.get()
+    return h
+
+
 async def _mcp_call(url, tool, args):
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
-    async with streamablehttp_client(url) as (r, w, _):
+    async with streamablehttp_client(url, headers=_mcp_headers(), timeout=900, sse_read_timeout=900) as (r, w, _):
         async with ClientSession(r, w) as s:
             await s.initialize()
             res = await s.call_tool(tool, args)
-            return "\n".join(getattr(c, "text", str(c)) for c in res.content)[:8000]
+            text = "\n".join(getattr(c, "text", str(c)) for c in res.content)
+            if len(text) > TOOL_OUTPUT_LIMIT:
+                text = text[:TOOL_OUTPUT_LIMIT] + f"\n… [truncado: {len(text)} caracteres]"
+            return ("ERRO DA FERRAMENTA: " + text) if res.isError else text
 
 
 async def _mcp_list(url):
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
-    async with streamablehttp_client(url) as (r, w, _):
+    async with streamablehttp_client(url, headers=_mcp_headers()) as (r, w, _):
         async with ClientSession(r, w) as s:
             await s.initialize()
             return (await s.list_tools()).tools
@@ -192,7 +225,8 @@ async def build_tools() -> tuple[list[Tool], bool]:
         try:
             for mt in await _mcp_list(m["url"]):
                 tools.append(Tool(_safe(f"{m['name']}__{mt.name}"), mt.description or "",
-                                  mt.inputSchema, _closure(_mcp_call, m["url"], mt.name)))
+                                  mt.inputSchema, _closure(_mcp_call, m["url"], mt.name),
+                                  hidden=mt.name == "ingest_file"))
         except Exception as e:  # MCP fora do ar não derruba o agente
             complete = False
             print(f"[warn] MCP {m['name']} indisponível: {e}", flush=True)
@@ -216,8 +250,85 @@ def system_prompt() -> str:
     return "\n\n".join(parts)
 
 
+def text_of(content) -> str:
+    if isinstance(content, list):
+        return "\n".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text")
+    return content or ""
+
+
+# ---------------------------------------------------------------- anexos (imagens, PDFs, planilhas…)
+_ingested: dict[tuple[str, str], str] = {}
+
+
+def _data_url(url: str) -> tuple[str, str] | None:
+    if not isinstance(url, str) or not url.startswith("data:") or "," not in url:
+        return None
+    head, b64 = url.split(",", 1)
+    return head[5:].split(";")[0] or "application/octet-stream", b64
+
+
+async def prepare_attachments(messages: list[dict], tools: list[Tool]) -> list[dict]:
+    """Anexos no formato OpenAI ({type:'image_url'} e {type:'file', file:{filename, file_data}}), como o LibreChat
+    envia, são gravados no workspace via a tool `ingest_file` de um MCP do agente (se houver) e trocados por uma
+    nota com o nome do arquivo. Imagens continuam indo ao LLM (visão), a menos que llm.vision=false."""
+    ingest = next((t for t in tools if t.name.endswith("__ingest_file")), None)
+    out = []
+    for m in messages:
+        content = m.get("content")
+        if m.get("role") != "user" or not isinstance(content, list):
+            out.append(m)
+            continue
+        parts, notes = [], []
+        for part in content:
+            kind = part.get("type") if isinstance(part, dict) else None
+            if kind == "image_url":
+                url = (part.get("image_url") or {}).get("url", "")
+                name, du = None, _data_url(url)
+                if du and ingest:
+                    ext = mimetypes.guess_extension(du[0]) or ".png"
+                    name = await _ingest(ingest, f"imagem_{hashlib.sha256(du[1].encode()).hexdigest()[:8]}{ext}", du)
+                if name:
+                    notes.append(f"[imagem anexada, salva no workspace como {name}]")
+                if VISION:
+                    parts.append(part)
+            elif kind in ("file", "input_file"):
+                f = part.get("file") or part
+                du = _data_url(f.get("file_data", ""))
+                fname = f.get("filename") or "arquivo"
+                if du and ingest:
+                    name = await _ingest(ingest, fname, du)
+                    notes.append(f"[arquivo anexado: {fname} ({du[0]}) salvo no workspace como {name}]"
+                                 if name else f"[arquivo anexado: {fname} — falha ao salvar no workspace]")
+                else:
+                    notes.append(f"[arquivo anexado: {fname} — este agente não tem workspace para recebê-lo]")
+            elif kind == "text":
+                parts.append(part)
+        if notes:
+            parts.insert(0, {"type": "text", "text": "\n".join(notes)})
+        if all(p.get("type") == "text" for p in parts):
+            out.append({**m, "content": "\n".join(p["text"] for p in parts)})
+        else:
+            out.append({**m, "content": parts})
+    return out
+
+
+async def _ingest(tool: Tool, filename: str, du: tuple[str, str]) -> str | None:
+    key = (SESSION.get(), hashlib.sha256(du[1].encode()).hexdigest())
+    if key in _ingested:
+        return _ingested[key]
+    try:
+        res = await tool.fn({"filename": filename, "data_base64": du[1], "mime_type": du[0]})
+        name = json.loads(res).get("path") if res.strip().startswith("{") else None
+    except Exception as e:
+        print(f"[warn] ingest_file falhou para {filename}: {e}", flush=True)
+        return None
+    if name:
+        _ingested[key] = name
+    return name
+
+
 async def mock_llm(messages, tools):
-    last = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+    last = next((text_of(m["content"]) for m in reversed(messages) if m["role"] == "user"), "")
     subs = [t for t in tools if t.name.startswith("ask_")]
     if last.lower().startswith("calc:"):
         return f"[mock:{SLUG}] {_calc(last[5:].strip())}"
@@ -237,7 +348,12 @@ async def chat(messages: list[dict]) -> tuple[str, dict, list]:
 
 async def _chat(messages: list[dict]) -> tuple[str, dict, list]:
     tools = await get_tools()
-    msgs = [{"role": "system", "content": system_prompt()}] + [m for m in messages if m["role"] != "system"]
+    messages = await prepare_attachments(messages, tools)
+    # instruções de sistema do cliente (ex.: o prompt de Artifacts do LibreChat) vêm depois das do agente
+    client_sys = "\n\n".join(text_of(m["content"]) for m in messages if m["role"] == "system")
+    sys_prompt = system_prompt() + (f"\n\n## Instruções do cliente\n{client_sys}" if client_sys.strip() else "")
+    msgs = [{"role": "system", "content": sys_prompt}] + [m for m in messages if m["role"] != "system"]
+    llm_tools = [t for t in tools if not t.hidden]
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     trace: list = []
     if MODEL.startswith("mock"):
@@ -249,9 +365,9 @@ async def _chat(messages: list[dict]) -> tuple[str, dict, list]:
     headers = {"Authorization": f"Bearer {LLM_API_KEY}"} if LLM_API_KEY else {}
     for _ in range(MAX_STEPS):
         payload = {"model": MODEL, "messages": msgs, "temperature": LLM.get("temperature", 0.2)}
-        if tools:
-            payload["tools"] = [t.schema() for t in tools]
-        async with httpx.AsyncClient(timeout=180) as c:
+        if llm_tools:
+            payload["tools"] = [t.schema() for t in llm_tools]
+        async with httpx.AsyncClient(timeout=LLM_TIMEOUT_S) as c:
             r = await c.post(f"{LLM_BASE_URL}/chat/completions", json=payload, headers=headers)
         if r.status_code >= 400:
             raise RuntimeError(f"LLM {r.status_code}: {r.text[:300]}")
@@ -271,9 +387,21 @@ async def _chat(messages: list[dict]) -> tuple[str, dict, list]:
                 out = await by_name[name].fn(args) if name in by_name else f"tool {name} inexistente"
             except Exception as e:
                 out = f"erro: {e}"
-            trace.append({"tool": name, "args": args, "result": str(out)[:300]})
+            trace.append({"tool": name, "args": {k: (str(v)[:200]) for k, v in args.items()},
+                          "result": str(out)[:300]})
             msgs.append({"role": "tool", "tool_call_id": call["id"], "content": str(out)})
-    return "Limite de passos de ferramentas atingido.", usage, trace
+    # passos esgotados: uma última chamada SEM tools para o modelo resumir o que já tem
+    msgs.append({"role": "user", "content": "Limite de passos atingido. Responda agora com o que já foi obtido, "
+                                            "incluindo links de arquivos gerados, e diga o que ficou pendente."})
+    async with httpx.AsyncClient(timeout=LLM_TIMEOUT_S) as c:
+        r = await c.post(f"{LLM_BASE_URL}/chat/completions", headers=headers,
+                         json={"model": MODEL, "messages": msgs, "temperature": LLM.get("temperature", 0.2)})
+    if r.status_code >= 400:
+        return "Limite de passos de ferramentas atingido.", usage, trace
+    data = r.json()
+    for k in usage:
+        usage[k] += (data.get("usage") or {}).get(k, 0)
+    return data["choices"][0]["message"].get("content") or "", usage, trace
 
 
 # ---------------------------------------------------------------- MCP (o agente como ferramenta)
@@ -321,26 +449,57 @@ def models():
     return {"object": "list", "data": [{"id": SLUG, "object": "model", "owned_by": "agent-hangar"}]}
 
 
+def set_session(req: Request, body: dict | None = None):
+    """Sessão = X-Session-Id, ou X-Conversation-Id (LibreChat: {{LIBRECHAT_BODY_CONVERSATIONID}}), ou o campo
+    `user` do corpo OpenAI. Sem nenhum deles, fica vazia (os MCPs usam um workspace padrão)."""
+    h = req.headers
+    sid = h.get("x-session-id") or h.get("x-conversation-id") or ""
+    if not sid or sid in ("new", "null", "undefined") or sid.startswith("{{"):
+        sid = (body or {}).get("user") or h.get("x-user-id") or ""
+    SESSION.set(str(sid)[:200])
+    CHANNEL.set(h.get("x-channel", "").lower())
+
+
 @app.post("/v1/chat/completions")
 async def chat_completions(req: Request):
     body = await req.json()
-    try:
-        text, usage, trace = await chat(body.get("messages", []))
-    except Exception as e:
-        return JSONResponse({"error": {"message": str(e), "type": "agent_error"}}, status_code=502)
+    set_session(req, body)
     cid, created = f"chatcmpl-{uuid.uuid4().hex[:12]}", int(time.time())
     if body.get("stream"):
         def chunk(delta, finish=None, extra=None):
             d = {"id": cid, "object": "chat.completion.chunk", "created": created, "model": SLUG,
                  "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
-            return "data: " + json.dumps({**d, **(extra or {})}) + "\n\n"
+            return "data: " + json.dumps({**d, **(extra or {})}, ensure_ascii=False) + "\n\n"
 
-        async def sse():  # resposta já pronta, enviada como stream (compat. com clientes que exigem SSE)
+        # O agente trabalha (várias chamadas de tool) antes de ter a resposta: enquanto isso, mandamos
+        # comentários SSE de keepalive para proxies/clientes não derrubarem a conexão por inatividade.
+        task = asyncio.create_task(chat(body.get("messages", [])))
+
+        async def sse():
             yield chunk({"role": "assistant", "content": ""})
-            yield chunk({"content": text})
+            while not task.done():
+                try:
+                    await asyncio.wait_for(asyncio.shield(task), timeout=10)
+                except TimeoutError:
+                    yield ": keepalive\n\n"
+                except Exception:
+                    break
+            try:
+                text, usage, _trace = task.result()
+            except Exception as e:
+                yield chunk({"content": f"Erro no agente: {e}"}, "stop")
+                yield "data: [DONE]\n\n"
+                return
+            yield chunk({"content": render_for_channel(text)})
             yield chunk({}, "stop", {"usage": usage})
             yield "data: [DONE]\n\n"
-        return StreamingResponse(sse(), media_type="text/event-stream")
+        return StreamingResponse(sse(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    try:
+        text, usage, trace = await chat(body.get("messages", []))
+    except Exception as e:
+        return JSONResponse({"error": {"message": str(e), "type": "agent_error"}}, status_code=502)
+    text = render_for_channel(text)
     return {"id": cid, "object": "chat.completion",
             "created": created, "model": SLUG,
             "choices": [{"index": 0, "finish_reason": "stop",
@@ -374,6 +533,7 @@ async def a2a(req: Request):
         return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Method not found"}}
     parts = body.get("params", {}).get("message", {}).get("parts", [])
     text_in = "".join(p.get("text", "") for p in parts)
+    set_session(req, {"user": body.get("params", {}).get("message", {}).get("contextId")})
     try:
         text, usage, _ = await chat([{"role": "user", "content": text_in}])
     except Exception as e:
@@ -398,6 +558,7 @@ def acp_agent(name: str):
 async def acp_runs(req: Request):
     body = await req.json()
     text_in = "\n".join(p.get("content", "") for m in body.get("input", []) for p in m.get("parts", []))
+    set_session(req, {"user": body.get("session_id")})
     try:
         text, usage, _ = await chat([{"role": "user", "content": text_in}])
     except Exception as e:

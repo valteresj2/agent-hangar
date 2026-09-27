@@ -1,6 +1,7 @@
 """Gateway dos agentes: /gw/<slug> (produção) e /gw-stage/<slug> para clientes externos, e /internal/gw
 para agente -> sub-agente. Agentes de chat são proxiados para o container deles; agentes-com-harness
 (sem container fixo) são atendidos aqui mesmo, disparando um job por chamada."""
+import json
 import re
 import time
 import uuid
@@ -18,6 +19,7 @@ from .internal import caller_agent, may_call
 
 router = APIRouter()
 
+FORWARD = ("x-session-id", "x-conversation-id", "x-user-id", "x-channel")
 HOP_BY_HOP = {"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "content-length",
               "content-encoding", "proxy-authenticate", "proxy-authorization"}
 
@@ -171,8 +173,11 @@ async def _proxy(request: Request, slug: str, path: str, env: str):
     proto = protocol_of(path)
     fwd = {"content-type": request.headers.get("content-type", "application/json"),
            "accept": request.headers.get("accept", "application/json, text/event-stream")}
+    # identificação da conversa/usuário do cliente (ex.: LibreChat) — o agente repassa aos MCPs como sessão
+    fwd.update({h: request.headers[h] for h in FORWARD if h in request.headers})
     t0 = time.time()
-    client = httpx.AsyncClient(timeout=180)
+    # read=900: um agente com várias tools pode demorar; em streaming o runtime manda keepalive a cada 10s
+    client = httpx.AsyncClient(timeout=httpx.Timeout(900, connect=10))
     try:
         url = f"{deploy.internal_url(slug, env)}/{path}" + (f"?{request.url.query}" if request.url.query else "")
         req = client.build_request(request.method, url, content=await request.body(), headers=fwd)
@@ -186,13 +191,30 @@ async def _proxy(request: Request, slug: str, path: str, env: str):
     ok = upstream.status_code < 400
 
     if upstream.headers.get("content-type", "").startswith("text/event-stream"):
+        seen = {"usage": None}
+
+        async def relay():
+            """Repassa o stream intacto e, de passagem, guarda o último bloco `usage` (tokens/custo) dos eventos."""
+            tail = b""
+            async for chunk in upstream.aiter_bytes():
+                yield chunk
+                tail = (tail + chunk)[-65536:]
+                if b'"usage"' in chunk or b'"usage"' in tail[-len(chunk) - 16:]:
+                    for line in tail.split(b"\n"):
+                        if line.startswith(b"data: {") and b'"usage"' in line:
+                            try:
+                                seen["usage"] = json.loads(line[6:]).get("usage") or seen["usage"]
+                            except ValueError:
+                                pass
+
         async def done():
             await upstream.aclose()
             await client.aclose()
             if proto != "other":
-                _record(info["id"], env, channel, proto, t0, ok)
+                await run_in_threadpool(_record, info["id"], env, channel, proto, t0, ok,
+                                        {"usage": seen["usage"]} if seen["usage"] else None)
         # aiter_bytes (já descomprimido) combina com o content-encoding removido dos headers
-        return StreamingResponse(upstream.aiter_bytes(), status_code=upstream.status_code, headers=headers,
+        return StreamingResponse(relay(), status_code=upstream.status_code, headers=headers,
                                  background=BackgroundTask(done))
 
     content = await upstream.aread()

@@ -17,6 +17,15 @@ describes what is protected today, and what is **not**.
 Keep `HANGAR_SECRET_KEY` safe and backed up. Losing it makes the stored connection keys unreadable, so you would
 have to re-enter them.
 
+## Networks
+
+| Network | Members | Why |
+|---|---|---|
+| `db_net` (internal) | Postgres, hangar | Agents and tool servers (which may execute code) can't reach the database |
+| `hangar_agents` | hangar, agent containers, MCP servers such as Data Studio | Gateway → agents, agents → hangar `/internal`, agents → MCPs |
+| `hangar_jobs` | hangar, harness job containers | Job callbacks. Jobs don't see agents |
+| `docker_api` (internal) | hangar, docker-socket-proxy | Only the hangar talks to Docker |
+
 ## Containers
 
 - **Agents** get a read-only root FS, a 64 MB tmpfs, `cap_drop: ALL` and `no-new-privileges`, plus memory, CPU and
@@ -36,6 +45,16 @@ such as a privileged container or a host bind mount. With a Docker backend, that
 host. The proxy reduces the attack surface, but it is not a sandbox boundary against a compromised hangar. For
 real multi-tenant isolation, use a rootless Docker/Podman host, a dedicated VM, or the Kubernetes driver planned
 on the roadmap, together with admission policies.
+
+## Data Studio (code execution)
+
+The Data Studio MCP server runs user-driven Python and SQL. Each conversation (session) has its own directory and its
+own Linux uid, and every file-reading or SQL tool runs inside that session's kernel. One conversation can't read
+another's files or the link-signing secret; the smoke test checks this. Limits:
+- Kernels have outbound network access.
+- Resource limits are per container, not per session.
+
+Use it for trusted users of your organization. See `mcp-servers/data-studio/README.md`.
 
 ## Network exposure
 

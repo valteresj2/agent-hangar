@@ -62,3 +62,20 @@ jobs:
       - name: Logs on failure
         if: failure()
         run: docker compose logs --tail 200 central
+
+  data-studio:
+    needs: lint-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure
+        run: sh scripts/setup.sh
+      - name: Build and start the Data Studio MCP server
+        run: |
+          docker compose --profile data-studio up -d --build data-studio
+          timeout 180 sh -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" $(docker compose ps -q data-studio))" = healthy ]; do sleep 3; done'
+      - name: MCP smoke test (tools, deliverables, session isolation)
+        run: docker run --rm --network hangar_agents -v "$PWD/mcp-servers/data-studio/tests:/t" agent-hangar/mcp-data-studio python /t/smoke_mcp.py
+      - name: Logs on failure
+        if: failure()
+        run: docker compose --profile data-studio logs --tail 200 data-studio

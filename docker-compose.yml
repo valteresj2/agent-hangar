@@ -25,7 +25,8 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
-    networks: [agents_net]
+    # rede só da central: agentes (que executam tools e, no Data Studio, Python arbitrário) não alcançam o banco
+    networks: [db_net]
 
   # A central nunca monta o docker.sock: fala com este proxy, que só libera a API de containers
   # (criar/listar/parar/remover/logs), volumes e redes — sem exec, build, pull, images, swarm, secrets.
@@ -107,10 +108,34 @@ services:
       - "${CENTRAL_PORT:-8090}:8080"
     # agents_net: containers dos agentes (chat) e Postgres. jobs_net: callback dos containers de job, que
     # NÃO estão em agents_net. docker_api: só a central alcança o proxy do Docker.
-    networks: [agents_net, jobs_net, docker_api]
+    networks: [agents_net, jobs_net, docker_api, db_net]
+    restart: unless-stopped
+
+  # MCP server de análise de dados e entregáveis (Python/DuckDB/PPTX/dashboards) — opcional:
+  #   docker compose --profile data-studio up -d --build data-studio
+  # Agentes o usam em http://data-studio:8000/mcp; os links de download saem por DATA_STUDIO_PUBLIC_URL.
+  data-studio:
+    profiles: [data-studio]
+    image: ${HANGAR_REGISTRY:-agent-hangar}/mcp-data-studio:${HANGAR_VERSION:-latest}
+    build: ./mcp-servers/data-studio
+    environment:
+      PUBLIC_URL: ${DATA_STUDIO_PUBLIC_URL:-http://localhost:8095}
+      MAX_FILE_MB: ${DATA_STUDIO_MAX_FILE_MB:-200}
+    volumes:
+      - data_studio:/data
+    ports:
+      - "127.0.0.1:${DATA_STUDIO_PORT:-8095}:8001"   # só os downloads; o MCP (8000) fica na rede interna
+    networks: [agents_net]
+    mem_limit: ${DATA_STUDIO_MEM:-4g}
+    pids_limit: 1024
+    cap_drop: [ALL]
+    # o servidor só troca de uid para isolar as sessões (setpriv) e ajusta donos dos workspaces
+    cap_add: [SETUID, SETGID, CHOWN, FOWNER, DAC_OVERRIDE, KILL]
+    security_opt: [no-new-privileges]
     restart: unless-stopped
 
 volumes:
+  data_studio:
   pgdata:
     # instalações antigas (central-agents) reaproveitam o volume com PGDATA_VOLUME=central-agents_pgdata
     name: ${PGDATA_VOLUME:-agent-hangar_pgdata}
@@ -121,4 +146,6 @@ networks:
   jobs_net:
     name: hangar_jobs
   docker_api:
+    internal: true
+  db_net:
     internal: true

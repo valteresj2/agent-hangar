@@ -3,6 +3,30 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Data Studio MCP server** (`mcp-servers/data-studio`, compose profile `data-studio`):
+  - a per-conversation workspace, with its own uid and its own stateful Python kernel;
+  - DuckDB SQL, and file inspection with OCR;
+  - PPTX (native charts) and HTML decks, interactive HTML dashboards, DOCX/HTML reports;
+  - URL fetch with an SSRF guard;
+  - signed download links.
+- **`data-studio` template** and **LibreChat integration kit** (`integrations/librechat`), which uses the agent as
+  LibreChat's engine through the OpenAI-compatible gateway.
+- Runtime:
+  - OpenAI-format attachments (`image_url`, `file`) are saved to the agent's MCP workspace via `ingest_file`;
+  - the client conversation id is forwarded to MCPs as `X-Session-Id`;
+  - client system prompts are kept;
+  - SSE keepalive while tools run;
+  - currency `$` is escaped for LaTeX-rendering channels.
+- Spec: `llm.max_steps` and `llm.vision`.
+
+### Changed
+- Postgres moved to an internal `db_net` network that agents can't reach.
+- The gateway forwards `X-Conversation-Id`, `X-Session-Id` and `X-User-Id`, allows up to 900 s between stream chunks,
+  and records token usage and cost from streamed responses.
+
 ## [0.1.0] — 2026-09-27
 
 First public release (previously an internal prototype called "Central de Agents").

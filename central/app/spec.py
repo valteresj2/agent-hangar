@@ -27,6 +27,11 @@ class LlmSpec(_Strict):
     connection: str = ""
     model: str = ""
     temperature: float = Field(default=0.2, ge=0, le=2)
+    # opcionais (ausentes = padrão do runtime), para não mudar a spec de agentes existentes
+    max_steps: int | None = Field(default=None, ge=1, le=40,
+                                  description="Rodadas máximas de chamadas de tool por mensagem (padrão 6)")
+    vision: bool | None = Field(default=None,
+                                description="false: imagens anexadas não vão ao LLM, só ao workspace (padrão true)")
     stage: LlmEnvOverride | None = None
     prod: LlmEnvOverride | None = None
 
