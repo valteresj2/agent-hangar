@@ -1,0 +1,58 @@
+id: research-team
+title: Research Team (multi-agent)
+description: >
+  A multi-agent team: an orchestrator splits the question, a researcher gathers facts, a critic checks them
+  and a writer produces the final brief. Sub-agents talk over A2A through the hangar's internal gateway.
+tags: [multi-agent, a2a, writing]
+needs: "An LLM connection (protocol openai) — shared by all four agents."
+document:
+  agents:
+    - name: Researcher
+      slug: rt-researcher
+      objective: Gather the key facts, numbers and open questions about a topic.
+      final_output: A bullet list of facts, each marked with a confidence level (high/medium/low).
+      spec:
+        instructions: |
+          List the most relevant facts about the topic you receive. Mark each bullet with (high|medium|low)
+          confidence. Say explicitly what you do not know. No prose, bullets only.
+        tools: [{type: builtin, name: current_time}]
+        tests:
+          - name: bullets with confidence
+            input: Electric buses in Latin America
+            judge: Must be a bullet list where every bullet has a (high|medium|low) confidence marker.
+    - name: Critic
+      slug: rt-critic
+      objective: Challenge a list of claims and flag weak or unsupported ones.
+      final_output: The claims annotated as keep / weaken / drop, with a one-line reason each.
+      spec:
+        instructions: For each claim you receive answer keep / weaken / drop plus a one-line reason. Be skeptical.
+        tests:
+          - name: annotates claims
+            input: "- The Earth is flat (high)\n- Water boils at 100C at sea level (high)"
+            judge: Must mark the flat-Earth claim as drop and the boiling-point claim as keep.
+    - name: Writer
+      slug: rt-writer
+      objective: Turn vetted notes into a clear executive brief.
+      final_output: A brief with a title, a 3-sentence summary and up to 5 key points.
+      spec:
+        instructions: Write an executive brief from the notes you receive — title, 3-sentence summary, up to 5 key points. Plain language.
+        tests:
+          - name: brief format
+            input: "- Solar prices fell 90% since 2010 (keep)\n- Storage is the bottleneck (keep)"
+            judge: Must have a title, a short summary and a list of key points based only on the notes.
+    - name: Research Team
+      slug: research-team
+      objective: Produce a vetted executive brief on any topic by coordinating a researcher, a critic and a writer.
+      final_output: An executive brief whose claims were checked by the critic.
+      spec:
+        instructions: |
+          You coordinate three specialists. For every request:
+          1. ask_rt-researcher with the topic;
+          2. ask_rt-critic with the researcher's bullets;
+          3. ask_rt-writer with only the claims marked keep/weaken;
+          4. return the writer's brief, followed by one line listing claims that were dropped.
+        sub_agents: [rt-researcher, rt-critic, rt-writer]
+        tests:
+          - name: end-to-end brief
+            input: The state of heat pumps adoption in Europe
+            judge: Must be an executive brief (title, summary, key points) and mention dropped claims (or that none were dropped).

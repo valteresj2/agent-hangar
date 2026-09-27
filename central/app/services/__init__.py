@@ -1,0 +1,50 @@
+"""Camada de serviço, dividida por responsabilidade. Este módulo reexporta a API pública (`svc.xxx`)."""
+from ..models import Agent  # noqa: F401  (svc.Agent é usado pelo MCP)
+from .catalog import (  # noqa: F401
+                      HARNESS_PROTOCOL,
+                      PROTOCOLS,
+                      cost_usd,
+                      delete_llm_connection,
+                      get_connection,
+                      llm_connection_dict,
+                      resolve_harness,
+                      resolve_llm,
+                      upsert_llm_connection,
+                      upsert_mcp,
+                      upsert_skill,
+                      uses_connection,
+)
+from .common import PlatformError, audit, find_agent, get_agent, iso, slugify, spec_of  # noqa: F401
+from .invoke import chat, chat_new_session  # noqa: F401
+from .jobs import (  # noqa: F401
+                      cancel_job,
+                      complete_job,
+                      job_dict,
+                      job_events,
+                      recover_orphans,
+                      run_harness_job,
+                      submit_job,
+                      wait_job,
+)
+from .registry import (  # noqa: F401
+                      apply_document,
+                      create_agent,
+                      delete_agent,
+                      design_agent,
+                      replace_spec,
+                      rollback_agent,
+)
+from .runtime import (  # noqa: F401
+                      active_deployment,
+                      deploy_env,
+                      latest_test,
+                      promote,
+                      refresh_deployments,
+                      resolve_spec,
+                      ship,
+                      stop,
+)
+from .templates import apply_template, get_template, list_templates  # noqa: F401
+from .testing import run_tests  # noqa: F401
+from .usage import agent_usage, overview, record_usage, usage_row  # noqa: F401
+from .views import agent_dict, dep_dict, endpoints, list_agents, test_dict  # noqa: F401

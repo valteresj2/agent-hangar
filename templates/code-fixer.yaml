@@ -1,0 +1,37 @@
+id: code-fixer
+title: Code Fixer (Codex harness)
+description: >
+  A harness agent: every call runs OpenAI Codex CLI in a fresh, ephemeral container. Give it code plus a task
+  ("fix this bug", "add tests", "review and patch") and get back the result and a git diff.
+tags: [harness, codex, coding]
+needs: "A harness connection with protocol openai (OpenAI, LiteLLM, OpenRouter…). Build the image with `docker compose --profile harness build`."
+document:
+  skills:
+    - name: code-review-checklist
+      description: Checklist applied when reviewing or fixing code
+      content: |
+        ## Review checklist
+        - Correctness first: off-by-one, null/empty input, error handling, resource leaks.
+        - Security: injection, secrets in code, unsafe deserialization, path traversal.
+        - Keep changes minimal and in the style of the surrounding code.
+        - Add or update a test for every behavior change.
+        - End with a summary: what changed, why, and anything left for a human.
+  agents:
+    - name: Code Fixer
+      slug: code-fixer
+      objective: Fix bugs and apply review feedback on code provided in the task, returning a diff.
+      final_output: A summary of the changes plus the git diff of the files created or edited.
+      spec:
+        harness: {id: codex}
+        instructions: |
+          You work inside an empty git workspace. Create the files described in the task, then make the change.
+          Follow the skill "code-review-checklist". Do not run network commands except to install test deps.
+        skills: [code-review-checklist]
+        tests:
+          - name: fixes a bug
+            input: |
+              Create calc.py with:
+                def average(xs): return sum(xs) / len(xs)
+              It crashes on an empty list. Fix it to return 0.0 for empty input and add test_calc.py (pytest).
+            expect_contains: "average"
+            timeout_s: 300

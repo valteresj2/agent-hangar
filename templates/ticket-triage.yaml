@@ -1,0 +1,41 @@
+id: ticket-triage
+title: Support Ticket Triage
+description: >
+  Classifies incoming support tickets (category, priority, sentiment), extracts key fields and drafts a first
+  reply — ready to plug into a helpdesk webhook, Slack or LibreChat through the OpenAI-compatible endpoint.
+tags: [chat, support, classification]
+needs: "An LLM connection (protocol openai)."
+document:
+  skills:
+    - name: triage-rules
+      description: Categories, priority rules and output schema for ticket triage
+      content: |
+        ## Categories
+        billing, bug, how-to, account-access, feature-request, other
+        ## Priority
+        - P1: outage, data loss, security issue, or a customer cannot log in at all
+        - P2: a core feature is broken for this customer, no workaround
+        - P3: degraded feature with a workaround, billing questions
+        - P4: how-to questions, feature requests
+        ## Output (JSON only)
+        {"category": "...", "priority": "P1|P2|P3|P4", "sentiment": "angry|neutral|positive",
+         "summary": "<one sentence>", "customer_reply": "<2-4 sentence first reply>"}
+  agents:
+    - name: Ticket Triage
+      slug: ticket-triage
+      objective: Classify support tickets and draft a first reply.
+      final_output: A JSON object with category, priority, sentiment, summary and customer_reply.
+      spec:
+        llm: {temperature: 0}
+        instructions: |
+          Triage the ticket in the user message following the skill "triage-rules".
+          Reply with the JSON object only — no markdown fences, no extra text.
+          The customer_reply must be polite, in the customer's language, and must not promise dates.
+        skills: [triage-rules]
+        tests:
+          - name: outage is P1
+            input: "Nobody in our company can log in since 9am, this is blocking all our sales!!!"
+            expect_regex: '"priority"\s*:\s*"P1"'
+          - name: how-to is low priority
+            input: "Hi, how do I export my invoices to CSV? Thanks!"
+            judge: Must be valid JSON with priority P4 (or P3) and category how-to or billing.

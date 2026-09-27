@@ -1,0 +1,25 @@
+# Agent Hangar
+
+> Self-hosted control plane for AI agents. AI clients (Claude, ChatGPT, Codex, OpenCode) connect to its MCP server
+> at /mcp and build agents by chatting. Every agent is versioned, tested in stage and only then promoted to prod,
+> runs in its own Docker container, and is exposed over OpenAI-compatible, A2A, ACP and MCP at /gw/<slug>.
+
+Key facts for coding agents:
+- The platform MCP tool flow: list_templates → list_catalog → register_agent → design_agent (JSON Merge Patch;
+  null deletes) → ship_agent → create_consumer_key. The spec schema comes from get_spec_schema.
+- Agent types: chat (llm.connection), harness (harness.id ∈ claude-code|codex|hermes|deepseek-harness; one ephemeral
+  container per call), multi-agent (sub_agents; chat only).
+- Connections are external LLM endpoints; protocols: openai (chat, codex, hermes), anthropic (claude-code),
+  deepseek (deepseek-harness). The hangar never hosts a model.
+- Auth: admin keys for /api and /mcp; invoke keys (optionally per agent) for /gw/<slug>.
+
+## Docs
+- [README](README.md): overview and quickstart
+- [Concepts](docs/concepts.md)
+- [Spec reference](docs/spec.md)
+- [Harnesses](docs/harnesses.md)
+- [HTTP API and MCP tools](docs/api.md)
+- [CLI](docs/cli.md)
+- [Connecting clients](docs/clients.md)
+- [Templates](docs/templates.md)
+- [Security model](docs/security.md)

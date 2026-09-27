@@ -1,0 +1,32 @@
+name: Bug report
+description: Something doesn't work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Include the exact error message and what you expected instead.
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Steps, agent spec (remove secrets!), client used (Claude/Codex/…), harness if any.
+    validations: {required: true}
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "0.1.0 (see the UI sidebar or GET /api/health)"
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "Docker Desktop 4.x on Windows / Docker Engine on Ubuntu 24.04"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "`docker compose logs central --tail 100` — redact tokens and keys."
+      render: text

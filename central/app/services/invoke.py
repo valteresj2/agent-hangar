@@ -1,0 +1,48 @@
+"""Chamar um agente já deployado (UI, MCP e ponte de protocolos dos agentes-com-harness)."""
+import time
+
+import httpx
+from sqlalchemy.orm import Session
+
+from .. import deploy
+from ..db import SessionLocal
+from .common import PlatformError, get_agent, spec_of
+from .runtime import active_deployment, refresh_deployments
+from .usage import record_usage
+
+
+def chat(db: Session, slug: str, message: str, env="prod", channel="api", actor="admin") -> dict:
+    from .jobs import run_harness_job
+
+    a = get_agent(db, slug)
+    refresh_deployments(db, [a])
+    if not active_deployment(a, env):
+        raise PlatformError(f"'{slug}' não está rodando em {env}")
+    if spec_of(a).get("harness"):
+        t0 = time.time()
+        job = run_harness_job(db, slug, message, env=env, actor=actor, channel=channel)  # uso registrado no job
+        return {"reply": job.result, "job_id": job.id, "diff": job.diff, "status": job.status,
+                "usage": {"prompt_tokens": job.tokens_in, "completion_tokens": job.tokens_out,
+                          "total_tokens": job.tokens_in + job.tokens_out, "cost_usd": job.cost_usd},
+                "trace": [{"tool": f"harness:{job.harness_id}", "args": {}, "result": (job.diff or "")[:300]}],
+                "latency_ms": int((time.time() - t0) * 1000)}
+    t0, ok, data = time.time(), True, None
+    try:
+        r = httpx.post(deploy.internal_url(slug, env) + "/v1/chat/completions", timeout=180,
+                       json={"messages": [{"role": "user", "content": message}]})
+        r.raise_for_status()
+        data = r.json()
+        return {"reply": data["choices"][0]["message"]["content"], "usage": data.get("usage", {}),
+                "trace": data.get("x_trace", []), "latency_ms": int((time.time() - t0) * 1000)}
+    except Exception as e:
+        ok = False
+        raise PlatformError(f"Falha ao chamar o agente: {e}") from e
+    finally:
+        record_usage(db, a.id, env, channel, "openai", int((time.time() - t0) * 1000), ok, data)
+
+
+def chat_new_session(slug: str, message: str, env: str, channel: str) -> dict:
+    """Mesmo que chat(), com sessão própria — para rodar numa thread sem segurar a sessão de quem chamou
+    (antes o gateway mantinha uma conexão do pool presa durante todo o job de harness)."""
+    with SessionLocal() as db:
+        return chat(db, slug, message, env, channel)

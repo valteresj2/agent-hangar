@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Hangar</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M3 14 16 5l13 9v13H3z' fill='%234f46e5'/><path d='M9 27v-8h14v8' fill='%23fff'/></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<aside id="side">
+  <div class="brand"><span class="logo">⌂</span> Agent Hangar</div>
+  <nav>
+    <a href="#/" data-r="">Dashboard</a>
+    <a href="#/agents" data-r="agents">Agentes</a>
+    <a href="#/templates" data-r="templates">Templates</a>
+    <a href="#/deployments" data-r="deployments">Deployments</a>
+    <a href="#/tests" data-r="tests">Testes</a>
+    <a href="#/usage" data-r="usage">Uso e custo</a>
+    <a href="#/catalog" data-r="catalog">Catálogo</a>
+    <a href="#/providers" data-r="providers">Provedores</a>
+    <a href="#/keys" data-r="keys">Chaves de API</a>
+    <a href="#/connect" data-r="connect">Conectar</a>
+    <a href="#/audit" data-r="audit">Auditoria</a>
+  </nav>
+  <div class="side-foot"><div id="ver" class="mute small"></div><button id="logout" class="ghost">Sair</button></div>
+</aside>
+<main id="main"></main>
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

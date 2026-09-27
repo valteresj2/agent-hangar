@@ -1,0 +1,51 @@
+name: Release images
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: central, context: ., file: central/Dockerfile, target: ""}
+          - {name: agent-runtime, context: runtime, file: runtime/Dockerfile, target: ""}
+          - {name: harness-base, context: harness, file: harness/Dockerfile, target: base}
+          - {name: harness-claude-code, context: harness, file: harness/Dockerfile, target: claude-code}
+          - {name: harness-codex, context: harness, file: harness/Dockerfile, target: codex}
+          - {name: harness-deepseek-harness, context: harness, file: harness/Dockerfile, target: deepseek-harness}
+          - {name: harness-hermes, context: harness, file: harness/Dockerfile, target: hermes}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

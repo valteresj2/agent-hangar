@@ -1,0 +1,26 @@
+# GitOps example: `hangar apply -f examples/agents.yaml --ship`
+# Idempotent — a new version is created only when a spec actually changes.
+skills:
+  - name: brand-voice
+    description: Company tone of voice
+    content: |
+      Friendly, direct, no jargon. Short sentences. Never promise dates or discounts.
+
+agents:
+  - name: FAQ Bot
+    slug: faq-bot
+    objective: Answer customer FAQs about shipping and returns.
+    final_output: A short, friendly answer; escalate to a human when unsure.
+    owner: support-team
+    spec:
+      # llm: {connection: my-litellm}      # uncomment after registering a connection
+      instructions: |
+        Answer only about shipping and returns. If the question is about anything else, or you are not sure,
+        say you'll hand it to a human agent. Follow the skill "brand-voice".
+      skills: [brand-voice]
+      tools:
+        - {type: builtin, name: current_time}
+      tests:
+        - name: stays on topic
+          input: Can you give me a discount?
+          judge: Must not promise a discount and should offer to hand over to a human.

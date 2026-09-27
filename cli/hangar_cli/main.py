@@ -1,0 +1,376 @@
+"""hangar — CLI do Agent Hangar (só stdlib + httpx + pyyaml)."""
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+import httpx
+import yaml
+
+from . import __version__
+
+CONFIG = Path(os.environ.get("HANGAR_CONFIG", Path.home() / ".config" / "hangar" / "config.json"))
+
+
+class CliError(Exception):
+    pass
+
+
+# ------------------------------------------------------------------ config / http
+def load_config() -> dict:
+    cfg = {}
+    if CONFIG.exists():
+        cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
+    url = os.environ.get("HANGAR_URL") or cfg.get("url")
+    token = os.environ.get("HANGAR_TOKEN") or cfg.get("token")
+    if not url or not token:
+        raise CliError("não autenticado: rode `hangar login <url> --token <chave>` ou defina HANGAR_URL/HANGAR_TOKEN")
+    return {"url": url.rstrip("/"), "token": token}
+
+
+class Api:
+    def __init__(self, url: str, token: str, timeout: float = 900):
+        self.url = url
+        self.c = httpx.Client(base_url=url, timeout=timeout, headers={"Authorization": f"Bearer {token}"})
+
+    def _check(self, r: httpx.Response):
+        if r.status_code >= 400:
+            try:
+                body = r.json()
+                msg = body.get("detail") or body.get("error") or body
+            except Exception:
+                msg = r.text
+            raise CliError(f"HTTP {r.status_code}: {msg}")
+        return r.json() if r.content else None
+
+    def get(self, path, **kw):
+        return self._check(self.c.get("/api" + path, **kw))
+
+    def post(self, path, body=None):
+        return self._check(self.c.post("/api" + path, json=body or {}))
+
+    def put(self, path, body):
+        return self._check(self.c.put("/api" + path, json=body))
+
+    def delete(self, path):
+        return self._check(self.c.delete("/api" + path))
+
+    def stream(self, path):
+        with self.c.stream("GET", "/api" + path, timeout=None) as r:
+            if r.status_code >= 400:
+                raise CliError(f"HTTP {r.status_code}")
+            event = None
+            for line in r.iter_lines():
+                if line.startswith("event: "):
+                    event = line[7:]
+                elif line.startswith("data: ") and event:
+                    yield event, json.loads(line[6:])
+                    event = None
+
+
+def api() -> Api:
+    return Api(**load_config())
+
+
+# ------------------------------------------------------------------ saída
+def out(data, as_json: bool):
+    if as_json:
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+        return True
+    return False
+
+
+def table(rows: list[list], headers: list[str]):
+    rows = [[("" if c is None else str(c)) for c in r] for r in rows]
+    widths = [max(len(h), *(len(r[i]) for r in rows)) if rows else len(h) for i, h in enumerate(headers)]
+    print("  ".join(h.upper().ljust(w) for h, w in zip(headers, widths, strict=True)))
+    for r in rows:
+        print("  ".join(c.ljust(w) for c, w in zip(r, widths, strict=True)))
+
+
+def usd(v):
+    return f"${v:.4f}" if v else "-"
+
+
+# ------------------------------------------------------------------ comandos
+def cmd_login(a):
+    url = a.url.rstrip("/")
+    token = a.token or os.environ.get("HANGAR_TOKEN") or input("token: ").strip()
+    info = Api(url, token).get("/health")
+    Api(url, token).get("/overview")  # confere se a chave tem escopo admin
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG.write_text(json.dumps({"url": url, "token": token}), encoding="utf-8")
+    try:
+        CONFIG.chmod(0o600)
+    except OSError:
+        pass
+    print(f"ok: {url} (Agent Hangar v{info['version']}) — credencial salva em {CONFIG}")
+
+
+def cmd_agents_ls(a):
+    rows = api().get("/agents")
+    if out(rows, a.json):
+        return
+    table([[x["slug"], x["kind"] + (f"/{x['harness']['id']}" if x.get("harness") else ""), x["status"],
+            f"v{x['version']}", "✓" if x.get("stage") else "", "✓" if x.get("prod") else "",
+            x["requests_7d"], usd(x.get("cost_7d")), x["model"]] for x in rows],
+          ["slug", "kind", "status", "ver", "stage", "prod", "req7d", "cost7d", "model"])
+
+
+def cmd_agents_get(a):
+    d = api().get(f"/agents/{a.slug}")
+    if a.spec:
+        print(yaml.safe_dump(d["spec"], sort_keys=False, allow_unicode=True) if not a.json
+              else json.dumps(d["spec"], indent=2, ensure_ascii=False))
+        return
+    if out(d, a.json):
+        return
+    print(f"{d['name']} ({d['slug']}) — {d['status']} v{d['version']} [{d['kind']}]")
+    print(f"objetivo: {d['objective']}\nsaída:    {d['final_output']}\nmodelo:   {d['model']}")
+    for k, v in d["endpoints"].items():
+        print(f"  {k:<11} {v}")
+    if d.get("last_test"):
+        print(f"último teste: {d['last_test']['status']} — {d['last_test']['summary']}")
+
+
+def cmd_apply(a):
+    text = sys.stdin.read() if a.file == "-" else Path(a.file).read_text(encoding="utf-8")
+    docs = [d for d in yaml.safe_load_all(text) if d]
+    c = api()
+    for doc in docs:
+        if "document" in doc and "id" in doc:  # arquivo de template
+            doc = doc["document"]
+        for r in c.post("/apply", doc):
+            name = r.get("slug") or r.get("name")
+            ver = f" v{r['version']}" if "version" in r else ""
+            print(f"{r['kind']:<11} {name:<30} {r['action']}{ver}")
+    if a.ship:
+        for doc in docs:
+            doc = doc.get("document", doc)
+            agents = doc.get("agents") or []
+            if agents:
+                last = agents[-1].get("slug") or agents[-1]["name"]
+                cmd_ship(argparse.Namespace(slug=last, json=False))
+
+
+def cmd_export(a):
+    d = api().get(f"/agents/{a.slug}")
+    doc = {"agents": [{"name": d["name"], "slug": d["slug"], "objective": d["objective"],
+                       "final_output": d["final_output"], **({"owner": d["owner"]} if d.get("owner") else {}),
+                       "spec": d["spec"]}]}
+    print(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True), end="")
+
+
+def cmd_ship(a):
+    steps = api().post(f"/agents/{a.slug}/ship")
+    if out(steps, a.json):
+        return
+    for s in steps:
+        print(f"{s['agent']:<30} {s['step']:<6} {s['status']}  {s.get('summary') or s.get('url') or ''}")
+
+
+def cmd_test(a):
+    r = api().post(f"/agents/{a.slug}/test")
+    if out(r, a.json):
+        return
+    print(f"{r['status']} — {r['summary']} ({r['duration_ms']} ms)")
+    for x in r["results"]:
+        print(f"  {'✓' if x['passed'] else '✗'} {x['name']}: {x['detail'][:110]}")
+    if r["status"] != "passed":
+        sys.exit(1)
+
+
+def cmd_deploy(a):
+    r = api().post(f"/agents/{a.slug}/deploy", {"env": a.env})
+    print(f"{a.slug} v{r['version']} -> {a.env}: {r['status']} {r['url']}")
+
+
+def cmd_rollback(a):
+    r = api().post(f"/agents/{a.slug}/rollback", {"version": a.version})
+    print(f"{a.slug}: spec da v{a.version} restaurada como v{r['version']} — rode `hangar ship {a.slug}`")
+
+
+def cmd_chat(a):
+    r = api().post(f"/agents/{a.slug}/chat", {"message": " ".join(a.message), "env": a.env})
+    if out(r, a.json):
+        return
+    print(r["reply"])
+
+
+def cmd_logs(a):
+    print(api().get(f"/agents/{a.slug}/logs", params={"env": a.env})["logs"])
+
+
+def _print_job(j):
+    print(f"job #{j['id']} {j['status']} — {j['harness_id']} · {j['duration_ms']} ms · "
+          f"{(j.get('tokens_in') or 0) + (j.get('tokens_out') or 0)} tokens · {usd(j.get('cost_usd'))}")
+    print(j.get("result") or "")
+    if j.get("diff"):
+        print("\n--- diff ---\n" + j["diff"])
+
+
+def cmd_jobs_run(a):
+    c = api()
+    task = " ".join(a.task)
+    if not a.follow:
+        j = c.post(f"/agents/{a.slug}/job", {"task": task, "env": a.env, "timeout_s": a.timeout, "wait": True})
+        return out(j, a.json) or _print_job(j)
+    j = c.post(f"/agents/{a.slug}/job", {"task": task, "env": a.env, "timeout_s": a.timeout, "wait": False})
+    print(f"job #{j['id']} enfileirado", file=sys.stderr)
+    try:
+        for ev, data in c.stream(f"/jobs/{j['id']}/events"):
+            if ev == "status":
+                print(f"[{data['status']}]", file=sys.stderr)
+            elif ev == "log":
+                sys.stderr.write(data["text"])
+            elif ev == "done":
+                return out(data, a.json) or _print_job(data)
+    except KeyboardInterrupt:
+        c.post(f"/jobs/{j['id']}/cancel")
+        print(f"\njob #{j['id']} cancelado", file=sys.stderr)
+        sys.exit(130)
+
+
+def cmd_jobs_get(a):
+    j = api().get(f"/jobs/{a.id}")
+    out(j, a.json) or _print_job(j)
+
+
+def cmd_jobs_cancel(a):
+    print(api().post(f"/jobs/{a.id}/cancel")["status"])
+
+
+def cmd_templates_ls(a):
+    rows = api().get("/templates")
+    if out(rows, a.json):
+        return
+    table([[t["id"], t["title"], t.get("harness") or ("multi" if len(t["agents"]) > 1 else "chat"),
+            ", ".join(t["tags"])] for t in rows], ["id", "title", "type", "tags"])
+
+
+def cmd_templates_apply(a):
+    r = api().post(f"/templates/{a.id}/apply", {"connection": a.connection or "",
+                                                "harness_connection": a.harness_connection or ""})
+    for x in r:
+        print(f"{x['kind']:<11} {x.get('slug') or x.get('name'):<30} {x['action']}")
+
+
+def cmd_keys_ls(a):
+    rows = api().get("/keys")
+    if out(rows, a.json):
+        return
+    table([[k["id"], k["name"], k["prefix"] + "…", ",".join(k["scopes"]), ",".join(k["agents"]) or "*",
+            k["last_used_at"] or "never", "revoked" if k["revoked"] else "active"] for k in rows],
+          ["id", "name", "prefix", "scopes", "agents", "last used", "state"])
+
+
+def cmd_keys_create(a):
+    r = api().post("/keys", {"name": a.name, "scopes": [a.scope], "agents": a.agent or []})
+    if out(r, a.json):
+        return
+    print(r["key"])
+    print(f"({a.scope}; guarde agora — a chave não será exibida de novo)", file=sys.stderr)
+
+
+def cmd_keys_revoke(a):
+    api().delete(f"/keys/{a.id}")
+    print(f"chave {a.id} revogada")
+
+
+# ------------------------------------------------------------------ parser
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="hangar", description="Agent Hangar CLI")
+    p.add_argument("--version", action="version", version=f"hangar {__version__}")
+    p.add_argument("--json", action="store_true", help="saída em JSON")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    def add(parent, name, fn, help_):
+        sp = parent.add_parser(name, help=help_)
+        sp.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="saída em JSON")
+        sp.set_defaults(fn=fn)
+        return sp
+
+    s = add(sub, "login", cmd_login, "salva URL e credencial")
+    s.add_argument("url")
+    s.add_argument("--token")
+
+    ag = sub.add_parser("agents", help="listar/inspecionar agentes").add_subparsers(dest="sub", required=True)
+    add(ag, "ls", cmd_agents_ls, "lista agentes")
+    s = add(ag, "get", cmd_agents_get, "detalhe de um agente")
+    s.add_argument("slug")
+    s.add_argument("--spec", action="store_true", help="só a spec (YAML)")
+
+    s = add(sub, "apply", cmd_apply, "aplica um arquivo YAML {skills, mcp_servers, agents} (GitOps)")
+    s.add_argument("-f", "--file", required=True, help="arquivo YAML (ou - para stdin)")
+    s.add_argument("--ship", action="store_true", help="shipar o último agente de cada documento")
+    s = add(sub, "export", cmd_export, "exporta um agente como YAML aplicável")
+    s.add_argument("slug")
+
+    for name, fn, help_ in (("ship", cmd_ship, "testa em stage e promove se passar"),
+                            ("test", cmd_test, "roda os testes em stage")):
+        s = add(sub, name, fn, help_)
+        s.add_argument("slug")
+    s = add(sub, "deploy", cmd_deploy, "deploy num ambiente")
+    s.add_argument("slug")
+    s.add_argument("--env", default="stage", choices=["stage", "prod"])
+    s = add(sub, "rollback", cmd_rollback, "restaura a spec de uma versão anterior")
+    s.add_argument("slug")
+    s.add_argument("version", type=int)
+    s = add(sub, "chat", cmd_chat, "manda uma mensagem a um agente")
+    s.add_argument("slug")
+    s.add_argument("message", nargs="+")
+    s.add_argument("--env", default="prod", choices=["stage", "prod"])
+    s = add(sub, "logs", cmd_logs, "logs do container do agente")
+    s.add_argument("slug")
+    s.add_argument("--env", default="prod", choices=["stage", "prod"])
+
+    jb = sub.add_parser("jobs", help="jobs de harness").add_subparsers(dest="sub", required=True)
+    s = add(jb, "run", cmd_jobs_run, "roda uma tarefa num agente com harness")
+    s.add_argument("slug")
+    s.add_argument("task", nargs="+")
+    s.add_argument("--env", default="stage", choices=["stage", "prod"])
+    s.add_argument("--timeout", type=int, default=None)
+    s.add_argument("-f", "--follow", action="store_true", help="acompanha status e logs ao vivo (Ctrl+C cancela)")
+    s = add(jb, "get", cmd_jobs_get, "estado de um job")
+    s.add_argument("id", type=int)
+    s = add(jb, "cancel", cmd_jobs_cancel, "cancela um job")
+    s.add_argument("id", type=int)
+
+    tp = sub.add_parser("templates", help="galeria de templates").add_subparsers(dest="sub", required=True)
+    add(tp, "ls", cmd_templates_ls, "lista templates")
+    s = add(tp, "apply", cmd_templates_apply, "aplica um template")
+    s.add_argument("id")
+    s.add_argument("--connection", help="conexão (protocolo openai) dos agentes de chat")
+    s.add_argument("--harness-connection", help="conexão dos agentes com harness")
+
+    ks = sub.add_parser("keys", help="chaves de API").add_subparsers(dest="sub", required=True)
+    add(ks, "ls", cmd_keys_ls, "lista chaves")
+    s = add(ks, "create", cmd_keys_create, "cria uma chave (o valor sai no stdout)")
+    s.add_argument("name")
+    s.add_argument("--scope", default="invoke", choices=["invoke", "admin"])
+    s.add_argument("--agent", action="append", help="restringe a chave invoke a este agente (repetível)")
+    s = add(ks, "revoke", cmd_keys_revoke, "revoga uma chave")
+    s.add_argument("id", type=int)
+    return p
+
+
+def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):  # Windows com saída redirecionada usa cp1252 por padrão
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+    args = build_parser().parse_args(argv)
+    try:
+        args.fn(args)
+    except CliError as e:
+        print(f"erro: {e}", file=sys.stderr)
+        sys.exit(1)
+    except httpx.HTTPError as e:
+        print(f"erro de conexão: {e}", file=sys.stderr)
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,40 @@
+id: doc-qa
+title: Document Q&A
+description: >
+  Answers questions about a document you paste into its skill (policy, checklist, contract, manual),
+  always citing the section it used and refusing to make things up.
+tags: [chat, knowledge, starter]
+needs: "An LLM connection (protocol openai). Replace the skill content with your document text."
+document:
+  skills:
+    - name: doc-qa-source
+      description: Source document for the Document Q&A agent (replace with your own text)
+      content: |
+        # Travel Expense Policy (example)
+        ## 1. Flights
+        Economy class for flights under 6 hours. Business class needs VP approval.
+        ## 2. Hotels
+        Up to USD 180 per night in capitals, USD 120 elsewhere.
+        ## 3. Meals
+        Daily allowance of USD 60. Alcohol is never reimbursed.
+        ## 4. Deadline
+        Submit receipts within 30 days of returning.
+  agents:
+    - name: Document Q&A
+      slug: doc-qa
+      objective: Answer questions strictly based on the attached document.
+      final_output: A short answer that cites the section it came from, or says the document does not cover it.
+      spec:
+        instructions: |
+          You answer ONLY from the skill "doc-qa-source".
+          - Always cite the section number/title you used, e.g. "(section 2. Hotels)".
+          - If the document does not cover the question, say so plainly — never guess.
+          - Answer in the user's language, in at most 5 sentences.
+        skills: [doc-qa-source]
+        tests:
+          - name: grounded answer
+            input: What is the hotel limit in a capital city?
+            expect_contains: "180"
+          - name: refuses to invent
+            input: Does the policy cover car rentals?
+            judge: The answer must say the document does not cover car rentals and must not invent a rule.

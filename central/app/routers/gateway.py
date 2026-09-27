@@ -1,0 +1,238 @@
+"""Gateway dos agentes: /gw/<slug> (produção) e /gw-stage/<slug> para clientes externos, e /internal/gw
+para agente -> sub-agente. Agentes de chat são proxiados para o container deles; agentes-com-harness
+(sem container fixo) são atendidos aqui mesmo, disparando um job por chamada."""
+import re
+import time
+import uuid
+
+import httpx
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+from starlette.background import BackgroundTask
+
+from .. import config, deploy
+from .. import services as svc
+from ..db import SessionLocal
+from .internal import caller_agent, may_call
+
+router = APIRouter()
+
+HOP_BY_HOP = {"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "content-length",
+              "content-encoding", "proxy-authenticate", "proxy-authorization"}
+
+
+def protocol_of(path: str) -> str:
+    if path.startswith("v1/"):
+        return "openai"
+    if path.startswith(("a2a", ".well-known")):
+        return "a2a"
+    if path.startswith("acp"):
+        return "acp"
+    if path.startswith("mcp"):
+        return "mcp"
+    return "other"
+
+
+def mcp_tool_name(slug: str) -> str:
+    # mesma regra do runtime de chat (_safe em runtime/app.py): o nome da tool MCP é o slug nos dois casos
+    return re.sub(r"[^a-zA-Z0-9_-]", "_", slug).strip("_-") or "agent"
+
+
+def _record(agent_id, env, channel, proto, t0, ok, payload=None):
+    with SessionLocal() as db:
+        svc.record_usage(db, agent_id, env, channel, proto, int((time.time() - t0) * 1000), ok, payload)
+
+
+# ------------------------------------------------------------------ agente-com-harness: ponte de protocolos
+def _card(info: dict, base: str) -> dict:
+    skills = [s if isinstance(s, str) else s.get("name") for s in info["skills"]]
+    return {"protocolVersion": "0.3.0", "name": info["name"], "description": info["objective"],
+            "url": f"{base}/a2a", "preferredTransport": "JSONRPC", "version": str(info["version"]),
+            "capabilities": {"streaming": False, "pushNotifications": False},
+            "defaultInputModes": ["text/plain"], "defaultOutputModes": ["text/plain"],
+            "skills": [{"id": s, "name": s, "description": "", "tags": []} for s in skills if s]
+            or [{"id": info["slug"], "name": info["name"], "description": info["final_output"], "tags": []}]}
+
+
+async def _invoke(info, task, env, channel):
+    # sessão própria dentro da thread: não prende conexão do pool durante o job inteiro
+    return await run_in_threadpool(svc.chat_new_session, info["slug"], task, env, channel)
+
+
+async def _harness_mcp(info: dict, request: Request, env: str, channel: str):
+    """MCP para agente-com-harness (sem container fixo onde montar um FastMCP). Mesmo wire format do
+    servidor MCP da plataforma: JSON puro, stateless."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "corpo inválido"}, 400)
+    method, rid, tool = body.get("method"), body.get("id"), mcp_tool_name(info["slug"])
+    if method == "initialize":
+        return {"jsonrpc": "2.0", "id": rid, "result": {
+            "protocolVersion": (body.get("params") or {}).get("protocolVersion", "2025-06-18"),
+            "capabilities": {"experimental": {}, "prompts": {"listChanged": False},
+                             "resources": {"subscribe": False, "listChanged": False}, "tools": {"listChanged": False}},
+            "serverInfo": {"name": info["name"], "version": str(info["version"])},
+            "instructions": f"Ferramenta do agente '{info['name']}' (harness) do Agent Hangar.\n"
+                            f"Objetivo: {info['objective']}\nSaída esperada: {info['final_output']}"}}
+    if method and method.startswith("notifications/"):
+        return Response(status_code=202)
+    if method == "ping":
+        return {"jsonrpc": "2.0", "id": rid, "result": {}}
+    if method == "tools/list":
+        return {"jsonrpc": "2.0", "id": rid, "result": {"tools": [{
+            "name": tool, "description": f"{info['objective']} Devolve: {info['final_output']}".strip(),
+            "inputSchema": {"type": "object", "properties": {"message": {"type": "string"}}, "required": ["message"]}}]}}
+    if method == "tools/call":
+        params = body.get("params") or {}
+        if params.get("name") != tool:
+            return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": f"tool desconhecida: {params.get('name')}"}}
+        try:
+            r = await _invoke(info, (params.get("arguments") or {}).get("message", ""), env, channel)
+        except svc.PlatformError as e:
+            return {"jsonrpc": "2.0", "id": rid, "result": {"content": [{"type": "text", "text": f"erro: {e}"}], "isError": True}}
+        return {"jsonrpc": "2.0", "id": rid,
+                "result": {"content": [{"type": "text", "text": r["reply"]}], "isError": r.get("status") != "passed"}}
+    return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": f"método não suportado: {method}"}}
+
+
+async def _proxy_harness(info: dict, path: str, request: Request, env: str):
+    base = f"{config.PUBLIC_BASE_URL}/{'gw' if env == 'prod' else 'gw-stage'}/{info['slug']}"
+    channel = request.headers.get("x-channel", "api")
+    if path in (".well-known/agent.json", ".well-known/agent-card.json"):
+        return _card(info, base)
+    if path == "mcp":
+        return await _harness_mcp(info, request, env, channel)
+    meta = {"framework": "agent-hangar", "version": info["version"]}
+    if path == "acp/agents":
+        return {"agents": [{"name": info["slug"], "description": info["objective"], "metadata": meta}]}
+    if path == f"acp/agents/{info['slug']}":
+        return {"name": info["slug"], "description": info["objective"], "metadata": meta}
+    if path not in ("v1/chat/completions", "a2a", "acp/runs"):
+        return JSONResponse({"error": f"caminho '{path}' não suportado para agente com harness"}, 501)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "corpo inválido"}, 400)
+
+    if path == "v1/chat/completions":
+        task = next((m.get("content", "") for m in reversed(body.get("messages", [])) if m.get("role") == "user"), "")
+        try:
+            r = await _invoke(info, task, env, channel)
+        except svc.PlatformError as e:
+            return JSONResponse({"error": {"message": str(e)}}, 502)
+        return {"id": f"chatcmpl-job{r.get('job_id', '')}", "object": "chat.completion", "created": int(time.time()),
+                "model": info["slug"], "choices": [{"index": 0, "finish_reason": "stop",
+                                                   "message": {"role": "assistant", "content": r["reply"]}}],
+                "usage": r["usage"], "x_trace": r["trace"], "x_job_id": r.get("job_id"), "x_diff": r.get("diff")}
+    if path == "a2a":
+        rid = body.get("id")
+        if body.get("method") not in ("message/send", "SendMessage"):
+            return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Method not found"}}
+        task = "".join(p.get("text", "") for p in body.get("params", {}).get("message", {}).get("parts", []))
+        try:
+            r = await _invoke(info, task, env, channel)
+        except svc.PlatformError as e:
+            return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": str(e)}}
+        return {"jsonrpc": "2.0", "id": rid, "result": {
+            "kind": "message", "role": "agent", "messageId": str(uuid.uuid4()),
+            "parts": [{"kind": "text", "text": r["reply"]}],
+            "metadata": {"job_id": r.get("job_id"), "diff": r.get("diff"), "usage": r["usage"]}}}
+    # acp/runs
+    task = "\n".join(p.get("content", "") for m in body.get("input", []) for p in m.get("parts", []))
+    try:
+        r = await _invoke(info, task, env, channel)
+    except svc.PlatformError as e:
+        return JSONResponse({"status": "failed", "error": {"message": str(e)}}, 502)
+    return {"run_id": str(uuid.uuid4()), "agent_name": info["slug"], "status": "completed",
+            "output": [{"role": f"agent/{info['slug']}", "parts": [{"content_type": "text/plain", "content": r["reply"]}]}],
+            "metadata": {"job_id": r.get("job_id"), "diff": r.get("diff"), "usage": r["usage"]}}
+
+
+# ------------------------------------------------------------------ proxy
+async def _proxy(request: Request, slug: str, path: str, env: str):
+    with SessionLocal() as db:
+        a = svc.find_agent(db, slug)
+        if not a:
+            return JSONResponse({"error": f"agente '{slug}' não existe"}, 404)
+        svc.refresh_deployments(db, [a])
+        if not svc.active_deployment(a, env):
+            return JSONResponse({"error": f"'{slug}' não está rodando em {env}"}, 503)
+        spec = svc.spec_of(a)
+        info = {"slug": a.slug, "name": a.name, "objective": a.objective, "final_output": a.final_output,
+                "version": a.current_version, "skills": spec.get("skills", []), "id": a.id}
+        is_harness = bool(spec.get("harness"))
+    # sessão já fechada aqui: nada abaixo segura conexão do pool enquanto espera o agente
+    if is_harness:
+        return await _proxy_harness(info, path, request, env)
+
+    channel = request.headers.get("x-channel", "api")
+    proto = protocol_of(path)
+    fwd = {"content-type": request.headers.get("content-type", "application/json"),
+           "accept": request.headers.get("accept", "application/json, text/event-stream")}
+    t0 = time.time()
+    client = httpx.AsyncClient(timeout=180)
+    try:
+        url = f"{deploy.internal_url(slug, env)}/{path}" + (f"?{request.url.query}" if request.url.query else "")
+        req = client.build_request(request.method, url, content=await request.body(), headers=fwd)
+        upstream = await client.send(req, stream=True)
+    except Exception as e:
+        await client.aclose()
+        if proto != "other":
+            _record(info["id"], env, channel, proto, t0, False)
+        return JSONResponse({"error": f"agente indisponível: {e}"}, 502)
+    headers = {k: v for k, v in upstream.headers.items() if k.lower() not in HOP_BY_HOP}
+    ok = upstream.status_code < 400
+
+    if upstream.headers.get("content-type", "").startswith("text/event-stream"):
+        async def done():
+            await upstream.aclose()
+            await client.aclose()
+            if proto != "other":
+                _record(info["id"], env, channel, proto, t0, ok)
+        # aiter_bytes (já descomprimido) combina com o content-encoding removido dos headers
+        return StreamingResponse(upstream.aiter_bytes(), status_code=upstream.status_code, headers=headers,
+                                 background=BackgroundTask(done))
+
+    content = await upstream.aread()
+    await upstream.aclose()
+    await client.aclose()
+    if proto != "other" and not path.startswith(".well-known"):
+        try:
+            payload = httpx.Response(200, content=content).json()
+        except Exception:
+            payload = None
+        await run_in_threadpool(_record, info["id"], env, channel, proto, t0, ok, payload)
+    return Response(content, upstream.status_code, headers=headers)
+
+
+@router.api_route("/gw/{slug}/{path:path}", methods=["GET", "POST"])
+async def gw_prod(request: Request, slug: str, path: str):
+    return await _proxy(request, slug, path, "prod")
+
+
+@router.api_route("/gw-stage/{slug}/{path:path}", methods=["GET", "POST"])
+async def gw_stage(request: Request, slug: str, path: str):
+    return await _proxy(request, slug, path, "stage")
+
+
+def _check_internal(request: Request, target: str):
+    """Agente -> sub-agente: o token é do próprio agente (HMAC do slug) e o destino tem de estar nos
+    sub_agents dele. Um agente comprometido não chama agentes que não são seus sub-agentes."""
+    with SessionLocal() as db:
+        caller = caller_agent(request, db)
+        if not may_call(caller, target):
+            raise HTTPException(403, f"'{caller.slug}' não tem '{target}' como sub_agent")
+
+
+@router.api_route("/internal/gw/{slug}/{path:path}", methods=["GET", "POST"])
+async def internal_gw_prod(request: Request, slug: str, path: str):
+    await run_in_threadpool(_check_internal, request, slug)
+    return await _proxy(request, slug, path, "prod")
+
+
+@router.api_route("/internal/gw-stage/{slug}/{path:path}", methods=["GET", "POST"])
+async def internal_gw_stage(request: Request, slug: str, path: str):
+    await run_in_threadpool(_check_internal, request, slug)
+    return await _proxy(request, slug, path, "stage")

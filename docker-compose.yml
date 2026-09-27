@@ -1,0 +1,124 @@
+name: agent-hangar
+
+# Imagens: `docker compose up -d --build` builda a central, o runtime dos agentes e o harness base (mock).
+# Harnesses reais são opt-in (imagens grandes):
+#   docker compose --profile harness build     # claude-code, codex, deepseek-harness
+#   docker compose --profile hermes build      # hermes (instalador próprio, mais lento)
+# Ou use as imagens publicadas: HANGAR_REGISTRY=ghcr.io/<owner> + HANGAR_VERSION=<tag>.
+
+x-build-only: &build-only
+  command: ["true"]
+  restart: "no"
+  network_mode: none
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hangar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?rode scripts/setup.sh para gerar o .env}
+      POSTGRES_DB: ${POSTGRES_DB:-hangar}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hangar}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks: [agents_net]
+
+  # A central nunca monta o docker.sock: fala com este proxy, que só libera a API de containers
+  # (criar/listar/parar/remover/logs), volumes e redes — sem exec, build, pull, images, swarm, secrets.
+  # Veja docs/security.md para o que isso protege e o que NÃO protege.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.1
+    environment:
+      CONTAINERS: 1
+      POST: 1
+      DELETE: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      IMAGES: 0
+      EXEC: 0
+      BUILD: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [docker_api]
+    restart: unless-stopped
+
+  # --- imagens (build-only: o container só existe para o compose buildar a imagem) ---
+  agent-runtime:
+    <<: *build-only
+    image: ${HANGAR_REGISTRY:-agent-hangar}/agent-runtime:${HANGAR_VERSION:-latest}
+    build: ./runtime
+
+  harness-base:
+    <<: *build-only
+    image: ${HANGAR_REGISTRY:-agent-hangar}/harness-base:${HANGAR_VERSION:-latest}
+    build: { context: ./harness, target: base }
+
+  harness-claude-code:
+    <<: *build-only
+    profiles: [harness]
+    image: ${HANGAR_REGISTRY:-agent-hangar}/harness-claude-code:${HANGAR_VERSION:-latest}
+    build: { context: ./harness, target: claude-code }
+
+  harness-codex:
+    <<: *build-only
+    profiles: [harness]
+    image: ${HANGAR_REGISTRY:-agent-hangar}/harness-codex:${HANGAR_VERSION:-latest}
+    build: { context: ./harness, target: codex }
+
+  harness-deepseek-harness:
+    <<: *build-only
+    profiles: [harness]
+    image: ${HANGAR_REGISTRY:-agent-hangar}/harness-deepseek-harness:${HANGAR_VERSION:-latest}
+    build: { context: ./harness, target: deepseek-harness }
+
+  harness-hermes:
+    <<: *build-only
+    profiles: [hermes]
+    image: ${HANGAR_REGISTRY:-agent-hangar}/harness-hermes:${HANGAR_VERSION:-latest}
+    build: { context: ./harness, target: hermes }
+
+  central:
+    image: ${HANGAR_REGISTRY:-agent-hangar}/central:${HANGAR_VERSION:-latest}
+    build: { context: ., dockerfile: central/Dockerfile }
+    depends_on:
+      postgres: { condition: service_healthy }
+      docker-proxy: { condition: service_started }
+      agent-runtime: { condition: service_completed_successfully }
+      harness-base: { condition: service_completed_successfully }
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hangar}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-hangar}
+      DOCKER_HOST: tcp://docker-proxy:2375
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?rode scripts/setup.sh para gerar o .env}
+      HANGAR_SECRET_KEY: ${HANGAR_SECRET_KEY:?rode scripts/setup.sh para gerar o .env}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?rode scripts/setup.sh para gerar o .env}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8090}
+      INTERNAL_BASE_URL: http://central:8080
+      HANGAR_REGISTRY: ${HANGAR_REGISTRY:-agent-hangar}
+      HANGAR_VERSION: ${HANGAR_VERSION:-latest}
+      AGENTS_NETWORK: hangar_agents
+      JOBS_NETWORK: hangar_jobs
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-mock/echo}
+      JOB_TIMEOUT_S: ${JOB_TIMEOUT_S:-180}
+    ports:
+      - "${CENTRAL_PORT:-8090}:8080"
+    # agents_net: containers dos agentes (chat) e Postgres. jobs_net: callback dos containers de job, que
+    # NÃO estão em agents_net. docker_api: só a central alcança o proxy do Docker.
+    networks: [agents_net, jobs_net, docker_api]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+    # instalações antigas (central-agents) reaproveitam o volume com PGDATA_VOLUME=central-agents_pgdata
+    name: ${PGDATA_VOLUME:-agent-hangar_pgdata}
+
+networks:
+  agents_net:
+    name: hangar_agents
+  jobs_net:
+    name: hangar_jobs
+  docker_api:
+    internal: true

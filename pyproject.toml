@@ -1,0 +1,23 @@
+[project]
+name = "agent-hangar"
+version = "0.1.0"
+description = "Self-hosted control plane to build, test, ship and govern AI agents from any MCP client."
+license = "Apache-2.0"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = [".venv", "central/migrations/versions", "docs/agent-document"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["B008", "E501", "UP007", "B904"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "hangar_cli"]

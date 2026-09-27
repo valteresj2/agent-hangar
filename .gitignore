@@ -1,0 +1,34 @@
+# segredos e dados locais
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+
+# material de cliente / trabalho local (nunca publicar)
+docs/agent-document/
+.claude/
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# node / editores / SO
+node_modules/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# saída do graphify
+graphify-out/
+docs/MELHORIAS.md

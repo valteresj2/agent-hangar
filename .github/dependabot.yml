@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /central
+    schedule: {interval: weekly}
+  - package-ecosystem: pip
+    directory: /runtime
+    schedule: {interval: weekly}
+  - package-ecosystem: docker
+    directory: /central
+    schedule: {interval: weekly}
+  - package-ecosystem: docker
+    directory: /runtime
+    schedule: {interval: weekly}
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly}
