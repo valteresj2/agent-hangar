@@ -3,9 +3,15 @@ updates:
   - package-ecosystem: pip
     directory: /central
     schedule: {interval: weekly}
+    ignore:
+      - dependency-name: mcp            # 2.x mudou a API do FastMCP; migrar conscientemente
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: pip
     directory: /runtime
     schedule: {interval: weekly}
+    ignore:
+      - dependency-name: mcp
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker
     directory: /central
     schedule: {interval: weekly}
