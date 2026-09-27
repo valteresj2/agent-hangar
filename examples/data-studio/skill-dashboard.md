@@ -2,7 +2,7 @@
 
 ## Layout
 - **KPIs no topo**, com 3 a 6 indicadores (total, variação, ticket médio, taxa…). Cada um tem `sql` retornando 1
-  valor, `format` (int/dec/pct/brl/usd) e `delta` quando houver comparação.
+  valor, `format` (int/dec/pct/brl/usd; para valores grandes use brl_compact/usd_compact/compact → "R$ 6,26 mi") e `delta` quando houver comparação.
 - **insights**: 3 a 5 frases com os achados principais e seus números. Ficam logo abaixo dos KPIs.
 - **Gráficos** (grade de 2 colunas): o mais importante usa `width: 2` (largura total), por exemplo a série temporal
   principal. Os demais usam width 1.

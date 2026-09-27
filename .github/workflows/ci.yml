@@ -50,15 +50,15 @@ jobs:
           python-version: "3.12"
       - name: Configure
         run: sh scripts/setup.sh
-      - name: Build and start (mock mode, no harness CLIs)
+      - name: Build and start (mock mode, no harness CLIs, with the Data Studio MCP)
         run: |
-          docker compose up -d --build
+          docker compose --profile data-studio up -d --build
           for i in $(seq 1 60); do curl -fs http://localhost:8090/api/health && exit 0; sleep 2; done
           docker compose logs central; exit 1
       - name: Smoke test
         run: |
           pip install httpx
-          HANGAR_TOKEN=$(grep '^ADMIN_TOKEN=' .env | cut -d= -f2-) python tests/e2e/smoke.py
+          HANGAR_TOKEN=$(grep '^ADMIN_TOKEN=' .env | cut -d= -f2-) SMOKE_DATA_STUDIO=1 python tests/e2e/smoke.py
       - name: Logs on failure
         if: failure()
         run: docker compose logs --tail 200 central
@@ -74,8 +74,16 @@ jobs:
         run: |
           docker compose --profile data-studio up -d --build data-studio
           timeout 180 sh -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" $(docker compose ps -q data-studio))" = healthy ]; do sleep 3; done'
-      - name: MCP smoke test (tools, deliverables, session isolation)
+      - name: Workspace retention
+        run: docker run --rm -v "$PWD/mcp-servers/data-studio/tests:/t" agent-hangar/mcp-data-studio python /t/test_retention.py
+      - name: MCP smoke test — process sandbox (tools, deliverables, preview, session isolation)
         run: docker run --rm --network hangar_agents -v "$PWD/mcp-servers/data-studio/tests:/t" agent-hangar/mcp-data-studio python /t/smoke_mcp.py
+      - name: MCP smoke test — one container per session
+        run: |
+          DATA_STUDIO_SANDBOX=container docker compose --profile data-studio up -d data-studio
+          timeout 180 sh -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" $(docker compose ps -q data-studio))" = healthy ]; do sleep 3; done'
+          docker run --rm --network hangar_agents -v "$PWD/mcp-servers/data-studio/tests:/t" agent-hangar/mcp-data-studio python /t/smoke_mcp.py
+          test "$(docker ps -q --filter label=hangar.data-studio.sandbox | wc -l)" -ge 2
       - name: Logs on failure
         if: failure()
         run: docker compose --profile data-studio logs --tail 200 data-studio

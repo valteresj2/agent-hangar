@@ -5,7 +5,7 @@ import json
 import mimetypes
 from pathlib import Path
 
-from .common import chart_data, filename, fmt, scalar, table_data, theme
+from .common import chart_data, filename, fmt, lib_tag, scalar, table_data, theme
 
 CSS = """
 *{box-sizing:border-box;margin:0}html,body{height:100%;background:#000;font-family:Inter,system-ui,Segoe UI,sans-serif}
@@ -22,7 +22,7 @@ ul{font-size:clamp(14px,1.7vw,26px);line-height:1.5;padding-left:1.2em}li{margin
 table{border-collapse:collapse;width:100%;font-size:clamp(10px,1.1vw,17px)}th{background:var(--accent);color:#fff;text-align:left}
 th,td{padding:.45em .7em}tr:nth-child(even) td{background:var(--card)}
 .kpis{display:flex;gap:3%;flex:1;align-items:center}.kpi{flex:1 1 0;min-width:0;background:var(--card);border-radius:18px;padding:5% 3%;text-align:center}
-.kpi b{display:block;font-size:clamp(18px,2.6vw,44px);color:var(--accent);white-space:nowrap}.kpi span{font-size:clamp(12px,1.4vw,22px)}
+.kpi{container-type:inline-size}.kpi b{display:block;font-size:clamp(16px,11cqi,44px);color:var(--accent);white-space:nowrap}.kpi span{font-size:clamp(12px,1.4vw,22px)}
 .kpi i{display:block;font-style:normal;font-weight:700;margin-top:.4em}.up{color:#059669}.down{color:#DC2626}
 .img{flex:1;display:flex;justify-content:center;min-height:0}.img img{max-width:100%;max-height:100%;object-fit:contain}
 .txt{font-size:clamp(14px,1.8vw,28px);line-height:1.5;white-space:pre-wrap}
@@ -143,7 +143,7 @@ def build(spec: dict, base: Path, stem: str, q) -> str:
     root = ";".join(f"--{k}:#{t[k]}" for k in ("bg", "fg", "muted", "accent", "card"))
     doc = (f"<!doctype html><html lang=pt-BR><head><meta charset=utf-8><meta name=viewport content='width=device-width,"
            f"initial-scale=1'><title>{e(title)}</title><style>:root{{{root}}}{CSS}</style>"
-           "<script src='https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js'></script></head><body>"
+           f"{lib_tag('chartjs', spec.get('offline'))}</head><body>"
            f"<div class=deck>{''.join(parts)}</div><div class=nav><button onclick='show(i-1)'>◀</button>"
            f"<button onclick='show(i+1)'>▶</button></div><script>{JS}</script></body></html>")
     name = filename(stem, ".html")

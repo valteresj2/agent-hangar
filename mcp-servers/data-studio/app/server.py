@@ -46,7 +46,26 @@ mcp = FastMCP("data-studio", instructions=INSTRUCTIONS, stateless_http=True, jso
 def sid_of(ctx: Context) -> str:
     req = getattr(ctx.request_context, "request", None)
     raw = req.headers.get("x-session-id") if req is not None else None
-    return ws.session_id(raw)
+    sid = ws.session_id(raw)
+    ws.touch(sid)
+    return sid
+
+
+def sweep_expired() -> list[str]:
+    """Apaga workspaces sem uso há mais de RETENTION_DAYS (e derruba o kernel da sessão, se houver)."""
+    gone = ws.expired()
+    for sid in gone:
+        kernels.reset(sid)
+        ws.purge(sid)
+    if gone:
+        log.info("retenção: %d workspace(s) apagado(s)", len(gone))
+    return gone
+
+
+async def _retention_loop():
+    while True:
+        await asyncio.to_thread(sweep_expired)
+        await asyncio.sleep(3600)
 
 
 async def kcall(sid: str, fn: str, timeout: float = 180, **kwargs):
@@ -157,7 +176,8 @@ async def reset_python(ctx: Context) -> str:
 @mcp.tool()
 async def create_presentation(title: str, slides: list[dict], ctx: Context, subtitle: str | None = None,
                               theme: str = "light", accent: str | None = None, formats: list[str] | None = None,
-                              filename: str | None = None, footer: str | None = None) -> dict:
+                              filename: str | None = None, footer: str | None = None,
+                              offline: bool | None = None) -> dict:
     """Cria apresentação 16:9 em PPTX (gráficos nativos editáveis) e/ou HTML (formats=['pptx','html']).
     theme: light | dark | corporate; accent: cor hex. slides: lista de objetos, um por slide:
     {type:'title', title, subtitle} | {type:'section', title} | {type:'bullets', title, bullets:['...','  sub-item']}
@@ -165,12 +185,13 @@ async def create_presentation(title: str, slides: list[dict], ctx: Context, subt
     | {type:'chart', title, chart:{kind:'column|bar|stacked|line|area|pie|doughnut|scatter', categories:[...],
        series:[{name, values:[...]}]  OU  sql:'SELECT x, y1, y2 FROM ...', x:'x', y:['y1','y2']}, caption}
     | {type:'table', title, table:{columns, rows} OU {sql}, max_rows}
-    | {type:'kpis', title, items:[{label, value OU sql, format:'int|dec|pct|brl|usd', delta:'+12%'}]}
+    | {type:'kpis', title, items:[{label, value OU sql, format:'int|dec|pct|brl|usd|brl_compact|compact', delta:'+12%'}]}
     | {type:'image', title, path:'figura_1.png', caption} | {type:'text', title, text}.
-    Qualquer slide aceita notes (notas do apresentador). Os dados de sql vêm dos arquivos do workspace (DuckDB)."""
+    Qualquer slide aceita notes (notas do apresentador). Os dados de sql vêm dos arquivos do workspace (DuckDB).
+    offline=true embute a biblioteca de gráficos no HTML (abre sem internet; arquivo ~200 KB maior)."""
     sid = sid_of(ctx)
     spec = {"title": title, "subtitle": subtitle, "slides": slides, "theme": theme, "accent": accent,
-            "formats": formats or ["pptx", "html"], "filename": filename, "footer": footer}
+            "formats": formats or ["pptx", "html"], "filename": filename, "footer": footer, "offline": offline}
     names = await kcall(sid, "presentation", timeout=300, spec=spec)
     return {"files": links(sid, names)}
 
@@ -179,15 +200,17 @@ async def create_presentation(title: str, slides: list[dict], ctx: Context, subt
 async def create_dashboard(title: str, ctx: Context, kpis: list[dict] | None = None, charts: list[dict] | None = None,
                            tables: list[dict] | None = None, insights: list[str] | None = None,
                            subtitle: str | None = None, theme: str = "light", accent: str | None = None,
-                           filename: str | None = None) -> dict:
+                           filename: str | None = None, offline: bool | None = None) -> dict:
     """Cria um dashboard HTML interativo (Plotly: zoom, hover, exportar PNG; tabelas com filtro e ordenação).
-    kpis: [{label, value OU sql (1 valor), format:'int|dec|pct|brl|usd', delta}]
+    kpis: [{label, value OU sql (1 valor), format:'int|dec|pct|brl|usd|brl_compact|compact', delta}] —
+          prefira *_compact para valores grandes (R$ 6,26 mi)
     charts: [{title, kind:'column|bar|stacked|line|area|pie|doughnut|scatter|heatmap', sql:'SELECT ...', x, y:[...]
              OU categories/series, width:1|2, x_title, y_title, note}]
-    tables: [{title, sql OU columns/rows, max_rows}]; insights: frases com os achados principais."""
+    tables: [{title, sql OU columns/rows, max_rows}]; insights: frases com os achados principais.
+    offline=true embute o Plotly no HTML (abre sem internet; arquivo ~3,5 MB maior)."""
     sid = sid_of(ctx)
     spec = {"title": title, "subtitle": subtitle, "kpis": kpis or [], "charts": charts or [], "tables": tables or [],
-            "insights": insights or [], "theme": theme, "accent": accent, "filename": filename}
+            "insights": insights or [], "theme": theme, "accent": accent, "filename": filename, "offline": offline}
     name = await kcall(sid, "dashboard", timeout=300, spec=spec)
     return {"file": name, "url": ws.url(sid, name)}
 
@@ -201,6 +224,34 @@ async def create_document(title: str, markdown: str, ctx: Context, format: str =
     name = await kcall(sid, "document", timeout=240,
                        spec={"title": title, "markdown": markdown, "format": format, "filename": filename})
     return {"file": name, "url": ws.url(sid, name)}
+
+
+@mcp.tool()
+async def preview_file(path: str, ctx: Context, max_pages: int = 6):
+    """Renderiza um PPTX, DOCX, XLSX ou PDF do workspace como imagens (LibreOffice), uma por slide/página, e as
+    devolve para você VER o resultado: use depois de create_presentation/create_document para conferir layout,
+    textos cortados ou sobrepostos, gráficos vazios. Também devolve os links dos PNGs."""
+    from mcp.server.fastmcp import Image
+    sid = sid_of(ctx)
+    r = await kcall(sid, "preview", timeout=300, path=path, max_pages=max(1, min(max_pages, 12)))
+    content = [json.dumps({"pages": r["pages"], "blank_pages": r["blank_pages"],
+                           "files": links(sid, r["images"])}, ensure_ascii=False)]
+    for name in r["images"][:4]:  # as imagens vão ao LLM (visão); limita para não estourar o contexto
+        content.append(Image(data=await asyncio.to_thread(_thumb, ws.resolve(sid, name)), format="jpeg"))
+    return content
+
+
+def _thumb(p, width: int = 960) -> bytes:
+    import io
+
+    from PIL import Image as PILImage
+    with PILImage.open(p) as im:
+        im = im.convert("RGB")
+        if im.width > width:
+            im = im.resize((width, int(im.height * width / im.width)))
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=80)
+        return buf.getvalue()
 
 
 # ------------------------------------------------------------------ web
@@ -290,9 +341,12 @@ async def mcp_health(request: Request):
 async def main():
     logging.basicConfig(level=logging.INFO)
     ws.SESSIONS.mkdir(parents=True, exist_ok=True)
+    if kernels.SANDBOX == "container":
+        from . import sandbox
+        await asyncio.to_thread(sandbox.cleanup)
     servers = [uvicorn.Server(uvicorn.Config(mcp.streamable_http_app(), host="0.0.0.0", port=8000, log_level="info")),
                uvicorn.Server(uvicorn.Config(files_app, host="0.0.0.0", port=8001, log_level="warning"))]
-    await asyncio.gather(*(s.serve() for s in servers))
+    await asyncio.gather(*(s.serve() for s in servers), _retention_loop())
 
 
 if __name__ == "__main__":

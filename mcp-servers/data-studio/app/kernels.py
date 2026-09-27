@@ -1,8 +1,11 @@
 """Kernels Jupyter (ipykernel) com estado, um por sessão — o equivalente à "execução de código" do Claude.
 
-Cada kernel roda com o uid da sessão (setpriv), com HOME/cwd no workspace da sessão: variáveis sobrevivem entre
-chamadas da mesma conversa e uma conversa não enxerga os arquivos da outra. Timeout = SIGINT; se o kernel não
-voltar, é reiniciado (o estado se perde, e isso é dito na resposta).
+Dois backends (env SANDBOX):
+- "process" (padrão): o kernel é um processo neste container, com o uid da sessão (setpriv) e HOME/cwd no workspace
+  da sessão (modo 700). Uma conversa não lê os arquivos da outra; CPU/memória são compartilhados.
+- "container": cada sessão ganha o SEU container sandbox (app/sandbox.py), que monta só o diretório da sessão, com
+  limites próprios de memória/CPU/processos, sem capabilities e com FS raiz somente leitura.
+Timeout = SIGINT; se o kernel não voltar, é reiniciado (o estado se perde, e isso é dito na resposta).
 """
 import base64
 import json
@@ -19,6 +22,7 @@ from jupyter_client.connect import write_connection_file
 
 from . import workspace as ws
 
+SANDBOX = os.environ.get("SANDBOX", "process")
 IDLE_MIN = int(os.environ.get("KERNEL_IDLE_MIN", "45"))
 MAX_KERNELS = int(os.environ.get("MAX_KERNELS", "24"))
 OUTPUT_LIMIT = 12000
@@ -47,37 +51,55 @@ class Kernel:
 
     def _start(self):
         home = ws.workspace(self.sid)
-        uid = ws.session_uid(self.sid)
         conn = home / ".kernel.json"
-        write_connection_file(str(conn), ip="127.0.0.1")
+        write_connection_file(str(conn), ip=self.bind_ip)
         ws.fix_owner(self.sid, conn)
         conn.chmod(0o600)
-        env = {"HOME": str(home), "PATH": os.environ.get("PATH", ""), "PYTHONUNBUFFERED": "1",
-               "MPLCONFIGDIR": str(home / ".mpl"), "IPYTHONDIR": str(home / ".ipython"),
-               "JUPYTER_RUNTIME_DIR": str(home / ".jupyter"), "MPLBACKEND": "module://matplotlib_inline.backend_inline",
-               "LANG": "C.UTF-8", "PYTHONPATH": "/srv"}
+        host = self._launch(home, conn)
+        self.client = BlockingKernelClient()
+        self.client.load_connection_file(str(conn))
+        self.client.ip = host
+        self.client.start_channels()
+        self.client.wait_for_ready(timeout=90)
+        self._run(STARTUP, 60)
+
+    # ---- backend "process" (as subclasses trocam estes quatro métodos)
+    bind_ip = "127.0.0.1"
+
+    @staticmethod
+    def kernel_env(home: str) -> dict:
+        return {"HOME": home, "PATH": os.environ.get("PATH", ""), "PYTHONUNBUFFERED": "1",
+                "MPLCONFIGDIR": f"{home}/.mpl", "IPYTHONDIR": f"{home}/.ipython",
+                "JUPYTER_RUNTIME_DIR": f"{home}/.jupyter", "MPLBACKEND": "module://matplotlib_inline.backend_inline",
+                "LANG": "C.UTF-8", "PYTHONPATH": "/srv",
+                **{k: os.environ[k] for k in ("JS_LIB_DIR", "OFFLINE_HTML") if k in os.environ}}
+
+    def _launch(self, home, conn) -> str:
+        uid = ws.session_uid(self.sid)
         cmd = [sys.executable, "-m", "ipykernel_launcher", "-f", str(conn)]
         if os.geteuid() == 0:
             cmd = ["setpriv", f"--reuid={uid}", f"--regid={uid}", "--clear-groups", "--no-new-privs", *cmd]
-        self.proc = subprocess.Popen(cmd, cwd=str(home), env=env, stdout=subprocess.DEVNULL,
+        self.proc = subprocess.Popen(cmd, cwd=str(home), env=self.kernel_env(str(home)), stdout=subprocess.DEVNULL,
                                      stderr=subprocess.DEVNULL, start_new_session=True)
-        self.client = BlockingKernelClient()
-        self.client.load_connection_file(str(conn))
-        self.client.start_channels()
-        self.client.wait_for_ready(timeout=60)
-        self._run(STARTUP, 60)
+        return "127.0.0.1"
+
+    def _interrupt(self):
+        os.killpg(self.proc.pid, signal.SIGINT)
 
     def alive(self) -> bool:
         return self.proc.poll() is None
+
+    def _kill(self):
+        try:
+            os.killpg(self.proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
     def stop(self):
         try:
             self.client.stop_channels()
         finally:
-            try:
-                os.killpg(self.proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            self._kill()
 
     def restart(self):
         self.stop()
@@ -92,7 +114,7 @@ class Kernel:
             remaining = deadline - time.time()
             if remaining <= 0 and not timed_out:
                 timed_out = True
-                os.killpg(self.proc.pid, signal.SIGINT)
+                self._interrupt()
                 deadline = time.time() + 8
                 continue
             if remaining <= 0 and timed_out:
@@ -164,7 +186,11 @@ def get(sid: str) -> Kernel:
                 oldest = min(_kernels.values(), key=lambda x: x.last_used)
                 oldest.stop()
                 _kernels.pop(oldest.sid, None)
-            k = _kernels[sid] = Kernel(sid)
+            if SANDBOX == "container":
+                from .sandbox import ContainerKernel
+                k = _kernels[sid] = ContainerKernel(sid)
+            else:
+                k = _kernels[sid] = Kernel(sid)
         return k
 
 
@@ -189,4 +215,4 @@ threading.Thread(target=_reaper, daemon=True).start()
 
 
 def status() -> dict:
-    return {"kernels": len(_kernels), "sessions": json.dumps(sorted(_kernels))[:200]}
+    return {"sandbox": SANDBOX, "kernels": len(_kernels), "sessions": json.dumps(sorted(_kernels))[:200]}

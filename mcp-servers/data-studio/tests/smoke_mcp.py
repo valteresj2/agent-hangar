@@ -81,6 +81,17 @@ async def main():
                         markdown="## Resumo\n- **Sul** lidera\n\n[[table: select regiao, sum(vendas) v from vendas_2026 group by 1]]\n\n[[image: figura_1.png]]")
     check("docx", not err and json.loads(t)["file"] == "relatorio.docx", t)
 
+    err, t = await call(A, "preview_file", path="vendas_2026.pptx")
+    pv = json.loads(t) if not err else {}
+    check("preview_file (LibreOffice -> PNG, sem pagina em branco)",
+          not err and pv["pages"] >= 6 and not pv["blank_pages"] and len(pv["files"]) >= 6, t)
+    err, t = await call(A, "create_dashboard", title="Offline", offline=True,
+                        charts=[{"title": "x", "kind": "column", "categories": ["a"],
+                                 "series": [{"name": "s", "values": [1]}]}])
+    off_url = json.loads(t)["url"]
+    r = httpx.get(off_url.replace(off_url.split("/f/")[0], FILES))
+    check("dashboard offline embute o Plotly", "cdn.jsdelivr" not in r.text and len(r.text) > 1_000_000, len(r.text))
+
     internal = dash_url.replace(dash_url.split("/f/")[0], FILES)
     r = httpx.get(internal)
     check("download assinado (html inline)", r.status_code == 200 and "Plotly" in r.text, r.status_code)
@@ -93,7 +104,9 @@ async def main():
     check("B não lista arquivos de A", "vendas" not in t, t)
     err, t = await call(B, "run_python", code="import glob; print(glob.glob('/data/sessions/*/*'))\n"
                                              "print(open('/data/.files_secret').read())")
-    check("B não lê workspace nem segredo de A", "vendas" not in t and "Permission denied" in t, t)
+    # modo process: a pasta existe mas é de outro uid; modo container: o sandbox nem enxerga /data
+    check("B não lê workspace nem segredo de A",
+          "vendas" not in t and ("Permission denied" in t or "No such file" in t), t)
     err, t = await call(B, "run_sql", query="select * from read_csv_auto('/data/sessions/*/vendas_2026.csv')")
     check("SQL de B não lê arquivos de A", "vendas" not in t.split("Erro")[0] or "Erro" in t, t)
     print(f"\n{ok} checks ok")

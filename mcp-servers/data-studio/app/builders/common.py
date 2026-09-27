@@ -1,7 +1,9 @@
 """Utilidades dos geradores: dados de gráficos/tabelas (inline ou via SQL), temas e nomes de arquivo."""
 import math
+import os
 import re
 import unicodedata
+from pathlib import Path
 
 THEMES = {
     "light": {"bg": "FFFFFF", "fg": "1F2937", "muted": "6B7280", "accent": "4F46E5", "card": "F3F4F6",
@@ -67,10 +69,17 @@ def table_data(t: dict, query_df, limit: int = 500) -> tuple[list[str], list[lis
 
 
 def fmt(v, spec_fmt: str | None = None) -> str:
-    """Formata números no padrão pt-BR (1.234,5). spec_fmt: 'int' | 'pct' | 'brl' | 'usd' | 'dec'."""
+    """Formata números no padrão pt-BR (1.234,5). spec_fmt: 'int' | 'dec' | 'pct' | 'brl' | 'usd' | 'compact' |
+    'brl_compact' | 'usd_compact' (compactos: 6,26 mi / 812 mil / 1,2 bi — ideais para KPIs)."""
     if isinstance(v, str) or v is None:
         return "" if v is None else v
     f = float(v)
+    if spec_fmt in ("compact", "brl_compact", "usd_compact"):
+        prefix = {"brl_compact": "R$ ", "usd_compact": "US$ "}.get(spec_fmt, "")
+        for div, suf in ((1e9, " bi"), (1e6, " mi"), (1e3, " mil")):
+            if abs(f) >= div:
+                return prefix + f"{f / div:,.2f}".replace(",", "§").replace(".", ",").replace("§", ".") + suf
+        return prefix + fmt(f, "dec" if not f.is_integer() else "int")
     if spec_fmt == "pct":
         s = f"{f*100 if abs(f) <= 1 else f:,.1f}%"
     elif spec_fmt in ("brl", "usd"):
@@ -88,3 +97,19 @@ def scalar(item: dict, query_df):
         df = query_df(item["sql"])
         return None if df.empty else df.iat[0, 0]
     return item.get("value")
+
+
+# Bibliotecas JS dos HTMLs: CDN por padrão (arquivo leve) ou embutidas (offline=True: abre sem internet). As cópias
+# locais são baixadas no build da imagem (Dockerfile), nas mesmas versões fixadas aqui.
+LIBS = {"chartjs": ("chart.umd.min.js", "https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"),
+        "plotly": ("plotly.min.js", "https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js")}
+LIB_DIR = Path(os.environ.get("JS_LIB_DIR", Path(__file__).resolve().parent.parent / "static_libs"))
+OFFLINE_DEFAULT = os.environ.get("OFFLINE_HTML", "") == "1"
+
+
+def lib_tag(name: str, offline: bool | None) -> str:
+    fname, url = LIBS[name]
+    local = LIB_DIR / fname
+    if (OFFLINE_DEFAULT if offline is None else offline) and local.exists():
+        return "<script>" + local.read_text(encoding="utf-8").replace("</script", r"<\/script") + "</script>"
+    return f"<script src='{url}'></script>"

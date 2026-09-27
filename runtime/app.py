@@ -49,6 +49,30 @@ TOOL_OUTPUT_LIMIT = 16000
 # LibreChat) e é repassada aos MCPs, que a usam para separar workspaces, arquivos e estado por conversa.
 SESSION = contextvars.ContextVar("session", default="")
 CHANNEL = contextvars.ContextVar("channel", default="")
+# Progresso das tools durante o streaming (fila lida pelo gerador SSE) e modo "lite" (títulos, resumos: uma chamada
+# curta ao LLM, sem tools nem prompt do agente). Ver chat_completions.
+PROGRESS: contextvars.ContextVar = contextvars.ContextVar("progress", default=None)
+MODE = contextvars.ContextVar("mode", default="full")
+# Imagens devolvidas por tools MCP (ex.: preview_file) na rodada atual: vão ao LLM como mensagem de visão.
+TOOL_IMAGES: contextvars.ContextVar = contextvars.ContextVar("tool_images", default=None)
+MAX_TOOL_IMAGES = 4
+PROGRESS_STREAM = os.environ.get("PROGRESS_STREAM", "reasoning")  # "off" desliga
+
+
+def progress(text: str):
+    q = PROGRESS.get()
+    if q is not None:
+        q.put_nowait(text)
+
+
+_ARG_HINTS = ("query", "code", "title", "path", "url", "filename", "message", "markdown")
+
+
+def _describe(name: str, args: dict) -> str:
+    label = name.split("__")[-1]
+    hint = next((str(args[k]) for k in _ARG_HINTS if args.get(k)), "")
+    hint = " ".join(hint.strip().splitlines()[:1])[:140]
+    return f"🔧 {label}" + (f": {hint}" if hint else "")
 # Clientes que renderizam LaTeX com $…$ (LibreChat) transformam "R$ 10 … R$ 20" em fórmula. Para eles, o $ de
 # valores monetários sai escapado (\$), que o markdown exibe como "$". Fórmulas ($x^2$) não são afetadas.
 LATEX_DOLLAR_CHANNELS = {c.strip() for c in os.environ.get("LATEX_DOLLAR_CHANNELS", "librechat").split(",") if c}
@@ -128,7 +152,15 @@ async def _mcp_call(url, tool, args):
         async with ClientSession(r, w) as s:
             await s.initialize()
             res = await s.call_tool(tool, args)
-            text = "\n".join(getattr(c, "text", str(c)) for c in res.content)
+            images = TOOL_IMAGES.get()
+            texts = []
+            for c in res.content:
+                if getattr(c, "type", "") == "image":
+                    if images is not None:
+                        images.append((c.mimeType or "image/png", c.data))
+                    continue
+                texts.append(getattr(c, "text", str(c)))
+            text = "\n".join(texts)
             if len(text) > TOOL_OUTPUT_LIMIT:
                 text = text[:TOOL_OUTPUT_LIMIT] + f"\n… [truncado: {len(text)} caracteres]"
             return ("ERRO DA FERRAMENTA: " + text) if res.isError else text
@@ -268,7 +300,10 @@ def _data_url(url: str) -> tuple[str, str] | None:
 
 
 async def prepare_attachments(messages: list[dict], tools: list[Tool]) -> list[dict]:
-    """Anexos no formato OpenAI ({type:'image_url'} e {type:'file', file:{filename, file_data}}), como o LibreChat
+    """Notas em formato neutro ([📎 arquivo → workspace: nome]): texto em português aqui fazia o modelo responder em
+    português a um usuário que escreveu em inglês.
+
+    Anexos no formato OpenAI ({type:'image_url'} e {type:'file', file:{filename, file_data}}), como o LibreChat
     envia, são gravados no workspace via a tool `ingest_file` de um MCP do agente (se houver) e trocados por uma
     nota com o nome do arquivo. Imagens continuam indo ao LLM (visão), a menos que llm.vision=false."""
     ingest = next((t for t in tools if t.name.endswith("__ingest_file")), None)
@@ -288,7 +323,7 @@ async def prepare_attachments(messages: list[dict], tools: list[Tool]) -> list[d
                     ext = mimetypes.guess_extension(du[0]) or ".png"
                     name = await _ingest(ingest, f"imagem_{hashlib.sha256(du[1].encode()).hexdigest()[:8]}{ext}", du)
                 if name:
-                    notes.append(f"[imagem anexada, salva no workspace como {name}]")
+                    notes.append(f"[📎 image → workspace: {name}]")
                 if VISION:
                     parts.append(part)
             elif kind in ("file", "input_file"):
@@ -297,10 +332,10 @@ async def prepare_attachments(messages: list[dict], tools: list[Tool]) -> list[d
                 fname = f.get("filename") or "arquivo"
                 if du and ingest:
                     name = await _ingest(ingest, fname, du)
-                    notes.append(f"[arquivo anexado: {fname} ({du[0]}) salvo no workspace como {name}]"
-                                 if name else f"[arquivo anexado: {fname} — falha ao salvar no workspace]")
+                    notes.append(f"[📎 {fname} ({du[0]}) → workspace: {name}]"
+                                 if name else f"[📎 {fname} → workspace: ERROR (not saved)]")
                 else:
-                    notes.append(f"[arquivo anexado: {fname} — este agente não tem workspace para recebê-lo]")
+                    notes.append(f"[📎 {fname} → no workspace (this agent has no file tools)]")
             elif kind == "text":
                 parts.append(part)
         if notes:
@@ -341,9 +376,40 @@ async def mock_llm(messages, tools):
 
 
 async def chat(messages: list[dict]) -> tuple[str, dict, list]:
-    text, usage, trace = await _chat(messages)
+    text, usage, trace = await (_lite(messages) if MODE.get() == "lite" else _chat(messages))
     usage["cost_usd"] = cost_usd(usage)
     return text, usage, trace
+
+
+async def _lite(messages: list[dict]) -> tuple[str, dict, list]:
+    """Uma chamada curta, sem tools e sem o prompt do agente — para títulos de conversa e tarefas triviais do
+    cliente (o LibreChat manda os títulos por um endpoint com X-Hangar-Mode: lite)."""
+    msgs = [{"role": "system", "content": f"Você é o assistente '{SPEC.get('name', SLUG)}'. Responda de forma "
+                                          "direta e curta, sem usar ferramentas."}]
+    msgs += [{"role": m["role"], "content": text_of(m.get("content"))} for m in messages
+             if m.get("role") in ("system", "user", "assistant")][-6:]
+    if MODEL.startswith("mock"):
+        text = f"[mock:{SLUG}] {text_of(msgs[-1]['content'])[:60]}"
+        return text, {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}, []
+    headers = {"Authorization": f"Bearer {LLM_API_KEY}"} if LLM_API_KEY else {}
+    usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    # modelos com raciocínio gastam tokens antes do texto: um teto baixo devolve conteúdo vazio. 1500 costuma
+    # sobrar; se ainda vier vazio, uma segunda tentativa sem teto.
+    for limit in (1500, None):
+        payload = {"model": MODEL, "messages": msgs, "temperature": 0.2}
+        if limit:
+            payload["max_tokens"] = limit
+        async with httpx.AsyncClient(timeout=90) as c:
+            r = await c.post(f"{LLM_BASE_URL}/chat/completions", headers=headers, json=payload)
+        if r.status_code >= 400:
+            raise RuntimeError(f"LLM {r.status_code}: {r.text[:300]}")
+        data = r.json()
+        for k in usage:
+            usage[k] += (data.get("usage") or {}).get(k, 0)
+        text = (data["choices"][0]["message"].get("content") or "").strip()
+        if text:
+            return text, usage, []
+    return "", usage, []
 
 
 async def _chat(messages: list[dict]) -> tuple[str, dict, list]:
@@ -379,17 +445,29 @@ async def _chat(messages: list[dict]) -> tuple[str, dict, list]:
         if not calls:
             return msg.get("content") or "", usage, trace
         msgs.append(msg)
+        step_images: list = []
+        TOOL_IMAGES.set(step_images)
         for call in calls:
             name = call["function"]["name"]
             args = {}
+            t_call = time.monotonic()
             try:
                 args = json.loads(call["function"].get("arguments") or "{}")
+                progress(_describe(name, args))
                 out = await by_name[name].fn(args) if name in by_name else f"tool {name} inexistente"
             except Exception as e:
                 out = f"erro: {e}"
+            failed = str(out).startswith(("erro", "ERRO DA FERRAMENTA", "tool "))
+            progress(f" {'✗' if failed else '✓'} {time.monotonic() - t_call:.1f}s\n")
             trace.append({"tool": name, "args": {k: (str(v)[:200]) for k, v in args.items()},
                           "result": str(out)[:300]})
             msgs.append({"role": "tool", "tool_call_id": call["id"], "content": str(out)})
+        if step_images and VISION:
+            parts = [{"type": "text", "text": f"Imagens devolvidas pelas ferramentas nesta etapa ({len(step_images)}), "
+                                              "para você conferir visualmente:"}]
+            parts += [{"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
+                      for mime, b64 in step_images[:MAX_TOOL_IMAGES]]
+            msgs.append({"role": "user", "content": parts})
     # passos esgotados: uma última chamada SEM tools para o modelo resumir o que já tem
     msgs.append({"role": "user", "content": "Limite de passos atingido. Responda agora com o que já foi obtido, "
                                             "incluindo links de arquivos gerados, e diga o que ficou pendente."})
@@ -458,6 +536,7 @@ def set_session(req: Request, body: dict | None = None):
         sid = (body or {}).get("user") or h.get("x-user-id") or ""
     SESSION.set(str(sid)[:200])
     CHANNEL.set(h.get("x-channel", "").lower())
+    MODE.set("lite" if h.get("x-hangar-mode", "").lower() == "lite" else "full")
 
 
 @app.post("/v1/chat/completions")
@@ -471,19 +550,25 @@ async def chat_completions(req: Request):
                  "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
             return "data: " + json.dumps({**d, **(extra or {})}, ensure_ascii=False) + "\n\n"
 
-        # O agente trabalha (várias chamadas de tool) antes de ter a resposta: enquanto isso, mandamos
-        # comentários SSE de keepalive para proxies/clientes não derrubarem a conexão por inatividade.
+        # O agente trabalha (várias chamadas de tool) antes de ter a resposta. Enquanto isso: cada tool vira uma
+        # linha em `reasoning_content` (clientes como o LibreChat mostram num bloco recolhível de "pensamento",
+        # fora da resposta) e, sem novidade por 10s, um comentário SSE de keepalive segura a conexão.
+        queue: asyncio.Queue = asyncio.Queue()
+        show = PROGRESS_STREAM != "off" and req.headers.get("x-progress", "").lower() != "off"
+        PROGRESS.set(queue if show else None)
         task = asyncio.create_task(chat(body.get("messages", [])))
 
         async def sse():
             yield chunk({"role": "assistant", "content": ""})
-            while not task.done():
-                try:
-                    await asyncio.wait_for(asyncio.shield(task), timeout=10)
-                except TimeoutError:
+            while not task.done() or not queue.empty():
+                getter = asyncio.ensure_future(queue.get())
+                done, _ = await asyncio.wait({getter, task}, timeout=10, return_when=asyncio.FIRST_COMPLETED)
+                if getter in done:
+                    yield chunk({"reasoning_content": getter.result()})
+                    continue
+                getter.cancel()
+                if not done:
                     yield ": keepalive\n\n"
-                except Exception:
-                    break
             try:
                 text, usage, _trace = task.result()
             except Exception as e:

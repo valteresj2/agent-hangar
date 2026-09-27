@@ -479,10 +479,30 @@ http_headers = { Authorization = "Bearer ${esc(K)}" }</pre></div>
   <div class="card"><h2>OpenCode (opencode.json)</h2><pre>${esc(JSON.stringify({ mcp: { [mcpName]: { type: 'remote', url: c.mcp_url, headers: { Authorization: `Bearer ${K}` } } } }, null, 2))}</pre></div>
   <div class="card"><h2>ChatGPT / connectors</h2><div>Exige URL HTTPS pública. Publique o hangar atrás de um domínio/túnel e use <code>https://SEU-DOMINIO/mcp</code> como conector MCP.</div></div>
   <div class="card"><h2>Usar agentes já deployados</h2>
-    <h3>LibreChat (librechat.yaml → endpoints.custom)</h3><pre>- name: "Agente X"
-  apiKey: "${esc(K)}"
-  baseURL: "${esc(c.base_url)}/gw/&lt;slug&gt;/v1"
-  models: { default: ["&lt;slug&gt;"] }</pre>
+    <h3>LibreChat (librechat.yaml)</h3>
+    <div class="mute small">Kit completo (Docker Compose, anexos, workspace por conversa, títulos baratos): <code>integrations/librechat</code> no repositório. De dentro de um container, troque <code>localhost</code> por <code>host.docker.internal</code>.</div>
+    <pre>endpoints:
+  custom:
+    - name: "Agent Hangar"
+      apiKey: "${esc(K)}"
+      baseURL: "${esc(c.base_url)}/gw/&lt;slug&gt;/v1"
+      models: { default: ["&lt;slug&gt;"], fetch: false }
+      titleConvo: true
+      titleEndpoint: "Hangar Titulos"      # títulos numa chamada curta, sem ferramentas
+      headers:
+        X-Channel: "librechat"
+        X-Conversation-Id: "{{LIBRECHAT_BODY_CONVERSATIONID}}"   # 1 workspace/sessão por conversa
+        X-User-Id: "{{LIBRECHAT_USER_ID}}"
+    - name: "Hangar Titulos"
+      apiKey: "${esc(K)}"
+      baseURL: "${esc(c.base_url)}/gw/&lt;slug&gt;/v1"
+      models: { default: ["&lt;slug&gt;"], fetch: false }
+      titleConvo: false
+      headers: { X-Hangar-Mode: "lite" }
+fileConfig:
+  endpoints:
+    "Agent Hangar":                      # anexos chegam ao agente como arquivos
+      supportedMimeTypes: ["^image/.*", "^text/.*", "^application/.*"]</pre>
     <h3>OpenAI-compatible (OpenCode, Open WebUI, SDKs)</h3><pre>base_url = ${esc(c.base_url)}/gw/&lt;slug&gt;/v1   model = &lt;slug&gt;   api_key = ${esc(K)}</pre>
     <h3>A2A</h3><pre>Agent Card: ${esc(c.base_url)}/gw/&lt;slug&gt;/.well-known/agent.json\nRPC: POST ${esc(c.base_url)}/gw/&lt;slug&gt;/a2a  (message/send)</pre>
     <h3>ACP</h3><pre>POST ${esc(c.base_url)}/gw/&lt;slug&gt;/acp/runs</pre>

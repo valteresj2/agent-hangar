@@ -13,7 +13,7 @@ interface:
   agents: false          # o "agente" aqui é o do Agent Hangar; o construtor de agentes do LibreChat fica oculto
 
 modelSpecs:
-  enforce: false
+  enforce: true          # só os specs abaixo aparecem (esconde o endpoint técnico de títulos)
   prioritize: true
   list:
     - name: data-studio
@@ -37,12 +37,27 @@ endpoints:
       modelDisplayLabel: "Data Studio"
       titleConvo: true
       titleModel: "data-studio"
+      # títulos vão pelo endpoint "lite" abaixo: 1 chamada curta, sem ferramentas nem prompt do agente
+      titleEndpoint: "Hangar Titulos"
       summarize: false
       # O id da conversa vira a sessão do agente: cada conversa tem seu workspace de arquivos e kernel Python.
       headers:
         X-Channel: "librechat"
         X-Conversation-Id: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
         X-User-Id: "{{LIBRECHAT_USER_ID}}"
+      dropParams: ["stop", "frequency_penalty", "presence_penalty", "top_p", "user"]
+
+    # Endpoint técnico só para gerar títulos de conversa (X-Hangar-Mode: lite). Oculto pelo modelSpecs.enforce.
+    - name: "Hangar Titulos"
+      apiKey: "${HANGAR_INVOKE_KEY}"
+      baseURL: "${HANGAR_BASE_URL}/gw/data-studio/v1"
+      models:
+        default: ["data-studio"]
+        fetch: false
+      titleConvo: false
+      headers:
+        X-Channel: "librechat-title"
+        X-Hangar-Mode: "lite"
       dropParams: ["stop", "frequency_penalty", "presence_penalty", "top_p", "user"]
 
 fileConfig:

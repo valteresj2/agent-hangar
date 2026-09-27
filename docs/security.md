@@ -54,7 +54,14 @@ another's files or the link-signing secret; the smoke test checks this. Limits:
 - Kernels have outbound network access.
 - Resource limits are per container, not per session.
 
-Use it for trusted users of your organization. See `mcp-servers/data-studio/README.md`.
+With `DATA_STUDIO_SANDBOX=container`, each conversation gets its own sandbox container:
+- only its workspace is mounted;
+- per-session memory, CPU and PID limits;
+- read-only root FS and no capabilities;
+- a separate network with no path to agents or the database.
+
+Use that mode when users don't trust each other. In that mode Data Studio talks to Docker through its own socket
+proxy, so the Docker-socket caveat above applies to it too. See `mcp-servers/data-studio/README.md`.
 
 ## Network exposure
 

@@ -151,3 +151,32 @@ def snapshot(sid: str) -> dict[str, float]:
 def changed(sid: str, before: dict[str, float]) -> list[dict]:
     after = snapshot(sid)
     return [{"path": k, "url": url(sid, k)} for k, v in sorted(after.items()) if before.get(k) != v]
+
+
+# ------------------------------------------------------------------ retenção
+RETENTION_DAYS = float(os.environ.get("RETENTION_DAYS", "30"))  # 0 = nunca apaga
+
+
+def touch(sid: str):
+    """Marca uso da sessão (a retenção conta a partir do último uso, não da criação)."""
+    marker = workspace(sid) / ".last_used"
+    marker.touch()
+    fix_owner(sid, marker)
+
+
+def last_used(p: Path) -> float:
+    marker = p / ".last_used"
+    return (marker if marker.exists() else p).stat().st_mtime
+
+
+def expired(now: float | None = None) -> list[str]:
+    import time
+    if RETENTION_DAYS <= 0 or not SESSIONS.exists():
+        return []
+    limit = (now or time.time()) - RETENTION_DAYS * 86400
+    return [p.name for p in SESSIONS.iterdir() if p.is_dir() and last_used(p) < limit]
+
+
+def purge(sid: str):
+    import shutil
+    shutil.rmtree(SESSIONS / sid, ignore_errors=True)

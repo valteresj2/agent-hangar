@@ -21,3 +21,13 @@
 - Figuras do matplotlib geradas antes (figura_N.png) entram com `{type:'image', path:'figura_N.png'}`.
 - Padrão formats=['pptx','html']: o PPTX é editável no PowerPoint, e o HTML abre direto no navegador
   (setas/clique para navegar, F para tela cheia).
+
+## Revisão visual (preview_file)
+- Depois de gerar, rode `preview_file` no .pptx e verifique:
+  - títulos com mais de 2 linhas;
+  - bullets que passam do rodapé;
+  - tabelas com mais de 8 linhas;
+  - gráficos sem dados;
+  - rótulos sobrepostos.
+- `blank_pages` na resposta indica slides que renderizaram vazios. Investigue.
+- `offline=true` embute a biblioteca de gráficos no HTML. Use quando o usuário for apresentar sem internet.

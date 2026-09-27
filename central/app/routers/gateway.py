@@ -19,7 +19,7 @@ from .internal import caller_agent, may_call
 
 router = APIRouter()
 
-FORWARD = ("x-session-id", "x-conversation-id", "x-user-id", "x-channel")
+FORWARD = ("x-session-id", "x-conversation-id", "x-user-id", "x-channel", "x-hangar-mode", "x-progress")
 HOP_BY_HOP = {"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "content-length",
               "content-encoding", "proxy-authenticate", "proxy-authorization"}
 

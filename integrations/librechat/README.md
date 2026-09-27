@@ -38,13 +38,18 @@ LibreChat ──(OpenAI-compatible, invoke key, X-Conversation-Id)──▶ Agen
    - PDFs, spreadsheets and other files as `{type:"file", file:{filename, file_data}}`.
 
    The agent runtime saves every attachment in the workspace through the MCP tool `ingest_file`, and replaces it in the
-   prompt with a note: *"[arquivo anexado: vendas.xlsx salvo no workspace como vendas.xlsx]"*. Images still reach the
+   prompt with a language-neutral note: `[📎 vendas.xlsx (…) → workspace: vendas.xlsx]`. Images still reach the
    LLM for vision. `resendFiles` re-sends attachments on later turns, and the workspace deduplicates them by content.
 4. **Output.** Answers are markdown with links to the generated files (xlsx, pptx, html, docx, png). Currency values
    such as `R$ 10` are escaped for LibreChat's LaTeX renderer (see `LATEX_DOLLAR_CHANNELS`), so they don't turn into
    formulas.
-5. **Long jobs.** While the agent is calling tools, the stream sends SSE keepalives every 10 s, so neither LibreChat nor
-   a proxy drops the connection.
+5. **Live progress.** While the agent calls tools, each call streams as `reasoning_content`, e.g.
+   `🔧 run_sql: SELECT regiao, sum(receita)… ✓ 0.1s`. LibreChat shows it in a collapsible "Thoughts" block, apart from
+   the answer. Quiet periods send SSE keepalives, so neither LibreChat nor a proxy drops the connection. Disable per
+   request with `X-Progress: off`, or globally with `PROGRESS_STREAM=off`.
+6. **Cheap titles.** `titleEndpoint: "Hangar Titulos"` routes title generation to a second, hidden endpoint with
+   `X-Hangar-Mode: lite`: one short LLM call with no tools and no agent prompt. In the test it used about 250 tokens
+   instead of about 5,500. `modelSpecs.enforce` hides that endpoint from the model picker.
 
 ## Run it
 

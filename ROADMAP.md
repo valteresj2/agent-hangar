@@ -12,7 +12,10 @@ Each item links to a GitHub issue once the repository is public. Priorities foll
 - UI (create, spec editor, templates, keys), `hangar` CLI, GitOps `apply`, 6 templates
 - Alembic migrations, pytest suite, CI
 
-## v0.2 — reliable
+## v0.2 — delivered ✅ (Data Studio, LibreChat kit, live progress, sandbox per conversation)
+- See CHANGELOG 0.2.0
+
+## v0.3 — reliable (moved from v0.2)
 - Real token streaming from the agent runtime (today the full answer is sent as one SSE chunk)
 - Redis-backed job queue so the hangar can run with multiple replicas
 - A2A task lifecycle (`tasks/get`, streaming, push notifications)

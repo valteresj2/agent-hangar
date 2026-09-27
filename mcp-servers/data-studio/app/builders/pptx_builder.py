@@ -143,6 +143,8 @@ class Deck:
                 data.add_series(se["name"], [v if v is not None else 0 for v in se["values"]])
         gf = s.shapes.add_chart(KINDS.get(kind, XL_CHART_TYPE.COLUMN_CLUSTERED), Inches(0.9), top, Inches(11.6), h, data)
         c = gf.chart
+        # com uma série só, o PowerPoint usa o nome da série como título automático — o título do slide já basta
+        c.has_title = False
         c.font.size = Pt(12)
         c.font.color.rgb = rgb(self.t["fg"])
         c.has_legend = len(series) > 1 or kind in ("pie", "doughnut")
@@ -215,9 +217,10 @@ class Deck:
             card.fill.solid()
             card.fill.fore_color.rgb = rgb(self.t["card"])
             card.line.fill.background()
-            val = scalar(it, self.q)
-            self.text(s, x, Inches(2.5), w, Inches(1.2), fmt(val, it.get("format")), 36, True, self.t["accent"],
-                      PP_ALIGN.CENTER)
+            val = fmt(scalar(it, self.q), it.get("format"))
+            # fonte proporcional à largura do card: valores longos em cards estreitos não quebram a linha
+            size = max(18, min(36, int(w / 914400 * 72 / max(len(val), 1) * 1.7)))
+            self.text(s, x, Inches(2.5), w, Inches(1.2), val, size, True, self.t["accent"], PP_ALIGN.CENTER)
             self.text(s, x, Inches(3.7), w, Inches(0.6), it.get("label", ""), 16, color=self.t["fg"],
                       align=PP_ALIGN.CENTER)
             if it.get("delta"):

@@ -6,6 +6,7 @@ Cria agentes temporários (prefixo e2e-), exercita os 4 protocolos + MCP pelo ga
 interno, um job de harness (imagem base/mock), escopos de chave e a recusa de tokens internos forjados — e
 apaga tudo no final. Sai com código != 0 na primeira falha.
 """
+import json
 import os
 import sys
 import time
@@ -17,6 +18,7 @@ URL = os.environ.get("HANGAR_URL", "http://localhost:8090").rstrip("/")
 TOKEN = os.environ["HANGAR_TOKEN"]
 RUN = uuid.uuid4().hex[:6]
 A, B, H = f"e2e-{RUN}-member", f"e2e-{RUN}-orch", f"e2e-{RUN}-harness"
+D = f"e2e-{RUN}-data"  # só com SMOKE_DATA_STUDIO=1 (precisa do MCP Data Studio no ar)
 c = httpx.Client(base_url=URL, timeout=300, headers={"Authorization": f"Bearer {TOKEN}"})
 passed = 0
 
@@ -93,6 +95,33 @@ def main():
                         headers={"X-Agent-Slug": B, "Authorization": f"Bearer {TOKEN}"})
     check("token interno forjado recusado", forged.status_code == 401, forged.text)
     check("dashboard interno exige credencial", httpx.get(f"{URL}/internal/dashboard/overview").status_code == 401)
+    if os.environ.get("SMOKE_DATA_STUDIO") == "1":
+        attachments()
+
+
+def attachments():
+    """Anexo no formato OpenAI (como o LibreChat envia) -> runtime -> ingest_file do Data Studio -> workspace."""
+    import base64
+    if not any(m["name"] == "data-studio" for m in ok(c.get("/api/catalog"))["mcp_servers"]):
+        ok(c.post("/api/catalog/mcps", json={"name": "data-studio", "url": "http://data-studio:8000/mcp"}))
+    ok(c.post("/api/apply", json={"agents": [{"name": "E2E data", "slug": D, "objective": "eco", "final_output": "eco",
+                                              "spec": {"mcps": ["data-studio"]}}]}))
+    ok(c.post(f"/api/agents/{D}/ship"))
+    csv = base64.b64encode(b"cidade,populacao\nAurora,120\nSerra,340\n").decode()
+    body = {"model": D, "stream": True, "messages": [{"role": "user", "content": [
+        {"type": "file", "file": {"filename": "cidades.csv", "file_data": f"data:text/csv;base64,{csv}"}},
+        {"type": "text", "text": "qual a maior?"}]}]}
+    text = ""
+    with c.stream("POST", f"/gw/{D}/v1/chat/completions", json=body,
+                  headers={"X-Conversation-Id": f"e2e-conv-{RUN}", "X-Channel": "e2e"}) as r:
+        for line in r.iter_lines():
+            if line.startswith("data: {"):
+                delta = json.loads(line[6:])["choices"][0]["delta"]
+                text += delta.get("content") or ""
+    check("anexo gravado no workspace da conversa (via MCP)", "→ workspace: cidades.csv" in text, text)
+    usage = ok(c.get("/api/usage"))
+    mine = [u for u in usage if u.get("agent") == D and u["channel"] == "e2e"]
+    check("uso de resposta em streaming registrado com tokens", mine and mine[0]["tokens"] > 0, mine[:1])
 
 
 if __name__ == "__main__":
@@ -100,6 +129,6 @@ if __name__ == "__main__":
         main()
         print(f"\n{passed} checks ok")
     finally:
-        for slug in (B, A, H):
+        for slug in (B, A, H, D):
             c.delete(f"/api/agents/{slug}")
     sys.exit(0)

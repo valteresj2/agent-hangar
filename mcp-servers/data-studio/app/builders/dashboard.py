@@ -4,14 +4,14 @@ import html
 import json
 from pathlib import Path
 
-from .common import chart_data, filename, fmt, scalar, table_data, theme
+from .common import chart_data, filename, fmt, lib_tag, scalar, table_data, theme
 
 CSS = """
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,Segoe UI,sans-serif;background:var(--bg2);color:var(--fg)}
 header{padding:28px 32px 8px}h1{margin:0;font-size:26px}.sub{color:var(--muted);margin-top:4px}
 main{padding:12px 32px 40px;display:grid;gap:16px}.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
 .card{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:16px 18px;min-width:0}
-.kpi b{display:block;font-size:clamp(18px,1.9vw,28px);color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.kpi span{color:var(--muted);font-size:13px}
+.kpi{container-type:inline-size}.kpi b{display:block;font-size:clamp(14px,9.5cqi,28px);color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.kpi span{color:var(--muted);font-size:13px}
 .kpi i{font-style:normal;font-weight:700;font-size:13px;margin-left:6px}.up{color:#059669}.down{color:#DC2626}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.w2{grid-column:1/-1}
 h2{font-size:15px;margin:0 0 8px}.plot{height:340px}.note{color:var(--muted);font-size:13px;margin-top:6px}
@@ -111,7 +111,7 @@ def build(spec: dict, base: Path, q) -> str:
                "pal": ["#" + c for c in t["palette"]]}
     doc = (f"<!doctype html><html lang=pt-BR><head><meta charset=utf-8><meta name=viewport content='width=device-width,"
            f"initial-scale=1'><title>{e(title)}</title><style>:root{{{root}}}{CSS}</style>"
-           "<script src='https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js'></script></head><body>"
+           f"{lib_tag('plotly', spec.get('offline'))}</head><body>"
            f"<header><h1>{e(title)}</h1>{sub_html}</header>"
            f"<main>{kpis_html}{ins_html}"
            f"<div class=grid>{''.join(blocks)}</div></main>"

@@ -54,3 +54,39 @@ def dashboard(spec: dict) -> str:
 def document(spec: dict) -> str:
     from .builders import documents
     return documents.build(spec, HERE, query_df)
+
+
+def preview(path: str, max_pages: int = 6, width: int = 1280) -> dict:
+    """Renderiza PPTX/DOCX/XLSX/ODP (via LibreOffice → PDF) ou PDF em PNGs, uma imagem por página/slide."""
+    import subprocess
+
+    import pdfplumber
+    src = HERE / path
+    if not src.exists():
+        raise FileNotFoundError(f"{path} não existe no workspace")
+    tmp = HERE / ".preview"
+    tmp.mkdir(exist_ok=True)
+    if src.suffix.lower() == ".pdf":
+        pdf = src
+    else:
+        # perfil do LibreOffice explícito: o uid da sessão não tem entrada em /etc/passwd e sem isso ele trava
+        profile = (HERE / ".lo-profile").resolve().as_uri()
+        r = subprocess.run(["soffice", f"-env:UserInstallation={profile}", "--headless", "--norestore",
+                            "--convert-to", "pdf", "--outdir", str(tmp), str(src)],
+                           capture_output=True, text=True, timeout=180)
+        pdf = tmp / (src.stem + ".pdf")
+        if not pdf.exists():
+            raise RuntimeError(f"LibreOffice não converteu {path}: {(r.stderr or r.stdout)[-400:]}")
+    out, blank = [], []
+    with pdfplumber.open(pdf) as doc:
+        total = len(doc.pages)
+        for i, page in enumerate(doc.pages[:max_pages], 1):
+            im = page.to_image(resolution=int(72 * width / max(page.width, 1))).original.convert("RGB")
+            name = f"preview_{src.stem}_{i}.png"
+            im.save(HERE / name)
+            out.append(name)
+            # página "em branco": praticamente sem variação de cor (render quebrado ou slide vazio)
+            lo, hi = im.convert("L").getextrema()
+            if hi - lo < 8:
+                blank.append(i)
+    return {"pages": total, "images": out, "blank_pages": blank}

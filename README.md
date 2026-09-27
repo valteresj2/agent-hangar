@@ -14,7 +14,11 @@ isolated container · use them anywhere via **OpenAI-compatible, A2A, ACP and MC
 
 </div>
 
-> **Status: alpha (v0.1).** It works end-to-end and is covered by tests, but APIs may still change. Run it
+<p align="center"><img src="docs/assets/demo.gif" width="860"
+alt="LibreChat powered by the Data Studio agent: attach a spreadsheet, a PDF and a photo; watch the tools run; get
+findings, a dashboard and a deck"></p>
+
+> **Status: alpha (v0.2).** It works end-to-end and is covered by tests, but APIs may still change. Run it
 > inside your network, not on the open internet, until you have read [docs/security.md](docs/security.md).
 
 ---
@@ -166,6 +170,12 @@ cd integrations/librechat && ./setup.sh && docker compose up -d     # http://loc
 
 See [integrations/librechat](integrations/librechat/) for how the pieces connect and why this is the recommended
 integration.
+
+| Answer in LibreChat (tools stream live into a collapsible "Thoughts" block) | Generated dashboard | Generated deck (PPTX + HTML) |
+|---|---|---|
+| ![answer](docs/assets/librechat-answer.png) | ![dashboard](docs/assets/dashboard.png) | ![slides](docs/assets/slides.png) |
+
+`python scripts/demo/record_demo.py` regenerates the GIF and these screenshots (Playwright).
 
 ## CLI and GitOps
 

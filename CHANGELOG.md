@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-27
+
 ### Added
 - **Data Studio MCP server** (`mcp-servers/data-studio`, compose profile `data-studio`):
   - a per-conversation workspace, with its own uid and its own stateful Python kernel;
@@ -21,6 +23,20 @@ All notable changes to this project are documented here. The format follows
   - SSE keepalive while tools run;
   - currency `$` is escaped for LaTeX-rendering channels.
 - Spec: `llm.max_steps` and `llm.vision`.
+- **Live tool progress** streamed as `reasoning_content` (a collapsible "Thoughts" block in LibreChat).
+- **Lite mode** (`X-Hangar-Mode: lite`): one short LLM call without tools, used for conversation titles (about 20x
+  cheaper). The LibreChat kit routes titles there via `titleEndpoint`.
+- Images returned by MCP tools are passed to vision models, so an agent can look at its own output.
+- Data Studio:
+  - `preview_file` renders PPTX/DOCX/XLSX/PDF with LibreOffice and returns the images to the agent for visual QA;
+  - `offline=true` embeds the chart libraries in HTML;
+  - compact KPI formats (`R$ 6,26 mi`);
+  - workspace retention (`RETENTION_DAYS`);
+  - optional **one sandbox container per conversation** (`DATA_STUDIO_SANDBOX=container`).
+- The UI "Connect" page shows the full LibreChat config (per-conversation sessions, attachments, titles).
+- E2E: attachments flow through the gateway into the MCP workspace; streamed usage is recorded. CI also runs the Data
+  Studio smoke test in container-sandbox mode, plus the retention test.
+- README demo GIF and screenshots, recorded by `scripts/demo/record_demo.py`.
 
 ### Changed
 - Postgres moved to an internal `db_net` network that agents can't reach.
