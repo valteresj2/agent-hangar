@@ -1,11 +1,12 @@
 """Empresa, times, membros, usuários, pedidos de acesso, aprovação de produção e orçamento por time."""
+import re
 import time
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import auth
+from .. import auth, config
 from ..models import (
     AccessRequest,
     Agent,
@@ -231,7 +232,8 @@ def remove_member(db: Session, acc: Access, team: str | int, user_id: int):
 def user_dict(db: Session, u: User, with_teams=True) -> dict:
     d = {"id": u.id, "email": u.email, "name": u.name, "avatar_url": u.avatar_url, "org_role": u.org_role,
          "provider": u.provider, "active": u.active, "created_at": iso(u.created_at),
-         "last_login_at": iso(u.last_login_at), "scim": bool(u.external_id)}
+         "last_login_at": iso(u.last_login_at), "scim": bool(u.external_id), "username": u.username,
+         "has_password": bool(u.password_hash)}
     if with_teams:
         d["teams"] = [{"id": t.id, "slug": t.slug, "name": t.name, "role": m.role, "source": m.source}
                       for m, t in db.execute(select(TeamMember, Team).join(Team, Team.id == TeamMember.team_id)
@@ -245,25 +247,65 @@ def list_users(db: Session, acc: Access) -> list[dict]:
     return [user_dict(db, u) for u in db.scalars(select(User).order_by(User.email))]
 
 
-def create_user(db: Session, acc: Access, email: str, name: str = "", org_role: str = "member") -> User:
+USERNAME = re.compile(r"^[a-z0-9][a-z0-9._-]{2,79}$")
+
+
+def _check_username(db: Session, username: str, user_id: int | None = None) -> str:
+    username = (username or "").strip().lower()
+    if not USERNAME.match(username):
+        raise PlatformError("usuário: 3 a 80 caracteres, letras minúsculas, números, ponto, _ ou -")
+    other = db.scalar(select(User).where(User.username == username))
+    if other and other.id != user_id:
+        raise PlatformError(f"o usuário '{username}' já existe")
+    return username
+
+
+def create_user(db: Session, acc: Access, email: str = "", name: str = "", org_role: str = "member",
+                username: str | None = None, password: str | None = None) -> User:
+    """Pré-cadastro (entra depois por SSO) ou conta local, quando vem com usuário e senha. Sem e-mail, a conta
+    local recebe <usuário>@local (troque depois para o e-mail real, e o SSO passa a reconhecê-la)."""
     if not acc.p.is_admin:
         raise Forbidden("Só admins cadastram usuários")
+    if username:
+        username = _check_username(db, username)
+        if not config.LOCAL_LOGIN:
+            raise PlatformError("contas locais estão desligadas (LOCAL_LOGIN=0)")
+        if not password:
+            raise PlatformError("informe a senha da conta local")
+    email = (email or (f"{username}@local" if username else "")).strip().lower()
     if user_by_email(db, email):
         raise PlatformError("já existe um usuário com esse e-mail")
-    u = ensure_user(db, email, name)
+    u = ensure_user(db, email, name or username or "")
+    if username:
+        u.username, u.password_hash = username, auth.hash_password(password)
+        db.commit()
     if org_role != "member":
         update_user(db, acc, u.id, org_role=org_role)
-    audit(db, acc.p.name, "user.create", u.email, org_role)
+    audit(db, acc.p.name, "user.create", u.email, f"{org_role}{' (conta local ' + username + ')' if username else ''}")
     return u
 
 
 def update_user(db: Session, acc: Access, user_id: int, org_role: str | None = None, active: bool | None = None,
-                name: str | None = None) -> User:
+                name: str | None = None, username: str | None = None, password: str | None = None,
+                email: str | None = None) -> User:
     if not acc.p.is_admin:
         raise Forbidden("Só admins alteram usuários")
     u = db.get(User, user_id)
     if not u:
         raise PlatformError("usuário não encontrado")
+    if username:
+        u.username = _check_username(db, username, u.id)
+    if password:
+        if not u.username:
+            raise PlatformError("defina um nome de usuário para a conta local antes da senha")
+        u.password_hash = auth.hash_password(password)
+        auth.revoke_user_sessions(db, u.id)  # senha redefinida: sessões antigas caem
+        audit(db, acc.p.name, "user.password_reset", u.email)
+    if email and email.strip().lower() != u.email:
+        email = email.strip().lower()
+        if "@" not in email or user_by_email(db, email):
+            raise PlatformError("e-mail inválido ou já usado por outro usuário")
+        u.email = email
     if org_role is not None:
         if org_role not in ORG_ROLES:
             raise PlatformError(f"papel inválido; opções: {ORG_ROLES}")
@@ -280,6 +322,46 @@ def update_user(db: Session, acc: Access, user_id: int, org_role: str | None = N
         reconcile_keys(db, [u.id], acc.p.name)
     audit(db, acc.p.name, "user.update", u.email, f"role={u.org_role} active={u.active}")
     return u
+
+
+# senha falsa para igualar o tempo de resposta quando o usuário não existe (não revela quem existe)
+_DUMMY_HASH = None
+
+
+def password_login(db: Session, login: str, password: str) -> User:
+    """Login com conta local. Mesmo erro para usuário inexistente e senha errada; 5 erros bloqueiam 15 min."""
+    global _DUMMY_HASH
+    if not config.LOCAL_LOGIN:
+        raise Forbidden("login com usuário e senha está desligado nesta instalação")
+    login = (login or "").strip().lower()
+    key = f"pw:{login}"
+    if auth.locked_out(key):
+        raise Forbidden("muitas tentativas erradas — espere 15 minutos")
+    u = db.scalar(select(User).where((User.username == login) | (User.email == login)))
+    _DUMMY_HASH = _DUMMY_HASH or auth.hash_password("x" * 12)
+    ok = auth.verify_password(password, u.password_hash if u and u.password_hash else _DUMMY_HASH)
+    if not (u and u.password_hash and ok):
+        auth.register_fail(key)
+        audit(db, login[:80] or "?", "auth.login_failed", "password")
+        raise Forbidden("usuário ou senha inválidos")
+    if not u.active:
+        raise Forbidden("usuário desativado — fale com um administrador")
+    auth.clear_fails(key)
+    u.last_login_at = now()
+    db.commit()
+    audit(db, u.email, "auth.login", "password")
+    return u
+
+
+def change_password(db: Session, acc: Access, current: str, new: str):
+    if not acc.p.is_user:
+        raise Forbidden("só usuários trocam a própria senha")
+    u = db.get(User, acc.p.user_id)
+    if not u.password_hash or not auth.verify_password(current, u.password_hash):
+        raise Forbidden("senha atual incorreta")
+    u.password_hash = auth.hash_password(new)
+    db.commit()
+    audit(db, u.email, "user.password_change", u.email)
 
 
 def deactivate(db: Session, u: User, actor: str):

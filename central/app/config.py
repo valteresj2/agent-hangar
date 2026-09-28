@@ -30,6 +30,8 @@ PUBLIC_BASE_URL = _env("PUBLIC_BASE_URL", "http://localhost:8090").rstrip("/")
 # ou na página "SSO e SCIM" da UI (o que for salvo lá tem prioridade).
 SESSION_TTL_HOURS = int(_env("SESSION_TTL_HOURS", "12"))
 BOOTSTRAP_ADMIN_EMAILS = {e.strip().lower() for e in _env("BOOTSTRAP_ADMIN_EMAILS").split(",") if e.strip()}
+# Contas locais (usuário e senha). Empresas que exigem só SSO desligam com LOCAL_LOGIN=0.
+LOCAL_LOGIN = _env("LOCAL_LOGIN", "1") == "1"
 COOKIE_SECURE = _env("COOKIE_SECURE", "1" if PUBLIC_BASE_URL.startswith("https://") else "0") == "1"
 INTERNAL_BASE_URL = _env("INTERNAL_BASE_URL", "http://central:8080").rstrip("/")
 

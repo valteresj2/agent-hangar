@@ -222,6 +222,9 @@ class User(Base):
     provider: Mapped[str | None] = mapped_column(String(20), nullable=True)  # google | microsoft | github | oauth2
     subject: Mapped[str | None] = mapped_column(String(200), nullable=True)  # id do usuário no provedor
     external_id: Mapped[str | None] = mapped_column(String(200), nullable=True)  # externalId do SCIM
+    # conta local (usuário e senha), opcional: LOCAL_LOGIN=0 desliga. Só o hash scrypt é guardado.
+    username: Mapped[str | None] = mapped_column(String(80), nullable=True, unique=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(300), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

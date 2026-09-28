@@ -106,6 +106,49 @@ def api_key_dict(k: ApiKey) -> dict:
             "revoked": k.revoked_at is not None, "client": k.client, "mode": k.mode, "user_id": k.user_id}
 
 
+# ------------------------------------------------------------------ contas locais (usuário e senha)
+_SCRYPT = {"n": 2 ** 15, "r": 8, "p": 1, "maxmem": 64 * 1024 * 1024, "dklen": 32}
+MIN_PASSWORD = 8
+_FAILS: dict[str, list[float]] = {}
+MAX_FAILS, LOCK_S = 5, 900
+
+
+def hash_password(password: str) -> str:
+    if len(password or "") < MIN_PASSWORD:
+        raise ValueError(f"a senha precisa ter pelo menos {MIN_PASSWORD} caracteres")
+    salt = secrets.token_bytes(16)
+    dk = hashlib.scrypt(password.encode(), salt=salt, **_SCRYPT)
+    return f"scrypt${_SCRYPT['n']}${_SCRYPT['r']}${_SCRYPT['p']}${salt.hex()}${dk.hex()}"
+
+
+def verify_password(password: str, stored: str | None) -> bool:
+    try:
+        algo, n, r, p, salt, dk = (stored or "").split("$")
+        if algo != "scrypt":
+            return False
+        got = hashlib.scrypt((password or "").encode(), salt=bytes.fromhex(salt), n=int(n), r=int(r), p=int(p),
+                             maxmem=_SCRYPT["maxmem"], dklen=len(dk) // 2)
+        return hmac.compare_digest(got.hex(), dk)
+    except (ValueError, TypeError):
+        return False
+
+
+def locked_out(key: str) -> bool:
+    """Contra força bruta: 5 erros em 15 min bloqueiam o login daquela conta por 15 min."""
+    now_s = time.monotonic()
+    fails = [t for t in _FAILS.get(key, []) if now_s - t < LOCK_S]
+    _FAILS[key] = fails
+    return len(fails) >= MAX_FAILS
+
+
+def register_fail(key: str):
+    _FAILS.setdefault(key, []).append(time.monotonic())
+
+
+def clear_fails(key: str):
+    _FAILS.pop(key, None)
+
+
 # ------------------------------------------------------------------ sessões da UI
 def create_session(db: Session, user: User | None = None, admin: bool = False, label: str = "") -> str:
     raw = SESSION_PREFIX + secrets.token_urlsafe(32)

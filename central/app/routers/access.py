@@ -32,9 +32,34 @@ class TokenLogin(BaseModel):
     token: str
 
 
+class PasswordLogin(BaseModel):
+    username: str  # usuário ou e-mail
+    password: str
+
+
+class PasswordChange(BaseModel):
+    current: str
+    new: str
+
+
 @router.get("/auth/providers")
 def providers(db=Depends(db_dep)):
-    return {"providers": sso.public_providers(db), "token_login": True}
+    return {"providers": sso.public_providers(db), "token_login": True, "password_login": config.LOCAL_LOGIN}
+
+
+@router.post("/auth/password")
+def password_login(body: PasswordLogin, db=Depends(db_dep)):
+    """Conta local: usuário (ou e-mail) e senha -> sessão em cookie."""
+    user = guard(lambda: org.password_login(db, body.username, body.password))
+    resp = JSONResponse({"ok": True})
+    _set_session(resp, auth.create_session(db, user))
+    return resp
+
+
+@router.post("/me/password")
+def change_password(body: PasswordChange, request: Request, db=Depends(db_dep)):
+    guard(lambda: org.change_password(db, acc(request, db), body.current, body.new))
+    return {"ok": True}
 
 
 @router.get("/auth/login/{provider}")
@@ -200,15 +225,20 @@ def remove_member(team: str, user_id: int, request: Request, db=Depends(db_dep))
 
 # ------------------------------------------------------------------ usuários
 class UserBody(BaseModel):
-    email: str
+    email: str = ""
     name: str = ""
     org_role: str = "member"
+    username: str | None = None  # com senha: conta local
+    password: str | None = None
 
 
 class UserPatch(BaseModel):
     org_role: str | None = None
     active: bool | None = None
     name: str | None = None
+    username: str | None = None
+    password: str | None = None  # redefine (e encerra as sessões da pessoa)
+    email: str | None = None
 
 
 @router.get("/users")
@@ -218,13 +248,14 @@ def users(request: Request, db=Depends(db_dep)):
 
 @router.post("/users")
 def create_user(body: UserBody, request: Request, db=Depends(db_dep)):
-    return guard(lambda: org.user_dict(db, org.create_user(db, acc(request, db), body.email, body.name, body.org_role)))
+    return guard(lambda: org.user_dict(db, org.create_user(db, acc(request, db), body.email, body.name, body.org_role,
+                                                           body.username, body.password)))
 
 
 @router.patch("/users/{user_id}")
 def patch_user(user_id: int, body: UserPatch, request: Request, db=Depends(db_dep)):
     return guard(lambda: org.user_dict(db, org.update_user(db, acc(request, db), user_id, body.org_role, body.active,
-                                                           body.name)))
+                                                           body.name, body.username, body.password, body.email)))
 
 
 # ------------------------------------------------------------------ acesso a agentes e aprovações

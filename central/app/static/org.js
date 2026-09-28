@@ -27,7 +27,16 @@ function renderSide() {
   const u = ME.user;
   const role = ME.is_admin ? 'Admin' : ME.is_auditor ? 'Auditor' : (ME.teams[0] ? `${ROLE_LABEL[ME.teams[0].role]} · ${ME.teams[0].name}` : 'Membro');
   $('#whoami').innerHTML = `<div class="who">${u && u.avatar_url ? `<img src="${esc(u.avatar_url)}" alt="" referrerpolicy="no-referrer">` : `<span class="av">${esc((u ? (u.name || u.email) : 'A')[0].toUpperCase())}</span>`}
-    <div><div class="small"><b>${esc(u ? (u.name || u.email) : 'Sessão de emergência')}</b></div><div class="mute small">${esc(role)}</div></div></div>`;
+    <div><div class="small"><b>${esc(u ? (u.name || u.email) : 'Sessão de emergência')}</b></div><div class="mute small">${esc(role)}</div>
+    ${u && u.has_password ? '<a href="#" id="pw-change" class="small">Trocar senha</a>' : ''}</div></div>`;
+  const pc = $('#pw-change');
+  if (pc) pc.onclick = async e => {
+    e.preventDefault();
+    const current = prompt('Senha atual:'); if (current === null) return;
+    const next = prompt('Nova senha (mínimo 8 caracteres):'); if (!next) return;
+    if (prompt('Repita a nova senha:') !== next) return toast('As senhas não conferem', true);
+    try { await api('/me/password', { method: 'POST', body: { current, new: next } }); toast('Senha alterada'); } catch (err) { toast(err.message, true); }
+  };
 }
 
 async function showLogin() {
@@ -35,7 +44,7 @@ async function showLogin() {
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const err = params.get('error');
   const next = location.hash.startsWith('#/login') ? '#/' : (location.hash || '#/');
-  const { providers } = await fetch('/api/auth/providers').then(r => r.json()).catch(() => ({ providers: [] }));
+  const { providers, password_login: pwLogin } = await fetch('/api/auth/providers').then(r => r.json()).catch(() => ({ providers: [], password_login: false }));
   document.body.classList.add('login-mode');
   const box = $('#login');
   box.hidden = false;
@@ -43,9 +52,12 @@ async function showLogin() {
     <div class="brand"><span class="logo">⌂</span> Agent Hangar</div>
     <h1>Entrar</h1><div class="sub">Use a conta da empresa.</div>
     ${err ? `<div class="card bad-card small">${esc(err)}</div>` : ''}
+    ${pwLogin ? `<form id="lg-pw" class="pw-form"><label>Usuário ou e-mail<input id="lg-user" autocomplete="username" autofocus></label>
+      <label class="mt">Senha<input id="lg-pass" type="password" autocomplete="current-password"></label>
+      <button class="mt" type="submit" style="width:100%">Entrar</button></form>${providers.length ? '<div class="or"><span>ou</span></div>' : ''}` : ''}
     <div class="sso-list">${providers.map(p => `<a class="sso-btn" href="/api/auth/login/${encodeURIComponent(p.id)}?next=${encodeURIComponent(next)}"><span class="ic">${PROVIDER_ICON[p.id] || '⚿'}</span>Entrar com ${esc(p.label)}</a>`).join('')
-      || '<div class="mute small">Nenhum login corporativo configurado ainda. Entre com o token de admin e configure em <b>SSO e SCIM</b>.</div>'}</div>
-    <details class="mt" ${providers.length ? '' : 'open'}><summary>Entrar com token (emergência, chave admin ou token pessoal)</summary>
+      || (pwLogin ? '' : '<div class="mute small">Nenhum login corporativo configurado ainda. Entre com o token de admin e configure em <b>SSO e SCIM</b>.</div>')}</div>
+    <details class="mt" ${providers.length || pwLogin ? '' : 'open'}><summary>Entrar com token (emergência, chave admin ou token pessoal)</summary>
       <div class="row mt"><input id="lg-token" type="password" placeholder="ADMIN_TOKEN ou ah_…" style="flex:1" autocomplete="off"><button id="lg-go">Entrar</button></div>
       <div class="mute small mt">O token vira uma sessão (cookie seguro) — não fica salvo no navegador.</div></details></div>`;
   const go = async () => {
@@ -54,6 +66,14 @@ async function showLogin() {
     location.hash = next; location.reload();
   };
   $('#lg-go').onclick = go; $('#lg-token').onkeydown = e => e.key === 'Enter' && go();
+  const pf = $('#lg-pw');
+  if (pf) pf.onsubmit = async e => {
+    e.preventDefault();
+    const r = await fetch('/api/auth/password', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: $('#lg-user').value.trim(), password: $('#lg-pass').value }) });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); toast(d.detail || 'Usuário ou senha inválidos', true); $('#lg-pass').value = ''; return; }
+    location.hash = next; location.reload();
+  };
 }
 
 /* ---------- agente: visão de quem não é do time ---------- */
@@ -194,23 +214,33 @@ async function usersPage() {
   const render = q => {
     const rows = list.filter(u => (u.email + u.name).toLowerCase().includes(q.toLowerCase()));
     $('#u-rows').innerHTML = rows.map(u => `<tr class="${u.active ? '' : 'mute'}"><td><b>${esc(u.name || u.email)}</b><div class="mute small">${esc(u.email)}</div></td>
-      <td>${u.provider ? `<span class="chip">${esc(u.provider)}</span>` : '<span class="mute small">pré-cadastro</span>'}${u.scim ? ' <span class="chip">scim</span>' : ''}</td>
+      <td>${u.username ? `<span class="chip" title="conta local">👤 ${esc(u.username)}</span> ` : ''}${u.provider ? `<span class="chip">${esc(u.provider)}</span>` : (u.username ? '' : '<span class="mute small">pré-cadastro</span>')}${u.scim ? ' <span class="chip">scim</span>' : ''}</td>
       <td>${ME.is_admin ? `<select class="u-role" data-id="${u.id}" style="width:auto">${['member', 'auditor', 'admin'].map(r => `<option value="${r}" ${r === u.org_role ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('')}</select>` : esc(ROLE_LABEL[u.org_role])}</td>
       <td>${u.teams.map(t => `<span class="chip" title="${esc(ROLE_LABEL[t.role])}">${esc(t.name)} · ${esc(ROLE_LABEL[t.role])}</span>`).join('') || '<span class="mute small">—</span>'}</td>
       <td class="mute small">${u.last_login_at ? ago(u.last_login_at) + ' atrás' : 'nunca'}</td>
-      <td>${ME.is_admin ? `<button class="ghost u-act ${u.active ? '' : 'on'}" data-id="${u.id}" data-a="${u.active ? 0 : 1}" data-n="${esc(u.email)}">${u.active ? 'Desativar' : 'Reativar'}</button>` : (u.active ? '' : '<span class="pill bad">desativado</span>')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Nenhum usuário</td></tr>';
+      <td>${ME.is_admin ? `<button class="ghost u-pw" data-id="${u.id}" data-u="${esc(u.username || '')}" data-n="${esc(u.email)}">${u.username ? 'Redefinir senha' : 'Criar login local'}</button> ` : ''}${ME.is_admin ? `<button class="ghost u-act ${u.active ? '' : 'on'}" data-id="${u.id}" data-a="${u.active ? 0 : 1}" data-n="${esc(u.email)}">${u.active ? 'Desativar' : 'Reativar'}</button>` : (u.active ? '' : '<span class="pill bad">desativado</span>')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Nenhum usuário</td></tr>';
     document.querySelectorAll('.u-role').forEach(s => s.onchange = () => api(`/users/${s.dataset.id}`, { method: 'PATCH', body: { org_role: s.value } }).then(() => toast('Papel atualizado')).catch(e => toast(e.message, true)));
+    document.querySelectorAll('.u-pw').forEach(b => b.onclick = async () => {
+      const username = b.dataset.u || prompt(`Nome de usuário para ${b.dataset.n} (minúsculas, números, . _ -):`);
+      if (!username) return;
+      const password = prompt(`Nova senha para ${username} (mínimo 8 caracteres). As sessões atuais dessa pessoa serão encerradas.`);
+      if (!password) return;
+      try { await api(`/users/${b.dataset.id}`, { method: 'PATCH', body: { username, password } }); toast('Senha definida'); usersPage(); } catch (err) { toast(err.message, true); }
+    });
     document.querySelectorAll('.u-act').forEach(b => b.onclick = e => (b.dataset.a === '1' || confirm(`Desativar ${b.dataset.n}? Sessões encerradas e todas as chaves revogadas na hora.`)) &&
       act(e.target, () => api(`/users/${b.dataset.id}`, { method: 'PATCH', body: { active: b.dataset.a === '1' } }).then(usersPage), 'Usuário atualizado'));
   };
   main.innerHTML = `<div class="row between"><div><h1>Usuários</h1><div class="sub">Criados no primeiro login (OAuth2), por SCIM ou pré-cadastrados. <b>Admin</b>: tudo. <b>Auditor</b>: lê tudo (uso, custo, auditoria, specs). <b>Membro</b>: conforme os times.</div></div>
     <input id="u-q" placeholder="Buscar…" style="max-width:240px"></div>
-  ${ME.is_admin ? `<details class="card"><summary>+ Pré-cadastrar usuário</summary><div class="grid g4 mt"><input id="nu-email" placeholder="e-mail"><input id="nu-name" placeholder="nome (opcional)">
-    <select id="nu-role"><option value="member">Membro</option><option value="auditor">Auditor</option><option value="admin">Admin</option></select><button id="nu-go">Cadastrar</button></div></details>` : ''}
+  ${ME.is_admin ? `<details class="card"><summary>+ Cadastrar usuário</summary><div class="grid g4 mt"><input id="nu-email" placeholder="e-mail (entra por SSO)"><input id="nu-name" placeholder="nome (opcional)">
+    <input id="nu-user" placeholder="usuário (conta local, opcional)" autocomplete="off"><input id="nu-pass" type="password" placeholder="senha da conta local" autocomplete="new-password"></div>
+    <div class="grid g4 mt"><select id="nu-role"><option value="member">Membro</option><option value="auditor">Auditor</option><option value="admin">Admin</option></select><button id="nu-go">Cadastrar</button></div>
+    <div class="mute small mt">Só e-mail: pré-cadastro, a pessoa entra pelo SSO. Com usuário e senha: conta local (login direto na tela de entrada).</div></details>` : ''}
   <div class="card mt scroll"><table><tr><th>Pessoa</th><th>Origem</th><th>Papel na empresa</th><th>Times</th><th>Último login</th><th></th></tr><tbody id="u-rows"></tbody></table></div>`;
   render(''); $('#u-q').oninput = e => render(e.target.value);
   const go = $('#nu-go');
-  if (go) go.onclick = e => act(e.target, () => api('/users', { method: 'POST', body: { email: $('#nu-email').value.trim(), name: $('#nu-name').value, org_role: $('#nu-role').value } }).then(usersPage), 'Usuário cadastrado');
+  if (go) go.onclick = e => act(e.target, () => api('/users', { method: 'POST', body: { email: $('#nu-email').value.trim(), name: $('#nu-name').value, org_role: $('#nu-role').value,
+    username: $('#nu-user').value.trim() || null, password: $('#nu-pass').value || null } }).then(usersPage), 'Usuário cadastrado');
 }
 
 /* ---------- SSO (OAuth2) e SCIM ---------- */

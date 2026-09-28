@@ -1,4 +1,5 @@
 """Agent Hangar — app FastAPI: API admin, gateway dos agentes, MCP da plataforma e UI."""
+import hashlib
 import hmac
 import logging
 import os
@@ -7,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import auth, config, crypto, db
@@ -105,9 +106,22 @@ app.include_router(internal.router)
 app.include_router(gateway.router)
 
 
+STATIC = os.path.join(os.path.dirname(__file__), "static")
+# carimbo de versão dos arquivos da UI: muda a cada atualização, então o navegador nunca mistura versões
+UI_VERSION = hashlib.sha256(b"".join(open(os.path.join(STATIC, f), "rb").read()
+                                     for f in sorted(os.listdir(STATIC)))).hexdigest()[:12]
+_INDEX = open(os.path.join(STATIC, "index.html"), encoding="utf-8").read().replace("__V__", UI_VERSION)
+
+
 @app.get("/")
 def root():
-    return RedirectResponse("/ui/")
+    return RedirectResponse(f"/ui/?v={UI_VERSION}")  # URL nova a cada versão: fura até um index.html em cache
+
+
+@app.get("/ui/")
+@app.get("/ui/index.html")
+def ui_index():
+    return HTMLResponse(_INDEX, headers={"Cache-Control": "no-cache"})
 
 
 class UIFiles(StaticFiles):
@@ -120,5 +134,5 @@ class UIFiles(StaticFiles):
         return resp
 
 
-app.mount("/ui", UIFiles(directory=os.path.join(os.path.dirname(__file__), "static"), html=True), name="ui")
+app.mount("/ui", UIFiles(directory=STATIC, html=True), name="ui")
 app.mount("/", mcp_app)

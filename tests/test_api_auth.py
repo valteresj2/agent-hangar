@@ -94,3 +94,9 @@ def test_templates_endpoint(client):
 def test_ui_is_revalidated(client):
     r = client.get("/ui/app.js")
     assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+
+
+def test_ui_assets_are_versioned(client):
+    from app.main import UI_VERSION
+    html = client.get("/ui/").text
+    assert f"app.js?v={UI_VERSION}" in html and "__V__" not in html

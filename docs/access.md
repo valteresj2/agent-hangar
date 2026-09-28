@@ -82,6 +82,16 @@ The UI opens on a login page. The buttons are the configured providers, plus **S
 
 A token becomes a session cookie; it is not stored in the browser.
 
+**Local accounts (username and password).** An admin can create them in **Usuários → Cadastrar usuário** by
+setting a username and a password, or with `POST /api/users {username, password, org_role}`. They sign in with
+the username/password form on the login page.
+- Passwords are stored only as scrypt hashes, with a minimum of 8 characters.
+- Five wrong attempts lock the account for 15 minutes.
+- Users change their own password from the sidebar; an admin can reset it, which also ends that user's sessions.
+- A local account has the e-mail `<username>@local` until you set the real one. With the real e-mail, a later
+  SSO login with that verified e-mail signs in to the same account.
+- Companies that require SSO only turn local accounts off with `LOCAL_LOGIN=0`.
+
 Configure providers in the UI (**SSO e SCIM**, admins) or with `OAUTH_*` variables in `.env`; what is saved in
 the UI wins. The redirect URI to register at the provider is `<PUBLIC_BASE_URL>/api/auth/callback/<provider>`.
 Put the hangar behind HTTPS before real use; cookies get `Secure` automatically when `PUBLIC_BASE_URL` is

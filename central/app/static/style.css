@@ -85,3 +85,4 @@ nav a[hidden]{display:none}
 .click-card{cursor:pointer}.click-card:hover{border-color:var(--accent)}
 .hbar.budget.warn i{background:var(--warn)}.hbar.budget.over i{background:var(--bad)}.hbar.budget.ok i{background:var(--ok)}
 @media(max-width:800px){.who{display:none}}
+.or{display:flex;align-items:center;gap:10px;color:var(--mute);font-size:12px;margin:14px 0}.or::before,.or::after{content:"";flex:1;border-top:1px solid var(--line)}

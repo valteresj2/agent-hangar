@@ -30,6 +30,9 @@ Summary; the full model is in [access.md](access.md).
   `common`) and required GitHub organizations.
 - **An existing user is linked by e-mail only when the provider vouches for it.** That means a verified e-mail
   on Google or GitHub, or a fixed tenant on Entra. Otherwise a misconfigured provider could take over accounts.
+- **Local accounts are optional** (`LOCAL_LOGIN=0` turns them off). Passwords are hashed with scrypt, with a
+  minimum length of 8, and 5 failures lock the account for 15 minutes. The same error message is returned for an
+  unknown user and a wrong password. A password reset ends the user's sessions.
 - **Deactivation takes effect immediately.** Deactivating a user (UI or SCIM) ends their sessions and revokes
   all their keys at once. Losing a team role or a grant revokes the invoke keys that no longer apply.
 

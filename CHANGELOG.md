@@ -20,6 +20,9 @@ All notable changes to this project are documented here. The format follows
   - Allowed domains, a fixed tenant, and required GitHub organizations.
   - Groups map to teams.
   - `BOOTSTRAP_ADMIN_EMAILS`.
+- **Local accounts** (username and password, optional with `LOCAL_LOGIN`).
+  - Passwords are hashed with scrypt; accounts lock out after 5 failures.
+  - Users change their own password; admins reset passwords.
 - **SCIM 2.0** (`/scim/v2`): the directory provisions and deactivates users and syncs groups to teams.
 - **Sessions.** The UI uses a `HttpOnly` session cookie with CSRF protection instead of a token in
   `localStorage`. "Sign in with token" remains as break-glass access.
@@ -43,7 +46,8 @@ All notable changes to this project are documented here. The format follows
 - Runtime: Open WebUI chat/user headers (`X-OpenWebUI-Chat-Id`) set the session.
 
 ### Fixed
-- The UI is served with `Cache-Control: no-cache`, so browsers pick up a new version on the next load.
+- The UI is served with `Cache-Control: no-cache`, and its assets carry a content hash (`app.js?v=…`), so
+  browsers never keep an old version after an upgrade.
 - Calls through an agent's MCP endpoint now record tokens and cost (the tool result carries `_meta.usage`).
 - MCP handshakes, `tools/list` and pings are no longer counted as requests.
 
