@@ -5,6 +5,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-09-27
+
+### Fixed
+- `docker compose up data-studio` now also starts its Docker proxy (`data-studio-docker`); before, container-sandbox
+  mode failed on the first kernel start.
+
 ## [0.2.0] — 2026-09-27
 
 ### Added
