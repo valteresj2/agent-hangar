@@ -118,6 +118,7 @@ services:
     profiles: [data-studio]
     image: ${HANGAR_REGISTRY:-agent-hangar}/mcp-data-studio:${HANGAR_VERSION:-latest}
     build: ./mcp-servers/data-studio
+    depends_on: [data-studio-docker]   # proxy do Docker para os sandboxes (SANDBOX=container)
     environment:
       PUBLIC_URL: ${DATA_STUDIO_PUBLIC_URL:-http://localhost:8095}
       MAX_FILE_MB: ${DATA_STUDIO_MAX_FILE_MB:-200}
