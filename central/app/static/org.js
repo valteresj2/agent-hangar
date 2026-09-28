@@ -158,16 +158,32 @@ const budgetBar = t => {
     <div class="hbar budget ${t.budget_state}"><i style="width:${pct}%"></i></div>${t.budget_state === 'over' ? `<div class="bad-text small">Estourado${t.budget_enforce ? ' — chamadas bloqueadas' : ''}</div>` : ''}`;
 };
 
-async function teamsPage() {
+async function teamsPage(openForm) {
   const list = await api('/teams');
-  main.innerHTML = `<div class="row between"><div><h1>Times</h1><div class="sub">Cada agente pertence a um time. Papéis: <b>mantenedor</b> (${ROLE_HELP.maintainer}), <b>developer</b> (${ROLE_HELP.developer}), <b>consumer</b> (${ROLE_HELP.consumer}).</div></div></div>
-  ${ME.is_admin ? `<details class="card"><summary>+ Novo time</summary><div class="grid g4 mt"><input id="tm-name" placeholder="nome (ex.: Dados e BI)"><input id="tm-desc" placeholder="descrição (opcional)">
-    <label class="row small"><input type="checkbox" id="tm-appr" checked style="width:auto"> produção exige aprovação</label><button id="tm-go">Criar time</button></div></details>` : ''}
+  main.innerHTML = `<div class="row between"><div><h1>Times (${list.length})</h1><div class="sub">Cada agente pertence a um time. Papéis: <b>mantenedor</b> (${ROLE_HELP.maintainer}), <b>developer</b> (${ROLE_HELP.developer}), <b>consumer</b> (${ROLE_HELP.consumer}).</div></div>
+    ${ME.is_admin ? '<button id="tm-open">+ Novo time</button>' : ''}</div>
+  ${ME.is_admin ? `<div class="card hero" id="tm-form" ${openForm ? '' : 'hidden'}><h2>Novo time</h2>
+    <div class="grid g2"><label>Nome<input id="tm-name" placeholder="ex.: Dados e BI"></label><label>Descrição<input id="tm-desc" placeholder="opcional"></label></div>
+    <div class="grid g2 mt"><label>Mantenedor (e-mail ou usuário, opcional)<input id="tm-maint" placeholder="quem vai gerenciar o time"></label>
+      <label class="row small" style="align-self:end"><input type="checkbox" id="tm-appr" checked style="width:auto"> Produção exige aprovação de outro mantenedor</label></div>
+    <div class="row mt"><button id="tm-go">Criar time</button><button id="tm-cancel" class="ghost">Cancelar</button><span class="mute small">Crie quantos times quiser; depois adicione os membros em cada um.</span></div></div>` : ''}
   <div class="grid g3 mt">${list.map(t => `<div class="card click-card" onclick="location.hash='#/teams/${t.slug}'"><div class="row between"><h2>${esc(t.name)}</h2>${t.my_role ? `<span class="pill ok">${esc(ROLE_LABEL[t.my_role])}</span>` : ''}</div>
     <div class="mute small">${esc(t.description) || '&nbsp;'}</div><div class="row mt small"><span>👥 ${t.members} membros</span><span>🤖 ${t.agents} agentes</span>${t.require_approval ? '<span class="chip">aprovação p/ produção</span>' : ''}</div>
     <div class="mt">${budgetBar(t)}</div></div>`).join('')}</div>`;
-  const go = $('#tm-go');
-  if (go) go.onclick = e => act(e.target, () => api('/teams', { method: 'POST', body: { name: $('#tm-name').value.trim(), description: $('#tm-desc').value, require_approval: $('#tm-appr').checked } }).then(t => location.hash = '#/teams/' + t.slug), 'Time criado');
+  const form = $('#tm-form');
+  if (!form) return;
+  const show = on => { form.hidden = !on; if (on) $('#tm-name').focus(); };
+  $('#tm-open').onclick = () => show(true);
+  $('#tm-cancel').onclick = () => show(false);
+  if (openForm) show(true);
+  $('#tm-go').onclick = e => act(e.target, async () => {
+    const name = $('#tm-name').value.trim();
+    if (!name) throw new Error('Dê um nome ao time');
+    const t = await api('/teams', { method: 'POST', body: { name, description: $('#tm-desc').value, require_approval: $('#tm-appr').checked, maintainer: $('#tm-maint').value.trim() || null } });
+    toast(`Time “${t.name}” criado`);
+    if (location.hash === '#/teams') teamsPage(); else location.hash = '#/teams';
+  });
+  $('#tm-name').onkeydown = e => e.key === 'Enter' && $('#tm-go').click();
 }
 
 async function teamDetail(slug) {
@@ -177,7 +193,7 @@ async function teamDetail(slug) {
   const maint = ME.is_admin || t.my_role === 'maintainer';
   const roleSel = (v, id) => `<select class="mb-role" data-id="${id}" style="width:auto" ${maint ? '' : 'disabled'}>${['maintainer', 'developer', 'consumer'].map(r => `<option value="${r}" ${r === v ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('')}</select>`;
   main.innerHTML = `<a href="#/teams" class="mute small">← Times</a><div class="row between"><div><h1>${esc(t.name)} ${t.my_role ? `<span class="pill ok">${esc(ROLE_LABEL[t.my_role])}</span>` : ''}</h1><div class="sub">${esc(t.description) || ''}</div></div>
-    ${ME.is_admin && t.id !== 1 ? '<button id="tm-del" class="danger">Excluir time</button>' : ''}</div>
+    <div class="row">${ME.is_admin ? '<a href="#/teams/new"><button class="ghost">+ Novo time</button></a>' : ''}${ME.is_admin && t.id !== 1 ? '<button id="tm-del" class="danger">Excluir time</button>' : ''}</div></div>
   <div class="grid g2">
     <div class="card"><h2>Membros (${members ? members.length : t.members})</h2>
       ${maint ? `<div class="row"><input id="mb-email" placeholder="e-mail da pessoa" style="flex:1"><select id="mb-role" style="width:auto">${['consumer', 'developer', 'maintainer'].map(r => `<option value="${r}">${ROLE_LABEL[r]}</option>`).join('')}</select><button id="mb-add">Adicionar</button></div>

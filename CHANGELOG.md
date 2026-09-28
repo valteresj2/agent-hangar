@@ -30,6 +30,7 @@ All notable changes to this project are documented here. The format follows
   - New scopes `user` (personal token for the CLI and MCP) and `scim`.
   - Keys are revoked automatically when the owner loses access or is deactivated.
 - **Monthly budget per team**, with an alert and an optional block (`429` at the gateway).
+- Creating a team: a visible **+ Novo time** button (list and team detail) and an optional first maintainer (`maintainer` on `POST /api/teams`).
 - UI pages: Aprovações, Times, Usuários, SSO e SCIM; an agent **Acesso** tab; role-aware buttons and tabs.
 - CLI: `whoami`, `teams`, `approvals`, `request-access`, `agents ls --mine`, `templates apply --team`.
 - Platform MCP: tools act as the key owner. New tools: `whoami`, `request_agent_access`, `list_approvals` and

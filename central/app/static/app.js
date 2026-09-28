@@ -687,6 +687,7 @@ async function route() {
     if (r === 'agents' && a === 'new') await newAgentPage();
     else if (r === 'agents' && a === 'catalog') await agentsPage('catalog');
     else if (r === 'agents' && a) await agentDetail(a, b);
+    else if (r === 'teams' && a === 'new') await teamsPage(true);
     else if (r === 'teams' && a) await teamDetail(a);
     else await ({ '': dashboard, agents: agentsPage, templates: templatesPage, keys: keysPage, deployments: deploymentsPage, tests: testsPage, usage: usagePage, catalog: catalogPage, providers: providersPage, connect: connectPage, audit: auditPage,
       approvals: approvalsPage, teams: teamsPage, users: usersPage, sso: ssoPage }[r] || dashboard)();

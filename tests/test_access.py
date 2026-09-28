@@ -222,3 +222,18 @@ def test_mcp_acts_as_the_user(client, org_setup, uniq):
     cpat = {"Authorization": "Bearer " + client.post("/api/keys", headers=h["cons"],
                                                      json={"name": "mcp", "scopes": ["user"]}).json()["key"]}
     assert _mcp(client, cpat, "register_agent", {"name": "x", "objective": "o", "final_output": "f"})["isError"]
+
+
+def test_admin_creates_many_teams_with_maintainer(client, uniq):
+    names = [uniq("Squad") for _ in range(3)]
+    email = f"{uniq('lider')}@acme.com"
+    slugs = [client.post("/api/teams", headers=ADMIN, json={"name": n, "maintainer": email}).json()["slug"] for n in names]
+    listed = {t["slug"] for t in client.get("/api/teams", headers=ADMIN).json()}
+    assert set(slugs) <= listed
+    for s in slugs:
+        members = client.get(f"/api/teams/{s}/members", headers=ADMIN).json()
+        assert [(m["email"], m["role"]) for m in members] == [(email, "maintainer")]
+    assert client.post("/api/teams", headers=ADMIN, json={"name": names[0]}).status_code == 400  # duplicado
+    assert client.post("/api/teams", headers=ADMIN, json={"name": "New"}).status_code == 400  # reservado
+    r = client.post("/api/teams", headers=ADMIN, json={"name": uniq("X"), "maintainer": "ninguem"})
+    assert r.status_code == 400 and "não encontrado" in r.json()["detail"]

@@ -112,19 +112,33 @@ def list_teams(db: Session, acc: Access) -> list[dict]:
     return [team_dict(db, t, acc) for t in db.scalars(select(Team).order_by(Team.name))]
 
 
+RESERVED_TEAM_SLUGS = {"new"}  # rotas da UI (#/teams/new)
+
+
 def create_team(db: Session, acc: Access, name: str, slug: str = "", description: str = "",
-                require_approval: bool = True) -> Team:
+                require_approval: bool = True, maintainer: str | None = None) -> Team:
     if not acc.p.is_admin:
         raise Forbidden("Só admins criam times")
-    if not name:
+    if not (name or "").strip():
         raise PlatformError("nome do time é obrigatório")
     slug = slugify(slug or name)
+    if slug in RESERVED_TEAM_SLUGS:
+        raise PlatformError(f"'{slug}' é um nome reservado; escolha outro")
     if db.scalar(select(Team).where(Team.slug == slug)):
-        raise PlatformError(f"time '{slug}' já existe")
-    t = Team(slug=slug, name=name, description=description, require_approval=require_approval)
+        raise PlatformError(f"já existe um time '{slug}'")
+    owner = None
+    if maintainer:  # valida antes de criar: um e-mail ou usuário inválido não deixa time pela metade
+        m = maintainer.strip().lower()
+        owner = db.scalar(select(User).where(User.username == m)) or (ensure_user(db, m) if "@" in m else None)
+        if owner is None:
+            raise PlatformError(f"usuário '{maintainer}' não encontrado (use o e-mail ou o nome de usuário)")
+    t = Team(slug=slug, name=name.strip(), description=description, require_approval=require_approval)
     db.add(t)
     db.commit()
     audit(db, acc.p.name, "team.create", slug, name)
+    if owner:
+        set_member(db, t.id, owner.id, "maintainer")
+        audit(db, acc.p.name, "team.member.set", slug, f"{owner.email}=maintainer")
     return t
 
 

@@ -24,7 +24,7 @@ what the caller can see. Admins see everything.
 | Method | Path | Description |
 |---|---|---|
 | GET / PATCH | `/api/org` | Company name and default visibility (PATCH: admin) |
-| GET / POST | `/api/teams` | List (with spend and your role) / create (admin) |
+| GET / POST | `/api/teams` | List (with spend and your role) / create `{name, description?, require_approval?, maintainer?}` (admin) |
 | GET / PATCH / DELETE | `/api/teams/{team}` | Detail / name, description (maintainer), `require_approval`, `budget_usd_month`, `budget_enforce` (admin) / delete (admin, no agents) |
 | GET / POST | `/api/teams/{team}/members` | Members / add `{email, role}` (maintainer; pre-registers unknown e-mails) |
 | PATCH / DELETE | `/api/teams/{team}/members/{user_id}` | Change role / remove |

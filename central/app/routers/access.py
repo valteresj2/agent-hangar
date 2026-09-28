@@ -146,6 +146,7 @@ class TeamBody(BaseModel):
     slug: str = ""
     description: str = ""
     require_approval: bool = True
+    maintainer: str | None = None  # e-mail ou usuário: já entra como mantenedor
 
 
 class TeamPatch(BaseModel):
@@ -174,7 +175,7 @@ def teams(request: Request, db=Depends(db_dep)):
 def create_team(body: TeamBody, request: Request, db=Depends(db_dep)):
     a = acc(request, db)
     return guard(lambda: org.team_dict(db, org.create_team(db, a, body.name, body.slug, body.description,
-                                                           body.require_approval), a))
+                                                           body.require_approval, body.maintainer), a))
 
 
 @router.get("/teams/{team}")
