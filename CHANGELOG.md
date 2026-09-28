@@ -43,6 +43,7 @@ All notable changes to this project are documented here. The format follows
 - Runtime: Open WebUI chat/user headers (`X-OpenWebUI-Chat-Id`) set the session.
 
 ### Fixed
+- The UI is served with `Cache-Control: no-cache`, so browsers pick up a new version on the next load.
 - Calls through an agent's MCP endpoint now record tokens and cost (the tool result carries `_meta.usage`).
 - MCP handshakes, `tools/list` and pings are no longer counted as requests.
 

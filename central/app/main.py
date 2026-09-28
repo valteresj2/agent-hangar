@@ -110,5 +110,15 @@ def root():
     return RedirectResponse("/ui/")
 
 
-app.mount("/ui", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static"), html=True), name="ui")
+class UIFiles(StaticFiles):
+    """UI sem cache heurístico: o navegador sempre revalida (ETag), então uma atualização da central aparece no
+    próximo carregamento — sem Ctrl+F5."""
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
+app.mount("/ui", UIFiles(directory=os.path.join(os.path.dirname(__file__), "static"), html=True), name="ui")
 app.mount("/", mcp_app)

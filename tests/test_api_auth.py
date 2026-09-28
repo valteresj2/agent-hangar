@@ -89,3 +89,8 @@ def test_patch_spec_and_rollback_api(client, uniq):
 def test_templates_endpoint(client):
     r = client.get("/api/templates", headers=ADMIN)
     assert any(t["id"] == "doc-qa" for t in r.json())
+
+
+def test_ui_is_revalidated(client):
+    r = client.get("/ui/app.js")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
