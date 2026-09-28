@@ -27,6 +27,7 @@ services:
       retries: 20
     # rede só da central: agentes (que executam tools e, no Data Studio, Python arbitrário) não alcançam o banco
     networks: [db_net]
+    restart: unless-stopped   # sem isto o banco não volta quando o Docker reinicia (e a central fica unhealthy)
 
   # A central nunca monta o docker.sock: fala com este proxy, que só libera a API de containers
   # (criar/listar/parar/remover/logs), volumes e redes — sem exec, build, pull, images, swarm, secrets.
