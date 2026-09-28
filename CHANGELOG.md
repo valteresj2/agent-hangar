@@ -46,6 +46,17 @@ All notable changes to this project are documented here. The format follows
 - The gateway tags usage with the key's tool when `X-Channel` is absent.
 - Runtime: Open WebUI chat/user headers (`X-OpenWebUI-Chat-Id`) set the session.
 
+### Changed
+- **New UI design** following the *Frontend Design* skill (aitmpl.com), with the pre-delivery checklist of
+  *UI/UX Pro Max*.
+  - **Hangar look:** a tarmac-dark sidebar with grouped navigation (Operação, Construção, Monitoramento,
+    Acesso) and a single safety-yellow accent for primary actions, the active item and focus.
+  - **Type:** Barlow Semi Condensed for headings, IBM Plex Sans for text, IBM Plex Mono for code.
+  - **Screens:** KPIs as one status board, agent rows as flight strips colored by status, and a two-column
+    login.
+  - **Icons:** SVG icons instead of emojis.
+  - **Accessibility:** visible keyboard focus, 44px touch targets, `prefers-reduced-motion`, and dark mode.
+
 ### Fixed
 - The UI is served with `Cache-Control: no-cache`, and its assets carry a content hash (`app.js?v=…`), so
   browsers never keep an old version after an upgrade.

@@ -7,7 +7,7 @@ const ROLE_HELP = {
   developer: 'cria, edita e testa os agentes do time',
   consumer: 'usa os agentes do time (conectar, playground, uso)',
 };
-const PROVIDER_ICON = { google: 'G', microsoft: '⊞', github: '◐', oauth2: '⚿' };
+const providerIcon = id => BRAND[id] || icon(id === 'oauth2' ? 'key' : 'login');
 
 /* ---------- boot e login ---------- */
 async function boot() {
@@ -48,18 +48,21 @@ async function showLogin() {
   document.body.classList.add('login-mode');
   const box = $('#login');
   box.hidden = false;
-  box.innerHTML = `<div class="login-card">
-    <div class="brand"><span class="logo">⌂</span> Agent Hangar</div>
+  box.innerHTML = `<div class="login-art"><div class="brand">${icon('logo')}<span>Agent Hangar</span></div>
+    <p>Os agentes de IA da empresa, do hangar à produção.</p>
+    <small>Construa, teste e publique agentes com segurança — cada time com os seus.</small></div>
+    <div class="login-side"><div class="login-card">
+    <div class="brand">${icon('logo')}<span>Agent Hangar</span></div>
     <h1>Entrar</h1><div class="sub">Use a conta da empresa.</div>
     ${err ? `<div class="card bad-card small">${esc(err)}</div>` : ''}
     ${pwLogin ? `<form id="lg-pw" class="pw-form"><label>Usuário ou e-mail<input id="lg-user" autocomplete="username" autofocus></label>
       <label class="mt">Senha<input id="lg-pass" type="password" autocomplete="current-password"></label>
       <button class="mt" type="submit" style="width:100%">Entrar</button></form>${providers.length ? '<div class="or"><span>ou</span></div>' : ''}` : ''}
-    <div class="sso-list">${providers.map(p => `<a class="sso-btn" href="/api/auth/login/${encodeURIComponent(p.id)}?next=${encodeURIComponent(next)}"><span class="ic">${PROVIDER_ICON[p.id] || '⚿'}</span>Entrar com ${esc(p.label)}</a>`).join('')
+    <div class="sso-list">${providers.map(p => `<a class="sso-btn" href="/api/auth/login/${encodeURIComponent(p.id)}?next=${encodeURIComponent(next)}">${providerIcon(p.id)}Entrar com ${esc(p.label)}</a>`).join('')
       || (pwLogin ? '' : '<div class="mute small">Nenhum login corporativo configurado ainda. Entre com o token de admin e configure em <b>SSO e SCIM</b>.</div>')}</div>
     <details class="mt" ${providers.length || pwLogin ? '' : 'open'}><summary>Entrar com token (emergência, chave admin ou token pessoal)</summary>
       <div class="row mt"><input id="lg-token" type="password" placeholder="ADMIN_TOKEN ou ah_…" style="flex:1" autocomplete="off"><button id="lg-go">Entrar</button></div>
-      <div class="mute small mt">O token vira uma sessão (cookie seguro) — não fica salvo no navegador.</div></details></div>`;
+      <div class="mute small mt">O token vira uma sessão (cookie seguro) e não fica salvo no navegador.</div></details></div></div>`;
   const go = async () => {
     const r = await fetch('/api/auth/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: $('#lg-token').value.trim() }) });
     if (!r.ok) { const d = await r.json().catch(() => ({})); toast(d.detail || 'Token inválido', true); return; }
@@ -152,7 +155,7 @@ async function approvalsPage() {
 
 /* ---------- times ---------- */
 const budgetBar = t => {
-  if (!t.budget_usd_month) return `<div class="mute small">Gasto no mês: ${usd(t.spent_month)} · sem orçamento</div>`;
+  if (!t.budget_usd_month) return `<div class="small row between"><span class="mute">Gasto no mês</span><b>${usd(t.spent_month)}</b></div>`;
   const pct = Math.min(100, Math.round(100 * t.spent_month / t.budget_usd_month));
   return `<div class="small row between"><span>Orçamento do mês</span><b>${usd(t.spent_month)} / ${usd(t.budget_usd_month)}</b></div>
     <div class="hbar budget ${t.budget_state}"><i style="width:${pct}%"></i></div>${t.budget_state === 'over' ? `<div class="bad-text small">Estourado${t.budget_enforce ? ' — chamadas bloqueadas' : ''}</div>` : ''}`;
@@ -168,7 +171,7 @@ async function teamsPage(openForm) {
       <label class="row small" style="align-self:end"><input type="checkbox" id="tm-appr" checked style="width:auto"> Produção exige aprovação de outro mantenedor</label></div>
     <div class="row mt"><button id="tm-go">Criar time</button><button id="tm-cancel" class="ghost">Cancelar</button><span class="mute small">Crie quantos times quiser; depois adicione os membros em cada um.</span></div></div>` : ''}
   <div class="grid g3 mt">${list.map(t => `<div class="card click-card" onclick="location.hash='#/teams/${t.slug}'"><div class="row between"><h2>${esc(t.name)}</h2>${t.my_role ? `<span class="pill ok">${esc(ROLE_LABEL[t.my_role])}</span>` : ''}</div>
-    <div class="mute small">${esc(t.description) || '&nbsp;'}</div><div class="row mt small"><span>👥 ${t.members} membros</span><span>🤖 ${t.agents} agentes</span>${t.require_approval ? '<span class="chip">aprovação p/ produção</span>' : ''}</div>
+    <div class="mute small">${esc(t.description) || '&nbsp;'}</div><div class="row mt small"><span class="chip">${icon('team')}${t.members} membros</span><span class="chip">${icon('bot')}${t.agents} agentes</span>${t.require_approval ? '<span class="chip">aprovação p/ produção</span>' : ''}</div>
     <div class="mt">${budgetBar(t)}</div></div>`).join('')}</div>`;
   const form = $('#tm-form');
   if (!form) return;
@@ -230,7 +233,7 @@ async function usersPage() {
   const render = q => {
     const rows = list.filter(u => (u.email + u.name).toLowerCase().includes(q.toLowerCase()));
     $('#u-rows').innerHTML = rows.map(u => `<tr class="${u.active ? '' : 'mute'}"><td><b>${esc(u.name || u.email)}</b><div class="mute small">${esc(u.email)}</div></td>
-      <td>${u.username ? `<span class="chip" title="conta local">👤 ${esc(u.username)}</span> ` : ''}${u.provider ? `<span class="chip">${esc(u.provider)}</span>` : (u.username ? '' : '<span class="mute small">pré-cadastro</span>')}${u.scim ? ' <span class="chip">scim</span>' : ''}</td>
+      <td>${u.username ? `<span class="chip" title="Conta local">${icon('user')}${esc(u.username)}</span> ` : ''}${u.provider ? `<span class="chip">${esc(u.provider)}</span>` : (u.username ? '' : '<span class="mute small">pré-cadastro</span>')}${u.scim ? ' <span class="chip">scim</span>' : ''}</td>
       <td>${ME.is_admin ? `<select class="u-role" data-id="${u.id}" style="width:auto">${['member', 'auditor', 'admin'].map(r => `<option value="${r}" ${r === u.org_role ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('')}</select>` : esc(ROLE_LABEL[u.org_role])}</td>
       <td>${u.teams.map(t => `<span class="chip" title="${esc(ROLE_LABEL[t.role])}">${esc(t.name)} · ${esc(ROLE_LABEL[t.role])}</span>`).join('') || '<span class="mute small">—</span>'}</td>
       <td class="mute small">${u.last_login_at ? ago(u.last_login_at) + ' atrás' : 'nunca'}</td>
@@ -280,7 +283,7 @@ async function ssoPage() {
   const scimKeys = keys.filter(k => k.scopes.includes('scim') && !k.revoked);
   const val = (p, k) => { const v = p.settings[k]; return Array.isArray(v) ? v.join(', ') : (v ?? ''); };
   main.innerHTML = `<h1>SSO e SCIM</h1><div class="sub">Login corporativo por OAuth2 e provisionamento automático de usuários e grupos. Segredos ficam criptografados; variáveis OAUTH_* do .env valem como padrão.</div>
-  <div class="grid g2">${c.providers.map(p => `<div class="card"><div class="row between"><h2><span class="sso-ic">${PROVIDER_ICON[p.id]}</span> ${esc(p.id === 'oauth2' ? 'OAuth2 genérico' : p.label)}</h2>
+  <div class="grid g2">${c.providers.map(p => `<div class="card"><div class="row between"><h2><span class="sso-ic">${providerIcon(p.id)}</span> ${esc(p.id === 'oauth2' ? 'OAuth2 genérico' : p.label)}</h2>
       ${p.ready ? '<span class="pill ok">ativo</span>' : p.enabled && p.client_id ? '<span class="pill warn">incompleto</span>' : '<span class="pill">desligado</span>'}</div>
     <div class="mute small">${esc(SSO_HELP[p.id])}</div>
     <div class="small mt">Redirect URI (cadastre no provedor): ${copyable(p.redirect_uri)}</div>

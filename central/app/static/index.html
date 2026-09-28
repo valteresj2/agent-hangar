@@ -4,34 +4,52 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Agent Hangar</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M3 14 16 5l13 9v13H3z' fill='%234f46e5'/><path d='M9 27v-8h14v8' fill='%23fff'/></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23F4B400' stroke-width='2.2' stroke-linejoin='round'><path d='M2.5 20.5V11L12 3.5 21.5 11v9.5'/><path d='M6.5 20.5v-6h11v6'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="style.css?v=__V__">
 </head>
 <body class="login-mode">
+<a class="skip" href="#main">Pular para o conteúdo</a>
 <aside id="side">
-  <div class="brand"><span class="logo">⌂</span> Agent Hangar</div>
-  <nav>
-    <a href="#/" data-r="">Dashboard</a>
-    <a href="#/agents" data-r="agents">Agentes</a>
-    <a href="#/approvals" data-r="approvals">Aprovações <span id="appr-badge" class="badge" hidden></span></a>
-    <a href="#/teams" data-r="teams">Times</a>
-    <a href="#/templates" data-r="templates" data-need="builder">Templates</a>
-    <a href="#/deployments" data-r="deployments">Deployments</a>
-    <a href="#/tests" data-r="tests">Testes</a>
-    <a href="#/usage" data-r="usage">Uso e custo</a>
-    <a href="#/catalog" data-r="catalog">Catálogo</a>
-    <a href="#/providers" data-r="providers" data-need="admin">Provedores</a>
-    <a href="#/keys" data-r="keys">Chaves de API</a>
-    <a href="#/connect" data-r="connect">Conectar</a>
-    <a href="#/users" data-r="users" data-need="auditor">Usuários</a>
-    <a href="#/sso" data-r="sso" data-need="admin">SSO e SCIM</a>
-    <a href="#/audit" data-r="audit" data-need="auditor">Auditoria</a>
+  <div class="brand"><span class="logo" data-i="logo"></span><span>Agent Hangar</span></div>
+  <nav aria-label="Principal">
+    <div class="nav-group">
+      <div class="nav-title">Operação</div>
+      <a href="#/" data-r="" data-i="gauge">Painel</a>
+      <a href="#/agents" data-r="agents" data-i="bot">Agentes</a>
+      <a href="#/approvals" data-r="approvals" data-i="approve">Aprovações <span id="appr-badge" class="badge" hidden></span></a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-title">Construção</div>
+      <a href="#/templates" data-r="templates" data-need="builder" data-i="template">Templates</a>
+      <a href="#/catalog" data-r="catalog" data-i="book">Catálogo</a>
+      <a href="#/providers" data-r="providers" data-need="admin" data-i="chip">Provedores de LLM</a>
+      <a href="#/connect" data-r="connect" data-i="plug">Conectar ferramentas</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-title">Monitoramento</div>
+      <a href="#/deployments" data-r="deployments" data-i="server">Deployments</a>
+      <a href="#/tests" data-r="tests" data-i="flask">Testes</a>
+      <a href="#/usage" data-r="usage" data-i="chart">Uso e custo</a>
+      <a href="#/audit" data-r="audit" data-need="auditor" data-i="scroll">Auditoria</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-title">Acesso</div>
+      <a href="#/teams" data-r="teams" data-i="team">Times</a>
+      <a href="#/users" data-r="users" data-need="auditor" data-i="userCog">Usuários</a>
+      <a href="#/keys" data-r="keys" data-i="key">Chaves de API</a>
+      <a href="#/sso" data-r="sso" data-need="admin" data-i="shield">SSO e SCIM</a>
+    </div>
   </nav>
-  <div class="side-foot"><div id="whoami"></div><div id="ver" class="mute small"></div><button id="logout" class="ghost">Sair</button></div>
+  <div class="side-foot"><div id="whoami"></div><div class="row between"><span id="ver" class="small"></span><button id="logout" class="ghost on-dark" title="Sair"><span data-i="logout"></span>Sair</button></div></div>
 </aside>
-<main id="main"></main>
+<main id="main" tabindex="-1"></main>
 <div id="login" hidden></div>
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="icons.js?v=__V__"></script>
+<script>document.querySelectorAll('[data-i]').forEach(el => el.insertAdjacentHTML('afterbegin', icon(el.dataset.i)));</script>
 <script src="org.js?v=__V__"></script>
 <script src="app.js?v=__V__"></script>
 </body>

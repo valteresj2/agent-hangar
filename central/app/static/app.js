@@ -17,7 +17,7 @@ const STATUS = {
   exited: ['Caiu', 'bad'], missing: ['Ausente', 'bad'], starting: ['Iniciando', 'warn'], passed: ['Aprovado', 'ok'],
 };
 const pill = s => { const [t, c] = STATUS[s] || [s, '']; return `<span class="pill ${c}">${esc(t)}</span>`; };
-const kindPill = k => k === 'multi' ? '<span class="pill info">multiagente</span>' : '<span class="pill">agente</span>';
+const kindPill = k => k === 'multi' ? '<span class="pill info">multiagente</span>' : '';
 const harnessPill = h => h ? `<span class="pill warn">harness:${esc(h.id)}</span>` : '';
 
 function toast(msg, bad) {
@@ -44,10 +44,10 @@ async function api(path, opts = {}) {
 }
 const usd = v => v == null ? '—' : '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: v && v < 0.01 ? 4 : 2 });
 async function act(btn, fn, okMsg) {
-  const old = btn.textContent; btn.disabled = true; btn.textContent = '…';
+  const old = btn.innerHTML; btn.disabled = true; btn.textContent = 'Aguarde…';
   try { const r = await fn(); if (okMsg) toast(okMsg); return r; }
   catch (e) { toast(e.message, true); }
-  finally { btn.disabled = false; btn.textContent = old; }
+  finally { btn.disabled = false; btn.innerHTML = old; }
 }
 
 /* ---------- componentes ---------- */
@@ -63,7 +63,7 @@ function hlist(obj) {
   if (!e.length) return '<div class="mute small">Sem dados ainda</div>';
   return e.map(([k, v]) => `<div class="small"><div class="row between"><span>${esc(k)}</span><b>${fmt(v)}</b></div><div class="hbar"><i style="width:${100 * v / max}%"></i></div></div>`).join('<div style="height:8px"></div>');
 }
-const kpi = (v, l) => `<div class="card kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+const kpi = (v, l) => `<div class="cell"><div class="v">${v}</div><div class="l">${l}</div></div>`;
 const copyable = t => `<code class="inline copy" onclick="navigator.clipboard.writeText(this.textContent);toast('Copiado')">${esc(t)}</code>`;
 window.toast = toast;
 
@@ -72,8 +72,8 @@ async function dashboard() {
   const o = await api('/overview');
   const st = o.status;
   main.innerHTML = `
-  <h1>Dashboard</h1><div class="sub">Visão geral da plataforma de agentes</div>
-  <div class="grid g4">
+  <h1>Painel</h1><div class="sub">${ME.is_admin || ME.is_auditor ? 'Tudo o que está no ar na empresa, e como está indo' : 'Os agentes dos seus times: o que está no ar e como está indo'}</div>
+  <div class="board">
     ${kpi(fmt(o.agents_total), 'Agentes registrados')}
     ${kpi(fmt(o.running_prod), 'Rodando em produção')}
     ${kpi(fmt(o.running_stage), 'Rodando em stage')}
@@ -101,9 +101,10 @@ async function dashboard() {
 
 const ACCESS = { admin: ['admin', 'warn'], auditor: ['auditor', 'info'], maintainer: ['mantenedor', 'ok'], developer: ['developer', 'ok'],
   consumer: ['consumer', 'info'], granted: ['pode usar', 'info'], viewer: ['só catálogo', ''] };
-const accessPill = l => { const [t, c] = ACCESS[l] || [l, '']; return l ? `<span class="pill ${c}">${esc(t)}</span>` : ''; };
-const VIS = { private: '🔒 privado', org: '🏢 empresa', open: '🌐 aberto' };
-const visPill = v => `<span class="chip" title="visibilidade">${VIS[v] || esc(v)}</span>`;
+const accessPill = l => { const [t, c] = ACCESS[l] || [l, '']; return l && l !== 'admin' ? `<span class="pill ${c}">${esc(t)}</span>` : ''; };
+const VIS = { private: 'privado', org: 'empresa', open: 'aberto' };
+const VIS_IC = { private: 'lock', org: 'building', open: 'globe' };
+const visPill = v => `<span class="chip" title="Visibilidade">${icon(VIS_IC[v] || 'globe')}${VIS[v] || esc(v)}</span>`;
 
 async function agentsPage(view) {
   const list = await api('/agents');
@@ -118,19 +119,19 @@ async function agentsPage(view) {
     const q = $('#q').value.toLowerCase(), tf = $('#tf').value;
     const rows = shown.filter(a => (a.name + a.slug + a.objective).toLowerCase().includes(q) && (!tf || (a.team && a.team.name === tf)));
     $('#rows').innerHTML = rows.length ? rows.map(a => catalogView ? `
-      <tr class="click" onclick="location.hash='#/agents/${a.slug}'">
-        <td><b>${esc(a.name)}</b><div class="mute small">${esc(a.objective).slice(0, 110)}</div></td>
+      <tr class="click strip st-${a.status}" onclick="location.hash='#/agents/${a.slug}'">
+        <td class="agent-cell"><b>${esc(a.name)}</b><div class="mute small one-line" title="${esc(a.objective)}">${esc(a.objective)}</div></td>
         <td>${esc(a.team ? a.team.name : '—')}</td><td>${kindPill(a.kind)} ${harnessPill(a.harness)}</td>
         <td>${a.prod ? '<span class="pill ok">em produção</span>' : pill(a.status)}</td>
         <td>${a.last_test ? pill(a.last_test.status) : '<span class="mute">—</span>'}</td><td>${visPill(a.visibility)}</td><td>${accessPill(a.access)}</td>
         <td>${a.access === 'viewer' ? `<button class="ghost ar-go" data-s="${a.slug}" onclick="event.stopPropagation()">Solicitar acesso</button>` : ''}</td></tr>` : `
-      <tr class="click" onclick="location.hash='#/agents/${a.slug}'">
-        <td><b>${esc(a.name)}</b><div class="mute small">${esc(a.objective).slice(0, 90)}</div></td>
+      <tr class="click strip st-${a.status}" onclick="location.hash='#/agents/${a.slug}'">
+        <td class="agent-cell"><b>${esc(a.name)}</b><div class="mute small one-line" title="${esc(a.objective)}"><code>${esc(a.slug)}</code> ${esc(a.objective)}</div></td>
         <td>${esc(a.team ? a.team.name : '—')}<div>${accessPill(a.access)}</div></td>
         <td>${kindPill(a.kind)} ${harnessPill(a.harness)}</td><td>${pill(a.status)}${a.pending_promotion ? ' <span class="pill warn">aguarda aprovação</span>' : ''}</td><td>v${a.version}</td>
         <td><span class="dot ${a.stage ? 'on' : ''}"></span>stage &nbsp;<span class="dot ${a.prod ? 'on' : ''}"></span>prod</td>
         <td>${a.last_test ? pill(a.last_test.status) : '<span class="mute">—</span>'}</td>
-        <td>${fmt(a.requests_7d)}</td><td>${usd(a.cost_7d)}</td><td class="mute">${esc(a.model)}</td></tr>`).join('')
+        <td>${fmt(a.requests_7d)}</td><td>${usd(a.cost_7d)}</td><td class="mute small one-line" style="max-width:180px" title="${esc(a.model)}">${esc(a.model)}</td></tr>`).join('')
       : `<tr><td colspan="10" class="empty">${catalogView ? 'Nenhum agente de outros times visível para você.' : 'Nenhum agente seu ainda. Peça no chat (Claude/ChatGPT/Codex) conectado ao MCP do hangar, use um <a href="#/templates">template</a>, crie em “Novo agente” ou procure no <a href="#/agents/catalog">catálogo da empresa</a>.'}</td></tr>`;
     document.querySelectorAll('.ar-go').forEach(b => b.onclick = e => { e.stopPropagation(); requestAccessDialog(b.dataset.s); });
   };
@@ -204,11 +205,11 @@ async function agentDetail(slug, tab = 'overview') {
   main.innerHTML = `
   <div class="row between"><div><a href="#/agents${['viewer'].includes(a.access) ? '/catalog' : ''}" class="mute small">← Agentes</a>
     <h1>${esc(a.name)} ${kindPill(a.kind)} ${harnessPill(a.harness)} ${pill(a.status)}</h1>
-    <div class="sub">${esc(a.objective)}<br><span class="small">Time <b>${esc(a.team ? a.team.name : '—')}</b> · ${visPill(a.visibility)} · seu acesso: ${accessPill(a.access)}</span></div></div>
+    <div class="sub">${esc(a.objective)}</div><div class="row small" style="margin:-10px 0 4px"><span class="chip" title="Time dono">${icon('team')}${esc(a.team ? a.team.name : '—')}</span>${visPill(a.visibility)}${accessPill(a.access) ? `<span class="mute">Seu acesso</span>${accessPill(a.access)}` : ''}</div></div>
     <div class="row">
       ${can(a, 'edit') ? `<button id="b-test" class="ghost">Rodar testes</button>
       <button id="b-stage" class="ghost">Deploy stage</button>
-      <button id="b-ship" title="${direct ? '' : 'Testa em stage e pede a aprovação de um mantenedor do time'}">${direct ? 'Shipar → produção' : 'Testar e pedir aprovação'}</button>` : ''}
+      <button id="b-ship" title="${direct ? '' : 'Testa em stage e pede a aprovação de um mantenedor do time'}">${direct ? 'Publicar em produção' : 'Testar e pedir aprovação'}</button>` : ''}
       ${can(a, 'manage') ? `<button id="b-stop" class="ghost">Parar prod</button><button id="b-del" class="danger">Excluir</button>` : ''}
       ${can(a, 'request_access') ? '<button id="b-req">Solicitar acesso</button>' : ''}
     </div></div>
@@ -230,7 +231,8 @@ async function agentDetail(slug, tab = 'overview') {
 
 async function agentConnect(t, a) {
   const [clients, conns] = await Promise.all([api('/connect/clients'), api(`/agents/${a.slug}/connections`)]);
-  const modeLabel = { mcp: '🔌 Como ferramenta (MCP)', model: '💬 Como modelo' };
+  const modeLabel = { mcp: 'Como ferramenta (MCP)', model: 'Como modelo' };
+  const modeIcon = { mcp: 'plug', model: 'chat' };
   const warn = a.prod ? '' : `<div class="card warn-card">Este agente ainda não está em <b>produção</b>: as conexões apontam para <code>/gw/${esc(a.slug)}</code> e só respondem depois do ship.</div>`;
   t.innerHTML = `${warn}
   <div class="card"><h2>Conectar a ferramentas — plug and play, opcional por ferramenta</h2>
@@ -240,7 +242,7 @@ async function agentConnect(t, a) {
   <div id="cn-list"></div>
   <div id="cn-out"></div>
   <div class="grid g3 mt">${clients.map(c => `<div class="card"><h2>${esc(c.label)}</h2><div class="mute small">${esc(c.note)}</div>
-    <div class="row mt">${c.modes.map(m => `<button class="${m === c.modes[0] ? '' : 'ghost'} cn-go" data-c="${c.id}" data-m="${m}">${modeLabel[m]}</button>`).join('')}</div></div>`).join('')}</div>`;
+    <div class="row mt">${c.modes.map(m => `<button class="ghost cn-go" data-c="${c.id}" data-m="${m}">${icon(modeIcon[m])}${modeLabel[m]}</button>`).join('')}</div></div>`).join('')}</div>`;
   const drawList = list => {
     $('#cn-list').innerHTML = `<div class="card mt"><h2>Conexões ativas (${list.length})</h2>
     ${list.length ? `<div class="scroll"><table><tr><th>Ferramenta</th><th>Modo</th><th>Chave</th><th>Criada</th><th>Último uso</th><th></th></tr>
@@ -327,12 +329,12 @@ async function topology(t, a) {
   t.innerHTML = `<div class="card"><h2>Orquestração</h2>
     <div class="card" style="border-color:var(--accent)"><b>${esc(a.name)}</b> ${pill(a.status)}<div class="mute small">Orquestrador · delega via A2A</div></div>
     <div style="border-left:2px solid var(--line);margin:0 0 0 24px;padding-left:20px">
-    ${subs.map(s => `<div class="card mt" onclick="location.hash='#/agents/${s.slug}'" style="cursor:pointer"><b>${esc(s.name)}</b> ${pill(s.status)} ${s.prod ? '<span class="pill ok">prod ✓</span>' : ''}<div class="mute small">${esc(s.objective)}</div></div>`).join('')}</div></div>`;
+    ${subs.map(s => `<div class="card mt" onclick="location.hash='#/agents/${s.slug}'" style="cursor:pointer"><b>${esc(s.name)}</b> ${pill(s.status)} ${s.prod ? '<span class="pill ok">em produção</span>' : ''}<div class="mute small">${esc(s.objective)}</div></div>`).join('')}</div></div>`;
 }
 
 function versions(t, a) {
   const tested = new Set(a.tests.filter(x => x.status === 'passed').map(x => x.version));
-  t.innerHTML = [...a.versions].sort((x, y) => y.version - x.version).map(v => `<div class="card mt"><div class="row between"><b>v${v.version}${v.version === a.version ? ' <span class="pill ok">atual</span>' : ''}${tested.has(v.version) ? ' <span class="pill info">testada ✓</span>' : ''}</b>
+  t.innerHTML = [...a.versions].sort((x, y) => y.version - x.version).map(v => `<div class="card mt"><div class="row between"><b>v${v.version}${v.version === a.version ? ' <span class="pill ok">atual</span>' : ''}${tested.has(v.version) ? ' <span class="pill info">testada</span>' : ''}</b>
     <span class="row"><span class="mute small">${esc(v.created_by)} · ${ago(v.created_at)} atrás</span>
     ${v.version !== a.version && can(a, 'edit') ? `<button class="ghost rb" data-v="${v.version}">Restaurar</button>` : ''}</span></div>
     <details><summary>Ver spec</summary><pre>${esc(JSON.stringify(v.spec, null, 2))}</pre></details></div>`).join('');
@@ -343,7 +345,7 @@ function versions(t, a) {
 function testCard(r) {
   return `<div class="card mt"><div class="row between"><div>${pill(r.status)} <b>v${r.version}</b> · ${esc(r.env)} · ${esc(r.summary)}</div>
     <span class="mute small">${ago(r.created_at)} atrás · ${r.duration_ms}ms</span></div>
-    <table>${r.results.map(x => `<tr><td style="width:24px">${x.passed ? '✅' : '❌'}</td><td>${esc(x.name)}</td><td class="mute small">${esc(x.detail)}</td><td class="mute small">${x.latency_ms}ms</td></tr>`).join('')}</table></div>`;
+    <table>${r.results.map(x => `<tr><td style="width:24px">${x.passed ? `${icon('check', 'ok-ic')}` : `${icon('x', 'bad-ic')}`}</td><td>${esc(x.name)}</td><td class="mute small">${esc(x.detail)}</td><td class="mute small">${x.latency_ms}ms</td></tr>`).join('')}</table></div>`;
 }
 function tests(t, a) {
   t.innerHTML = a.tests.length ? a.tests.map(testCard).join('') : '<div class="empty">Nenhum teste registrado. Clique em “Rodar testes”.</div>';
@@ -377,7 +379,7 @@ function usage(t, a) {
   if (!u) { t.innerHTML = '<div class="empty">Uso visível só para o time.</div>'; return; }
   t.innerHTML = `<div class="grid g2"><div class="card"><h2>Requisições (14d)</h2>${bars(u.series)}</div><div class="card"><h2>Custo (14d, US$)</h2>${bars(u.series, 'cost_usd')}</div></div>
   <div class="card mt scroll"><h2>Últimas chamadas</h2><table><tr><th>Quando</th><th>Env</th><th>Canal</th><th>Protocolo</th><th>Tokens</th><th>Custo</th><th>Latência</th><th></th></tr>
-  ${u.recent.map(r => `<tr><td>${ago(r.at)}</td><td>${r.env}</td><td>${esc(r.channel)}</td><td>${r.protocol}</td><td>${fmt(r.tokens)}</td><td>${usd(r.cost_usd)}</td><td>${r.latency_ms}ms</td><td>${r.ok ? '✅' : '❌'}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">Sem uso registrado</td></tr>'}</table></div>`;
+  ${u.recent.map(r => `<tr><td>${ago(r.at)}</td><td>${r.env}</td><td>${esc(r.channel)}</td><td>${r.protocol}</td><td>${fmt(r.tokens)}</td><td>${usd(r.cost_usd)}</td><td>${r.latency_ms}ms</td><td>${r.ok ? `${icon('check', 'ok-ic')}` : `${icon('x', 'bad-ic')}`}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">Sem uso registrado</td></tr>'}</table></div>`;
 }
 
 function playground(t, a) {
@@ -453,10 +455,10 @@ async function testsPage() {
 async function usagePage() {
   const [o, l] = await Promise.all([api('/overview'), api('/usage')]);
   main.innerHTML = `<h1>Uso e custo</h1><div class="sub">Chamadas de agentes e multiagentes por canal e protocolo · custo = tokens × preço da conexão (ou o que o harness reportou)</div>
-  <div class="grid g4">${kpi(fmt(o.requests_24h), 'Requisições 24h')}${kpi(usd(o.cost_24h), 'Custo 24h')}${kpi(usd(o.cost_14d), 'Custo 14 dias')}${kpi(o.error_rate + '%', 'Erros 24h')}</div>
+  <div class="board">${kpi(fmt(o.requests_24h), 'Requisições 24h')}${kpi(usd(o.cost_24h), 'Custo 24h')}${kpi(usd(o.cost_14d), 'Custo 14 dias')}${kpi(o.error_rate + '%', 'Erros 24h')}</div>
   <div class="grid g2 mt"><div class="card"><h2>Custo por dia (14d, US$)</h2>${bars(o.series, 'cost_usd')}</div><div class="card"><h2>Por canal</h2>${hlist(o.by_channel)}<h3>Por protocolo</h3>${hlist(o.by_protocol)}</div></div>
   <div class="card mt scroll"><h2>Últimas 100 chamadas</h2><table><tr><th>Quando</th><th>Agente</th><th>Env</th><th>Canal</th><th>Protocolo</th><th>Tokens</th><th>Custo</th><th>Latência</th><th></th></tr>
-  ${l.map(r => `<tr><td>${ago(r.at)}</td><td><a href="#/agents/${r.agent}">${esc(r.agent)}</a></td><td>${r.env}</td><td>${esc(r.channel)}</td><td>${r.protocol}</td><td>${fmt(r.tokens)}</td><td>${usd(r.cost_usd)}</td><td>${r.latency_ms}ms</td><td>${r.ok ? '✅' : '❌'}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">Sem uso ainda</td></tr>'}</table></div>`;
+  ${l.map(r => `<tr><td>${ago(r.at)}</td><td><a href="#/agents/${r.agent}">${esc(r.agent)}</a></td><td>${r.env}</td><td>${esc(r.channel)}</td><td>${r.protocol}</td><td>${fmt(r.tokens)}</td><td>${usd(r.cost_usd)}</td><td>${r.latency_ms}ms</td><td>${r.ok ? `${icon('check', 'ok-ic')}` : `${icon('x', 'bad-ic')}`}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">Sem uso ainda</td></tr>'}</table></div>`;
 }
 async function catalogPage() {
   const c = await api('/catalog');
