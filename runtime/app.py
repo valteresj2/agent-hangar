@@ -26,6 +26,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import CallToolResult, TextContent
 
 SPEC = json.loads(os.environ["AGENT_SPEC"])
 SLUG = os.environ.get("AGENT_SLUG", "agent")
@@ -75,7 +76,7 @@ def _describe(name: str, args: dict) -> str:
     return f"🔧 {label}" + (f": {hint}" if hint else "")
 # Clientes que renderizam LaTeX com $…$ (LibreChat) transformam "R$ 10 … R$ 20" em fórmula. Para eles, o $ de
 # valores monetários sai escapado (\$), que o markdown exibe como "$". Fórmulas ($x^2$) não são afetadas.
-LATEX_DOLLAR_CHANNELS = {c.strip() for c in os.environ.get("LATEX_DOLLAR_CHANNELS", "librechat").split(",") if c}
+LATEX_DOLLAR_CHANNELS = {c.strip() for c in os.environ.get("LATEX_DOLLAR_CHANNELS", "librechat,open-webui").split(",") if c}
 _CURRENCY = re.compile(r"(?<![\\$])\$(?=\s?-?\d)")
 
 
@@ -500,11 +501,12 @@ agent_mcp = FastMCP(
 
 @agent_mcp.tool(name=_MCP_TOOL_NAME,
                 description=(f"{SPEC.get('objective', '')} Devolve: {SPEC.get('final_output', '')}").strip())
-async def _agent_mcp_tool(message: str) -> str:
+async def _agent_mcp_tool(message: str) -> CallToolResult:
     """Envia uma mensagem/tarefa ao agente (usa as mesmas instruções, skills, MCPs e tools configurados
     nele) e devolve a resposta final."""
-    text, _usage, _trace = await chat([{"role": "user", "content": message}])
-    return text
+    text, usage, _trace = await chat([{"role": "user", "content": message}])
+    # o cliente vê só o texto; tokens/custo vão em _meta, que o gateway do hangar lê para as métricas
+    return CallToolResult(content=[TextContent(type="text", text=text)], _meta={"usage": usage})
 
 
 @asynccontextmanager
@@ -531,9 +533,9 @@ def set_session(req: Request, body: dict | None = None):
     """Sessão = X-Session-Id, ou X-Conversation-Id (LibreChat: {{LIBRECHAT_BODY_CONVERSATIONID}}), ou o campo
     `user` do corpo OpenAI. Sem nenhum deles, fica vazia (os MCPs usam um workspace padrão)."""
     h = req.headers
-    sid = h.get("x-session-id") or h.get("x-conversation-id") or ""
+    sid = h.get("x-session-id") or h.get("x-conversation-id") or h.get("x-openwebui-chat-id") or ""
     if not sid or sid in ("new", "null", "undefined") or sid.startswith("{{"):
-        sid = (body or {}).get("user") or h.get("x-user-id") or ""
+        sid = (body or {}).get("user") or h.get("x-user-id") or h.get("x-openwebui-user-id") or ""
     SESSION.set(str(sid)[:200])
     CHANNEL.set(h.get("x-channel", "").lower())
     MODE.set("lite" if h.get("x-hangar-mode", "").lower() == "lite" else "full")

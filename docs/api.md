@@ -33,7 +33,11 @@ Interactive OpenAPI docs: `GET /docs` (admin credential required). Authenticate 
 | GET | `/api/templates`, `/api/templates/{id}` | Gallery |
 | POST | `/api/templates/{id}/apply` | `{connection?, harness_connection?}` |
 | GET / POST | `/api/keys` | List / create `{name, scopes: [admin|invoke], agents: []}`; the key is returned once |
-| DELETE | `/api/keys/{id}` | Revoke |
+| DELETE | `/api/keys/{id}` | Revoke (also disconnects a tool connection) |
+| GET | `/api/connect/clients` | Tools that can be connected and the modes each supports (`mcp`, `model`) |
+| GET | `/api/agents/{slug}/connections` | Active tool connections of an agent |
+| GET | `/api/agents/{slug}/connections/snippet?client=&mode=` | Config preview with a placeholder key; creates nothing |
+| POST | `/api/agents/{slug}/connections` | `{client, mode}` → per-tool `invoke` key (returned once) + `{language, file, content, steps}` |
 | GET | `/api/tests`, `/api/deployments`, `/api/usage`, `/api/audit` | Recent records |
 
 ## Gateway (`/gw/<slug>`, scope `invoke` for that agent, or `admin`)
@@ -47,7 +51,8 @@ Interactive OpenAPI docs: `GET /docs` (admin credential required). Authenticate 
 | ACP | `GET acp/agents`, `POST acp/runs` |
 | MCP | `POST mcp` (Streamable HTTP, stateless, JSON responses) |
 
-Optional header `X-Channel: <name>` tags usage for per-channel metrics.
+Optional header `X-Channel: <name>` tags usage for per-channel metrics. Without it, a key created by a tool
+connection tags usage with its tool (`claude-code`, `open-webui`, …); other keys fall back to `api`.
 
 ## Platform MCP (`/mcp`, scope `admin`)
 
@@ -59,7 +64,8 @@ The tools are:
 - **Build:** `register_agent`, `design_agent` (merge patch plus `remove`), `rollback_agent`, `build_multi_agent`.
 - **Inspect:** `list_agents`, `get_agent`.
 - **Test and deploy:** `run_tests`, `deploy_stage`, `promote_to_production`, `ship_agent`, `stop_agent`.
-- **Use:** `chat_with_agent`, `run_harness_job` (`wait`), `get_job`, `cancel_job`, `create_consumer_key`.
+- **Use:** `chat_with_agent`, `run_harness_job` (`wait`), `get_job`, `cancel_job`, `create_consumer_key`,
+  `connect_agent` (per-tool key + ready-to-paste config).
 
 ## Internal (`/internal`, called from containers only)
 

@@ -173,3 +173,6 @@ class ApiKey(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # chave de conexão de uma ferramenta a um agente (aba "Conectar"): de qual cliente e em que modo
+    client: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    mode: Mapped[str | None] = mapped_column(String(10), nullable=True)  # "mcp" | "model"

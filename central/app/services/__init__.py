@@ -1,5 +1,6 @@
 """Camada de serviço, dividida por responsabilidade. Este módulo reexporta a API pública (`svc.xxx`)."""
 from ..models import Agent  # noqa: F401  (svc.Agent é usado pelo MCP)
+from . import connect  # noqa: F401  (svc.connect.snippet etc.)
 from .catalog import (  # noqa: F401
                       HARNESS_PROTOCOL,
                       PROTOCOLS,

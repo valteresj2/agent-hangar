@@ -21,7 +21,7 @@ def test_mcp_requires_token(client):
     r = client.post("/mcp", json=body, headers={**hdr, **ADMIN})
     names = {t["name"] for t in r.json()["result"]["tools"]}
     assert {"register_agent", "design_agent", "ship_agent", "apply_template", "create_consumer_key",
-            "rollback_agent", "get_spec_schema"} <= names
+            "rollback_agent", "get_spec_schema", "connect_agent"} <= names
 
 
 def test_invoke_key_scopes(client, uniq):

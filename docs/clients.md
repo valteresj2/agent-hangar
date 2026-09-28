@@ -40,6 +40,52 @@ use `https://your-domain/mcp`.
 Then ask, for example: *"Create an agent that triages support tickets into P1–P4 and drafts a reply. Test it and
 ship it."*
 
+## Plug a shipped agent into a tool (plug and play)
+
+Open the agent in the UI, go to the **Connect** tab, pick a tool and a mode. The hangar creates an `invoke` key that
+only reaches that agent, tags it with the tool (usage shows up under that channel) and gives you the config to paste.
+Every connection is optional and independent: connect the same agent to Claude Code as a tool and to Open WebUI as a
+model, and revoke either one alone with **Disconnect**.
+
+| Mode | What the tool sees | Offered for |
+|---|---|---|
+| **MCP (tool)** | One tool named after the agent; its skills, MCPs and LLM run behind it | Every tool |
+| **Model** | The agent is a chat model (OpenAI-compatible, streaming, attachments) | LibreChat, Open WebUI, OpenCode, OpenAI SDKs |
+
+| Tool | MCP | Model | Where the config goes |
+|---|:-:|:-:|---|
+| Claude Code | ✓ | | `claude mcp add --transport http …` |
+| Claude Desktop | ✓ | | `claude_desktop_config.json` (via `mcp-remote`) |
+| Codex CLI | ✓ | | `~/.codex/config.toml` |
+| OpenCode | ✓ | ✓ | `opencode.json` (`mcp` or `provider`) |
+| Cursor | ✓ | | `.cursor/mcp.json` |
+| VS Code (Copilot) | ✓ | | `.vscode/mcp.json` |
+| LibreChat | ✓ | ✓ | `librechat.yaml` (`mcpServers` or `endpoints.custom`) |
+| Open WebUI | ✓ | ✓ | Admin → Settings → *External Tools* (MCP) or *Connections* (OpenAI API) |
+| OpenAI SDK / other | | ✓ | `base_url` + key |
+| Other MCP client | ✓ | | Streamable HTTP URL + `Authorization` header |
+
+The same flow is available without the UI:
+
+```bash
+hangar connect ticket-triage                            # list tools and modes
+hangar connect ticket-triage claude-code                # MCP (default): creates the key, prints the config
+hangar connect ticket-triage open-webui --mode model    # as a model
+hangar connect ticket-triage librechat --preview        # config with a placeholder, creates nothing
+hangar connect ticket-triage --list                     # active connections (revoke: hangar keys revoke <id>)
+```
+
+From an AI client connected to the platform MCP, ask for it: the `connect_agent(slug, client, mode)` tool returns the
+same key and config.
+
+Notes:
+- Only **prod** agents answer on `/gw/<slug>`; connect after `ship`.
+- MCP usage counts only real tool calls (handshake and `tools/list` are not metered), with tokens and cost.
+- Open WebUI: to get one Data Studio workspace per chat, run it with `ENABLE_FORWARD_USER_INFO_HEADERS=true`; the
+  runtime reads `X-OpenWebUI-Chat-Id`.
+- Claude Code asks once to approve servers added with `--scope project`; `--scope user` (the default in the
+  snippet) does not.
+
 ## Consumers (a shipped agent)
 
 **LibreChat**: the full kit, with per-conversation workspaces, attachments and a Docker Compose file, is in [integrations/librechat](../integrations/librechat/). Minimal `librechat.yaml`:

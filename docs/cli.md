@@ -23,7 +23,8 @@ Credentials are read from `HANGAR_URL` / `HANGAR_TOKEN`, or from `~/.config/hang
 | `hangar jobs run <slug> <task…> [--follow] [--timeout N]` | Harness job; `--follow` streams status and logs, Ctrl+C cancels |
 | `hangar jobs get <id>` / `hangar jobs cancel <id>` | Inspect / cancel |
 | `hangar templates ls` / `hangar templates apply <id> [--connection C] [--harness-connection H]` | Template gallery |
-| `hangar keys ls` / `create <name> --scope invoke --agent <slug>` / `revoke <id>` | API keys (`create` prints the key on stdout) |
+| `hangar connect <slug> [tool] [--mode mcp\|model] [--preview] [--list]` | Plug an agent into a tool: creates a per-tool key and prints the config (steps on stderr). No tool = list tools |
+| `hangar keys ls` | `create <name> --scope invoke --agent <slug>` / `revoke <id>` | API keys (`create` prints the key on stdout) |
 
 ## Agents in CI
 

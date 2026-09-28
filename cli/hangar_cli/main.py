@@ -278,6 +278,36 @@ def cmd_keys_revoke(a):
     print(f"chave {a.id} revogada")
 
 
+def cmd_connect(a):
+    c = api()
+    if a.list:
+        rows = c.get(f"/agents/{a.slug}/connections")
+        if out(rows, a.json):
+            return
+        table([[k["id"], k["client_label"], k["mode"], k["prefix"] + "…", k["last_used_at"] or "nunca"] for k in rows],
+              ["id", "ferramenta", "modo", "chave", "último uso"])
+        return
+    if not a.client:
+        rows = c.get("/connect/clients")
+        if out(rows, a.json):
+            return
+        table([[x["id"], x["label"], "/".join(x["modes"]), x["note"]] for x in rows], ["cliente", "nome", "modos", "nota"])
+        return
+    if a.preview:
+        r = c.get(f"/agents/{a.slug}/connections/snippet", params={"client": a.client, "mode": a.mode})
+    else:
+        r = c.post(f"/agents/{a.slug}/connections", {"client": a.client, "mode": a.mode})
+    if out(r, a.json):
+        return
+    print(f"# {r.get('file') or 'configuração'}", file=sys.stderr)
+    for step in r["steps"]:
+        print(f"#  - {step}", file=sys.stderr)
+    print(r["content"])
+    if not a.preview:
+        print(f"# conexão #{r['connection']['id']} criada — revogue com: hangar keys revoke {r['connection']['id']}",
+              file=sys.stderr)
+
+
 # ------------------------------------------------------------------ parser
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="hangar", description="Agent Hangar CLI")
@@ -343,6 +373,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("id")
     s.add_argument("--connection", help="conexão (protocolo openai) dos agentes de chat")
     s.add_argument("--harness-connection", help="conexão dos agentes com harness")
+
+    s = add(sub, "connect", cmd_connect, "conecta um agente a uma ferramenta (MCP ou modelo), plug and play")
+    s.add_argument("slug")
+    s.add_argument("client", nargs="?", help="claude-code, codex, opencode, librechat, open-webui… (vazio = lista)")
+    s.add_argument("--mode", default="mcp", choices=["mcp", "model"])
+    s.add_argument("--preview", action="store_true", help="só mostra o trecho, sem gerar chave")
+    s.add_argument("--list", action="store_true", help="lista as conexões ativas do agente")
 
     ks = sub.add_parser("keys", help="chaves de API").add_subparsers(dest="sub", required=True)
     add(ks, "ls", cmd_keys_ls, "lista chaves")

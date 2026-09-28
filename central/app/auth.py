@@ -28,6 +28,7 @@ class Principal:
     name: str
     scopes: set = field(default_factory=set)
     agents: list = field(default_factory=list)  # vazio = todos (para o escopo invoke)
+    client: str | None = None  # chave de conexão de uma ferramenta: vira o canal padrão das métricas
 
     @property
     def is_admin(self) -> bool:
@@ -44,14 +45,14 @@ def hash_key(key: str) -> str:
 
 
 def create_api_key(db: Session, name: str, scopes: list[str], agents: list[str] | None = None,
-                   actor: str = "admin") -> tuple[ApiKey, str]:
+                   actor: str = "admin", client: str | None = None, mode: str | None = None) -> tuple[ApiKey, str]:
     """Devolve (registro, valor em texto) — o valor só existe aqui; no banco fica apenas o hash."""
     bad = [s for s in scopes if s not in SCOPES]
     if not scopes or bad:
         raise ValueError(f"scopes inválidos: {bad or scopes}. Opções: {list(SCOPES)}")
     raw = KEY_PREFIX + secrets.token_urlsafe(32)
     row = ApiKey(name=name, prefix=raw[:11], key_hash=hash_key(raw), scopes=sorted(set(scopes)),
-                 agents=sorted(set(agents or [])), created_by=actor)
+                 agents=sorted(set(agents or [])), created_by=actor, client=client, mode=mode)
     db.add(row)
     db.commit()
     _CACHE.clear()
@@ -71,7 +72,7 @@ def api_key_dict(k: ApiKey) -> dict:
     return {"id": k.id, "name": k.name, "prefix": k.prefix, "scopes": k.scopes, "agents": k.agents,
             "created_by": k.created_by, "created_at": k.created_at.isoformat() if k.created_at else None,
             "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
-            "revoked": k.revoked_at is not None}
+            "revoked": k.revoked_at is not None, "client": k.client, "mode": k.mode}
 
 
 # Cache curto: evita um SELECT por request no gateway. Revogação limpa o cache.
@@ -93,7 +94,7 @@ def authenticate(db: Session, token: str) -> Principal | None:
     row = db.scalar(select(ApiKey).where(ApiKey.key_hash == h))
     principal = None
     if row and row.revoked_at is None:
-        principal = Principal(f"key:{row.name}", set(row.scopes or []), list(row.agents or []))
+        principal = Principal(f"key:{row.name}", set(row.scopes or []), list(row.agents or []), row.client)
         row.last_used_at = now()
         db.commit()
     _CACHE[h] = (time.monotonic(), principal)

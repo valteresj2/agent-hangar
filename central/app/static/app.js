@@ -155,8 +155,8 @@ async function newAgentPage() {
 
 async function agentDetail(slug, tab = 'overview') {
   const a = await api('/agents/' + slug);
-  const tabs = ['overview', 'topology', 'spec', 'versions', 'tests', 'jobs', 'deployments', 'usage', 'playground'];
-  const names = { overview: 'Visão geral', topology: 'Multiagente', spec: 'Spec', versions: 'Versões', tests: 'Testes', jobs: 'Jobs', deployments: 'Deployments', usage: 'Uso', playground: 'Playground' };
+  const tabs = ['overview', 'connect', 'topology', 'spec', 'versions', 'tests', 'jobs', 'deployments', 'usage', 'playground'];
+  const names = { overview: 'Visão geral', connect: 'Conectar', topology: 'Multiagente', spec: 'Spec', versions: 'Versões', tests: 'Testes', jobs: 'Jobs', deployments: 'Deployments', usage: 'Uso', playground: 'Playground' };
   const shown = tabs.filter(t => (t !== 'topology' || a.kind === 'multi') && (t !== 'jobs' || a.harness));
   main.innerHTML = `
   <div class="row between"><div><a href="#/agents" class="mute small">← Agentes</a>
@@ -177,7 +177,48 @@ async function agentDetail(slug, tab = 'overview') {
   $('#b-stop').onclick = e => act(e.target, () => api(`/agents/${slug}/stop`, { method: 'POST', body: { env: 'prod' } }).then(reload), 'Produção parada');
   $('#b-del').onclick = e => confirm(`Excluir ${a.name} e seus containers?`) && act(e.target, () => api('/agents/' + slug, { method: 'DELETE' }).then(() => location.hash = '#/agents'));
   const t = $('#tab');
-  ({ overview, topology, spec: specEditor, versions, tests, jobs, deployments, usage, playground })[tabs.includes(tab) ? tab : 'overview'](t, a);
+  ({ overview, connect: agentConnect, topology, spec: specEditor, versions, tests, jobs, deployments, usage, playground })[tabs.includes(tab) ? tab : 'overview'](t, a);
+}
+
+async function agentConnect(t, a) {
+  const [clients, conns] = await Promise.all([api('/connect/clients'), api(`/agents/${a.slug}/connections`)]);
+  const modeLabel = { mcp: '🔌 Como ferramenta (MCP)', model: '💬 Como modelo' };
+  const warn = a.prod ? '' : `<div class="card warn-card">Este agente ainda não está em <b>produção</b>: as conexões apontam para <code>/gw/${esc(a.slug)}</code> e só respondem depois do ship.</div>`;
+  t.innerHTML = `${warn}
+  <div class="card"><h2>Conectar a ferramentas — plug and play, opcional por ferramenta</h2>
+    <div class="mute small"><b>MCP</b>: o agente vira uma <i>ferramenta</i> que o LLM da ferramenta chama (todas as plataformas).
+    <b>Modelo</b>: o agente vira um <i>modelo</i> no seletor do chat e conduz a conversa — recebe anexos e usa as próprias tools (LibreChat, Open WebUI, OpenCode, SDKs).
+    Cada conexão gera uma chave só desta ferramenta e deste agente: revogue quando quiser, sem afetar as outras; o uso aparece por ferramenta.</div></div>
+  <div id="cn-list"></div>
+  <div id="cn-out"></div>
+  <div class="grid g3 mt">${clients.map(c => `<div class="card"><h2>${esc(c.label)}</h2><div class="mute small">${esc(c.note)}</div>
+    <div class="row mt">${c.modes.map(m => `<button class="${m === c.modes[0] ? '' : 'ghost'} cn-go" data-c="${c.id}" data-m="${m}">${modeLabel[m]}</button>`).join('')}</div></div>`).join('')}</div>`;
+  const drawList = list => {
+    $('#cn-list').innerHTML = `<div class="card mt"><h2>Conexões ativas (${list.length})</h2>
+    ${list.length ? `<div class="scroll"><table><tr><th>Ferramenta</th><th>Modo</th><th>Chave</th><th>Criada</th><th>Último uso</th><th></th></tr>
+    ${list.map(k => `<tr><td><b>${esc(k.client_label)}</b></td><td>${esc(modeLabel[k.mode] || k.mode)}</td><td><code class="inline">${esc(k.prefix)}…</code></td>
+      <td class="mute">${ago(k.created_at)}</td><td class="mute">${k.last_used_at ? ago(k.last_used_at) + ' atrás' : 'nunca'}</td>
+      <td><button class="ghost cn-rev" data-id="${k.id}" data-n="${esc(k.client_label)}">Desconectar</button></td></tr>`).join('')}</table></div>`
+      : '<div class="mute">Nenhuma ainda — escolha uma ferramenta abaixo.</div>'}</div>`;
+    $('#cn-list').querySelectorAll('.cn-rev').forEach(b => b.onclick = e => confirm(`Desconectar ${b.dataset.n}? Essa ferramenta perde o acesso ao agente.`) &&
+      act(e.target, async () => drawList(await api('/keys/' + b.dataset.id, { method: 'DELETE' }).then(() => api(`/agents/${a.slug}/connections`))), 'Desconectado'));
+  };
+  drawList(conns);
+  t.querySelectorAll('.cn-go').forEach(b => b.onclick = e => act(e.target, async () => {
+    const r = await api(`/agents/${a.slug}/connections`, { method: 'POST', body: { client: b.dataset.c, mode: b.dataset.m } });
+    const label = clients.find(c => c.id === b.dataset.c).label;
+    $('#cn-out').innerHTML = `<div class="card mt warn-card"><div class="row between"><h2>${esc(label)} — ${esc(modeLabel[b.dataset.m])}</h2>
+      <button class="ghost" id="cn-copy">Copiar</button></div>
+      <ol class="small">${r.steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+      ${r.file ? `<div class="small mute">Arquivo: <code>${esc(r.file)}</code></div>` : ''}
+      <pre id="cn-code">${esc(r.content)}</pre>
+      <div class="small"><b>A chave aparece só agora.</b> Para desligar, use “Desconectar” acima (só esta ferramenta perde o acesso).</div></div>`;
+    $('#cn-copy').onclick = () => { navigator.clipboard.writeText(r.content); toast('Configuração copiada'); };
+    $('#cn-out').scrollIntoView({ behavior: 'smooth' });
+    const list = await api(`/agents/${a.slug}/connections`);
+    drawList(list);
+    toast(`Conexão criada (${list.length} ativa(s))`);
+  }));
 }
 
 function specEditor(t, a) {
@@ -467,7 +508,8 @@ async function connectPage() {
   const K = '<SUA_CHAVE>';
   const mcpName = 'agent-hangar';
   main.innerHTML = `<h1>Conectar clientes</h1><div class="sub">Conecte o MCP do hangar ao seu cliente e peça: “crie um agente que…”</div>
-  <div class="card warn-card"><b>Qual chave usar?</b> Para <b>construir</b> agentes (MCP do hangar) use uma chave com escopo <code>admin</code>.
+  <div class="card hero"><b>Conectar um agente pronto a uma ferramenta?</b> Abra o agente em <a href="#/agents">Agentes</a> → aba <b>Conectar</b>: escolha a ferramenta (Claude Code, Codex, OpenCode, Cursor, VS Code, LibreChat, Open WebUI…) e o modo (MCP ou modelo) e receba a configuração pronta, com uma chave só daquela ferramenta. Os exemplos abaixo são genéricos.</div>
+  <div class="card warn-card mt"><b>Qual chave usar?</b> Para <b>construir</b> agentes (MCP do hangar) use uma chave com escopo <code>admin</code>.
     Para <b>consumir</b> um agente (LibreChat, Slack, OpenCode…) gere uma chave <code>invoke</code> restrita àquele agente em <a href="#/keys">Chaves de API</a> — nunca distribua o ADMIN_TOKEN.
     Nos exemplos, troque <code>${esc(K)}</code> pela chave.</div>
   <div class="grid mt">

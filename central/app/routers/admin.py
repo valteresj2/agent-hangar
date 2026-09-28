@@ -92,6 +92,11 @@ class TemplateApply(BaseModel):
     harness_connection: str = ""
 
 
+class ConnectBody(BaseModel):
+    client: str
+    mode: str = "mcp"
+
+
 class KeyBody(BaseModel):
     name: str
     scopes: list[str] = Field(default_factory=lambda: ["invoke"])
@@ -293,6 +298,33 @@ def template(template_id: str):
 def apply_template(template_id: str, body: TemplateApply, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.apply_template(db, template_id, body.connection, body.harness_connection,
                                             actor(request)))
+
+
+# ------------------------------------------------------------------ conexões com ferramentas (plug and play)
+@router.get("/connect/clients")
+def connect_clients():
+    return svc.connect.clients()
+
+
+@router.get("/agents/{slug}/connections")
+def agent_connections(slug: str, db=Depends(db_dep)):
+    return guard(lambda: (svc.get_agent(db, slug), svc.connect.connections(db, slug))[1])
+
+
+@router.get("/agents/{slug}/connections/snippet")
+def connection_snippet(slug: str, client: str, mode: str = "mcp", db=Depends(db_dep)):
+    """Prévia do trecho com <SUA_CHAVE> no lugar da chave (não cria nada)."""
+    def go():
+        a = svc.get_agent(db, slug)
+        return svc.connect.snippet(client, mode, a.slug, a.name)
+    return guard(go)
+
+
+@router.post("/agents/{slug}/connections")
+def create_connection(slug: str, body: ConnectBody, request: Request, db=Depends(db_dep)):
+    """Cria a chave da ferramenta (invoke, só este agente) e devolve o trecho pronto com ela. Revogue com
+    DELETE /api/keys/{id}."""
+    return guard(lambda: svc.connect.connect(db, slug, body.client, body.mode, actor(request)))
 
 
 # ------------------------------------------------------------------ chaves de API

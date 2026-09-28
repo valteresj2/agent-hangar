@@ -19,9 +19,27 @@ from .internal import caller_agent, may_call
 
 router = APIRouter()
 
-FORWARD = ("x-session-id", "x-conversation-id", "x-user-id", "x-channel", "x-hangar-mode", "x-progress")
+FORWARD = ("x-session-id", "x-conversation-id", "x-user-id", "x-channel", "x-hangar-mode", "x-progress",
+           # Open WebUI com ENABLE_FORWARD_USER_INFO_HEADERS=true: id do chat = sessão do agente
+           "x-openwebui-chat-id", "x-openwebui-user-id")
 HOP_BY_HOP = {"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "content-length",
               "content-encoding", "proxy-authenticate", "proxy-authorization"}
+
+
+def channel_of(request: Request) -> str:
+    """Canal das métricas: X-Channel explícito; senão a ferramenta dona da chave (conexões criadas na aba
+    "Conectar" do agente); senão "api"."""
+    p = request.scope.get("state", {}).get("principal")
+    return request.headers.get("x-channel") or (p.client if p is not None and p.client else "api")
+
+
+def _is_tool_call(raw: bytes) -> bool:
+    try:
+        body = json.loads(raw or b"{}")
+    except ValueError:
+        return False
+    items = body if isinstance(body, list) else [body]
+    return any(isinstance(i, dict) and i.get("method") == "tools/call" for i in items)
 
 
 def protocol_of(path: str) -> str:
@@ -101,7 +119,7 @@ async def _harness_mcp(info: dict, request: Request, env: str, channel: str):
 
 async def _proxy_harness(info: dict, path: str, request: Request, env: str):
     base = f"{config.PUBLIC_BASE_URL}/{'gw' if env == 'prod' else 'gw-stage'}/{info['slug']}"
-    channel = request.headers.get("x-channel", "api")
+    channel = channel_of(request)
     if path in (".well-known/agent.json", ".well-known/agent-card.json"):
         return _card(info, base)
     if path == "mcp":
@@ -169,18 +187,23 @@ async def _proxy(request: Request, slug: str, path: str, env: str):
     if is_harness:
         return await _proxy_harness(info, path, request, env)
 
-    channel = request.headers.get("x-channel", "api")
+    channel = channel_of(request)
     proto = protocol_of(path)
     fwd = {"content-type": request.headers.get("content-type", "application/json"),
            "accept": request.headers.get("accept", "application/json, text/event-stream")}
     # identificação da conversa/usuário do cliente (ex.: LibreChat) — o agente repassa aos MCPs como sessão
     fwd.update({h: request.headers[h] for h in FORWARD if h in request.headers})
+    fwd["x-channel"] = channel  # o agente usa o canal (ex.: escapar "$" para renderizadores LaTeX)
     t0 = time.time()
     # read=900: um agente com várias tools pode demorar; em streaming o runtime manda keepalive a cada 10s
     client = httpx.AsyncClient(timeout=httpx.Timeout(900, connect=10))
     try:
         url = f"{deploy.internal_url(slug, env)}/{path}" + (f"?{request.url.query}" if request.url.query else "")
-        req = client.build_request(request.method, url, content=await request.body(), headers=fwd)
+        raw = await request.body()
+        # MCP: handshake, tools/list, ping e notificações não são "uso" — só tools/call entra nas métricas
+        if proto == "mcp" and not _is_tool_call(raw):
+            proto = "other"
+        req = client.build_request(request.method, url, content=raw, headers=fwd)
         upstream = await client.send(req, stream=True)
     except Exception as e:
         await client.aclose()

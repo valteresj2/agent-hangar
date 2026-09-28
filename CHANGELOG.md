@@ -5,6 +5,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Plug-and-play tool connections.** A new **Connect** tab on each agent, `hangar connect`, the
+  `connect_agent` platform MCP tool and `/api/agents/{slug}/connections`:
+  - MCP mode is offered for every tool: Claude Code, Claude Desktop, Codex, OpenCode, Cursor, VS Code, LibreChat,
+    Open WebUI, and any other MCP client;
+  - model mode is offered for chat tools: LibreChat, Open WebUI, OpenCode, and OpenAI SDKs;
+  - each connection is a separate `invoke` key limited to that agent and tagged with the tool, so it can be
+    revoked on its own;
+  - the config comes ready to paste.
+- The gateway tags usage with the key's tool when `X-Channel` is absent.
+- Runtime: Open WebUI chat/user headers (`X-OpenWebUI-Chat-Id`) set the session.
+
+### Fixed
+- Calls through an agent's MCP endpoint now record tokens and cost (the tool result carries `_meta.usage`).
+- MCP handshakes, `tools/list` and pings are no longer counted as requests.
+
 ## [0.2.1] — 2026-09-27
 
 ### Fixed

@@ -151,6 +151,11 @@ curl http://localhost:8090/gw/doc-qa/v1/chat/completions \
 | ACP | `POST /gw/<slug>/acp/runs` |
 | MCP | `POST /gw/<slug>/mcp` (one tool named after the agent) |
 
+**Plug and play:** the agent's **Connect** tab (or `hangar connect <slug> <tool>`) gives a per-tool key and the
+config to paste. Every tool can use the agent as an **MCP tool** (Claude Code, Claude Desktop, Codex, OpenCode,
+Cursor, VS Code, LibreChat, Open WebUI); chat UIs can also use it as a **model** (LibreChat, Open WebUI, OpenCode,
+OpenAI SDKs). Each connection is optional and can be revoked alone. See [docs/clients.md](docs/clients.md).
+
 Use `/gw-stage/<slug>/…` to talk to the stage version. Send `X-Channel: slack` (or any name) to get per-channel metrics.
 
 ## Data Studio + LibreChat

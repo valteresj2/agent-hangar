@@ -57,9 +57,11 @@ FLUXO
 7. ship_agent(slug): testa em stage, registra e só promove para produção se passar. Se falhar, leia os
    resultados, corrija com design_agent e rode de novo. Errou uma versão? rollback_agent.
 8. Ao final informe: slug, versão, endpoints (OpenAI-compatible, A2A, ACP e MCP — todo agente é também um
-   servidor MCP com 1 tool), resultado dos testes. Para o usuário plugar o agente em LibreChat, Claude
-   Desktop, OpenCode etc., gere uma chave de consumo com create_consumer_key (só consegue invocar aquele
-   agente) — NUNCA entregue o token de admin. Para agente com harness, run_harness_job mostra resultado/diff.
+   servidor MCP com 1 tool), resultado dos testes. Para o usuário plugar o agente numa ferramenta (Claude
+   Code/Desktop, Codex, OpenCode, Cursor, VS Code, LibreChat, Open WebUI…), use connect_agent(slug, client,
+   mode): "mcp" = o agente vira ferramenta (todas); "model" = vira modelo no chat (LibreChat, Open WebUI,
+   OpenCode, SDK OpenAI). Ela gera uma chave só daquela ferramenta e devolve a configuração pronta — NUNCA
+   entregue o token de admin. Para agente com harness, run_harness_job mostra resultado/diff.
 
 Todo agente roda em container Docker isolado (harness: um container novo por execução, nunca ocioso).
 Nunca coloque segredos em instructions/tools: chaves de LLM ficam criptografadas no catálogo da central.
@@ -308,3 +310,13 @@ async def create_consumer_key(name: str, agents: list[str]) -> dict:
         svc.audit(db, ACTOR, "api_key.create", name, f"invoke {agents}")
         return {"key": raw, "agents": row.agents, "note": "guarde agora: não será exibida de novo"}
     return await _run(go)
+
+
+@mcp.tool()
+async def connect_agent(slug: str, client: str, mode: str = "mcp") -> dict:
+    """Conecta um agente em produção a uma ferramenta, plug and play: gera uma chave só para essa ferramenta e esse
+    agente e devolve a configuração pronta para colar. client: claude-code | claude-desktop | codex | opencode |
+    cursor | vscode | librechat | open-webui | openai-sdk | generic-mcp. mode: "mcp" (o agente vira uma ferramenta
+    do cliente — todas as plataformas) ou "model" (o agente vira um modelo no chat — librechat, open-webui,
+    opencode, openai-sdk). Mostre ao usuário o conteúdo e os passos; a chave aparece só nesta resposta."""
+    return await _run(svc.connect.connect, slug, client, mode, ACTOR)
