@@ -1,7 +1,7 @@
 """MCP da plataforma: é por aqui que Claude/ChatGPT/Codex/OpenCode constroem agentes via chat."""
 import asyncio
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from sqlalchemy import select
 
@@ -63,6 +63,12 @@ FLUXO
    OpenCode, SDK OpenAI). Ela gera uma chave só daquela ferramenta e devolve a configuração pronta — NUNCA
    entregue o token de admin. Para agente com harness, run_harness_job mostra resultado/diff.
 
+ACESSO: cada agente pertence a um TIME. Você age com os papéis do usuário dono da credencial (veja whoami):
+developer/maintainer criam e editam agentes do time (register_agent(team=...) quando a pessoa está em mais de um);
+consumer só usa. Produção pode exigir aprovação: se ship_agent devolver status="approval_pending", diga ao
+usuário que um mantenedor do time precisa aprovar (página Aprovações ou decide_approval) — não tente contornar.
+Agentes de outros times aparecem em list_agents com access="viewer": para usar, request_agent_access.
+
 Todo agente roda em container Docker isolado (harness: um container novo por execução, nunca ocioso).
 Nunca coloque segredos em instructions/tools: chaves de LLM ficam criptografadas no catálogo da central.
 """.strip()
@@ -73,16 +79,36 @@ mcp = FastMCP("agent-hangar", instructions=INSTRUCTIONS, host="0.0.0.0", port=80
               transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False))
 
 
-async def _run(fn, *a, **kw):
-    """Roda a chamada (DB + Docker, bloqueante) numa thread — nunca no event loop. Essencial para jobs de
-    harness: enquanto uma tool espera, o event loop precisa receber o callback do container do job."""
+def _principal(ctx: Context) -> auth.Principal:
+    """Quem chamou a tool: o AuthMiddleware autenticou o request HTTP e guardou o principal nele."""
+    req = ctx.request_context.request if ctx and ctx.request_context else None
+    p = req.scope.get("state", {}).get("principal") if req is not None else None
+    if p is None:
+        raise svc.PlatformError("não autenticado")
+    return p
+
+
+async def _run(ctx: Context, fn, *a, **kw):
+    """Roda fn(db, acc, ...) numa thread — nunca no event loop. Essencial para jobs de harness: enquanto uma
+    tool espera, o event loop precisa receber o callback do container do job. `acc` traz as permissões de
+    quem chamou (services/access.py)."""
+    p = _principal(ctx)
+
     def go():
         with SessionLocal() as db:
-            return fn(db, *a, **kw)
+            return fn(db, svc.access.of(db, p), *a, **kw)
     return await asyncio.to_thread(go)
 
 
-ACTOR = "mcp"
+def _agent(db, acc, slug: str, action: str = "view"):
+    a = svc.get_agent(db, slug)
+    acc.require(action, a)
+    return a
+
+
+def _admin(acc):
+    if not acc.p.is_admin:
+        raise svc.access.Forbidden("só admins da plataforma alteram o catálogo")
 
 
 @mcp.tool()
@@ -99,9 +125,15 @@ def get_spec_schema() -> dict:
 
 
 @mcp.tool()
-async def list_catalog() -> dict:
+async def whoami(ctx: Context) -> dict:
+    """Quem você é na plataforma: papel na empresa, times e papel em cada um (onde pode criar agentes)."""
+    return await _run(ctx, lambda db, acc: svc.org.me(db, acc))
+
+
+@mcp.tool()
+async def list_catalog(ctx: Context) -> dict:
     """Skills, MCP servers e conexões de LLM disponíveis para reutilizar (sem expor as api keys)."""
-    def go(db):
+    def go(db, acc):
         return {"skills": [{"name": s.name, "description": s.description} for s in db.scalars(select(Skill))],
                 "mcp_servers": [{"name": m.name, "url": m.url, "description": m.description}
                                 for m in db.scalars(select(McpServer))],
@@ -109,34 +141,43 @@ async def list_catalog() -> dict:
                 "builtin_tools": ["calculator", "current_time", "platform_dashboard"],
                 "harnesses": svc.HARNESS_PROTOCOL,
                 "fallback_sem_conexao": f"{config.DEFAULT_MODEL} (sem custo, sem chave — só para testar o fluxo)"}
-    return await _run(go)
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def register_llm_connection(name: str, base_url: str, model_name: str, api_key: str, description: str = "",
-                                  protocol: str = "openai", price_in_per_mtok: float | None = None,
+async def register_llm_connection(ctx: Context, name: str, base_url: str, model_name: str, api_key: str,
+                                  description: str = "", protocol: str = "openai",
+                                  price_in_per_mtok: float | None = None,
                                   price_out_per_mtok: float | None = None) -> dict:
-    """Registra (ou atualiza) uma conexão de LLM: endpoint + model_name padrão + api key (idealmente virtual).
-    protocol="openai" (chat, codex, hermes), "anthropic" (claude-code) ou "deepseek" (deepseek-harness).
-    Preços por 1M tokens (US$) são opcionais e habilitam o cálculo de custo. A chave é guardada
-    criptografada e nunca é devolvida."""
-    c = await _run(svc.upsert_llm_connection, name, base_url, model_name, api_key, description, ACTOR, protocol,
-                   price_in_per_mtok, price_out_per_mtok)
-    return {"registered": c.name, "base_url": c.base_url, "model_name": c.model_name, "protocol": c.protocol}
+    """(Admin) Registra (ou atualiza) uma conexão de LLM: endpoint + model_name padrão + api key (idealmente
+    virtual). protocol="openai" (chat, codex, hermes), "anthropic" (claude-code) ou "deepseek"
+    (deepseek-harness). Preços por 1M tokens (US$) são opcionais e habilitam o cálculo de custo. A chave é
+    guardada criptografada e nunca é devolvida."""
+    def go(db, acc):
+        _admin(acc)
+        c = svc.upsert_llm_connection(db, name, base_url, model_name, api_key, description, acc.p.name, protocol,
+                                      price_in_per_mtok, price_out_per_mtok)
+        return {"registered": c.name, "base_url": c.base_url, "model_name": c.model_name, "protocol": c.protocol}
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def register_skill(name: str, description: str, content: str) -> dict:
-    """Registra (ou atualiza) uma skill reutilizável: instruções/procedimento/conhecimento em markdown."""
-    s = await _run(svc.upsert_skill, name, description, content, ACTOR)
-    return {"registered": s.name}
+async def register_skill(ctx: Context, name: str, description: str, content: str) -> dict:
+    """(Admin) Registra (ou atualiza) uma skill reutilizável: instruções/procedimento/conhecimento em markdown."""
+    def go(db, acc):
+        _admin(acc)
+        return {"registered": svc.upsert_skill(db, name, description, content, acc.p.name).name}
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def register_mcp_server(name: str, url: str, description: str = "") -> dict:
-    """Registra um MCP server (Streamable HTTP) no catálogo para os agentes usarem."""
-    m = await _run(svc.upsert_mcp, name, url, description, ACTOR)
-    return {"registered": m.name, "url": m.url}
+async def register_mcp_server(ctx: Context, name: str, url: str, description: str = "") -> dict:
+    """(Admin) Registra um MCP server (Streamable HTTP) no catálogo para os agentes usarem."""
+    def go(db, acc):
+        _admin(acc)
+        m = svc.upsert_mcp(db, name, url, description, acc.p.name)
+        return {"registered": m.name, "url": m.url}
+    return await _run(ctx, go)
 
 
 @mcp.tool()
@@ -146,24 +187,32 @@ async def list_templates() -> list:
 
 
 @mcp.tool()
-async def apply_template(template_id: str, connection: str = "", harness_connection: str = "") -> list:
-    """Cria os agentes de um template. `connection` (protocolo openai) alimenta os agentes de chat;
-    `harness_connection` os agentes-com-harness. Sem conexões, nascem em mock. Depois: ship_agent."""
-    return await _run(svc.apply_template, template_id, connection, harness_connection, ACTOR)
+async def apply_template(ctx: Context, template_id: str, connection: str = "", harness_connection: str = "",
+                         team: str = "") -> list:
+    """Cria os agentes de um template no seu time (`team`: slug; opcional se você só está em um).
+    `connection` (protocolo openai) alimenta os agentes de chat; `harness_connection` os agentes-com-harness.
+    Sem conexões, nascem em mock. Depois: ship_agent."""
+    return await _run(ctx, lambda db, acc: svc.apply_template(db, template_id, connection, harness_connection,
+                                                              acc.p.name, acc, team or None))
 
 
 @mcp.tool()
-async def register_agent(name: str, objective: str, final_output: str, owner: str = "") -> dict:
-    """Registra um agente: nome, objetivo e saída final. Devolve o slug para as próximas chamadas."""
-    def go(db):
-        a = svc.create_agent(db, name, objective, final_output, owner=owner, actor=ACTOR)
-        return {"slug": a.slug, "status": a.status, "version": a.current_version,
-                "next": "design_agent para definir instruções, skills, MCPs, tools e testes"}
-    return await _run(go)
+async def register_agent(ctx: Context, name: str, objective: str, final_output: str, owner: str = "",
+                         team: str = "", visibility: str = "") -> dict:
+    """Registra um agente: nome, objetivo e saída final. `team`: slug do time (opcional se você só é developer
+    de um). `visibility`: private (só o time) | org (catálogo da empresa, uso sob pedido — padrão) | open
+    (qualquer um da empresa usa). Devolve o slug para as próximas chamadas."""
+    def go(db, acc):
+        t = acc.team_for_new_agent(team or None)
+        a = svc.create_agent(db, name, objective, final_output, owner=owner, actor=acc.p.name, team_id=t.id,
+                             visibility=visibility or None)
+        return {"slug": a.slug, "team": t.slug, "visibility": a.visibility, "status": a.status,
+                "version": a.current_version, "next": "design_agent para definir instruções, skills, MCPs, tools e testes"}
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def design_agent(slug: str, instructions: str | None = None, model: str | None = None,
+async def design_agent(ctx: Context, slug: str, instructions: str | None = None, model: str | None = None,
                        skills: list | None = None, mcps: list | None = None, tools: list | None = None,
                        sub_agents: list | None = None, tests: list | None = None, channels: list | None = None,
                        llm: dict | None = None, harness: dict | None = None, judge: dict | None = None,
@@ -179,144 +228,215 @@ async def design_agent(slug: str, instructions: str | None = None, model: str | 
         patch["llm"] = {**(patch.get("llm") or {}), "model": model or None}
     for k in remove or []:
         patch[k] = None
-    a = await _run(svc.design_agent, slug, patch, ACTOR)
-    return {"slug": a.slug, "version": a.current_version, "status": a.status, "kind": a.kind,
-            "next": "ship_agent (testa em stage e promove) ou run_tests"}
+
+    def go(db, acc):
+        _agent(db, acc, slug, "edit")
+        a = svc.design_agent(db, slug, patch, acc.p.name)
+        return {"slug": a.slug, "version": a.current_version, "status": a.status, "kind": a.kind,
+                "next": "ship_agent (testa em stage e promove) ou run_tests"}
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def rollback_agent(slug: str, version: int) -> dict:
+async def rollback_agent(ctx: Context, slug: str, version: int) -> dict:
     """Restaura a spec de uma versão anterior como uma versão nova (o histórico nunca é reescrito)."""
-    a = await _run(svc.rollback_agent, slug, version, ACTOR)
-    return {"slug": a.slug, "version": a.current_version, "status": a.status, "next": "ship_agent"}
+    def go(db, acc):
+        _agent(db, acc, slug, "edit")
+        a = svc.rollback_agent(db, slug, version, acc.p.name)
+        return {"slug": a.slug, "version": a.current_version, "status": a.status, "next": "ship_agent"}
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def build_multi_agent(name: str, objective: str, final_output: str, orchestrator_instructions: str,
-                            members: list, connection: str = "", model: str = "", owner: str = "") -> dict:
-    """Cria um multiagente de uma vez. members: [{name, objective, final_output, instructions, skills?, mcps?,
-    tools?, tests?}]. Cada membro vira um agente; o orquestrador delega a eles via A2A. `connection`/`model`
-    valem para todos. Depois use ship_agent no orquestrador."""
-    def go(db):
+async def build_multi_agent(ctx: Context, name: str, objective: str, final_output: str,
+                            orchestrator_instructions: str, members: list, connection: str = "", model: str = "",
+                            owner: str = "", team: str = "") -> dict:
+    """Cria um multiagente de uma vez (todos no mesmo time). members: [{name, objective, final_output,
+    instructions, skills?, mcps?, tools?, tests?}]. Cada membro vira um agente; o orquestrador delega a eles via
+    A2A. `connection`/`model` valem para todos. Depois use ship_agent no orquestrador."""
+    def go(db, acc):
+        t = acc.team_for_new_agent(team or None)
         llm_patch = {k: v for k, v in (("connection", connection), ("model", model)) if v}
         slugs = []
         for m in members:
-            a = svc.create_agent(db, m["name"], m["objective"], m["final_output"], owner=owner, actor=ACTOR)
+            a = svc.create_agent(db, m["name"], m["objective"], m["final_output"], owner=owner, actor=acc.p.name,
+                                 team_id=t.id)
             patch = {k: m[k] for k in ("instructions", "skills", "mcps", "tools", "tests") if k in m}
             if llm_patch:
                 patch["llm"] = llm_patch
-            svc.design_agent(db, a.slug, patch, ACTOR)
+            svc.design_agent(db, a.slug, patch, acc.p.name)
             slugs.append(a.slug)
-        o = svc.create_agent(db, name, objective, final_output, owner=owner, actor=ACTOR)
+        o = svc.create_agent(db, name, objective, final_output, owner=owner, actor=acc.p.name, team_id=t.id)
         patch = {"instructions": orchestrator_instructions, "sub_agents": slugs}
         if llm_patch:
             patch["llm"] = llm_patch
-        svc.design_agent(db, o.slug, patch, ACTOR)
-        return {"orchestrator": o.slug, "members": slugs, "next": f"ship_agent('{o.slug}')"}
-    return await _run(go)
+        svc.design_agent(db, o.slug, patch, acc.p.name)
+        return {"orchestrator": o.slug, "members": slugs, "team": t.slug, "next": f"ship_agent('{o.slug}')"}
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def list_agents() -> list:
-    """Agentes registrados com status, versão, onde rodam e uso dos últimos 7 dias."""
-    def go(db):
-        keep = ("slug", "name", "kind", "status", "version", "model", "requests_7d", "cost_7d")
-        return [{k: a[k] for k in keep} | {"stage": bool(a["stage"]), "prod": bool(a["prod"])}
-                for a in svc.list_agents(db)]
-    return await _run(go)
+async def list_agents(ctx: Context) -> list:
+    """Agentes que você pode ver: os dos seus times e os do catálogo da empresa (com o seu nível de acesso),
+    status, versão, onde rodam e uso dos últimos 7 dias."""
+    def go(db, acc):
+        keep = ("slug", "name", "kind", "status", "version", "model", "requests_7d", "cost_7d", "visibility",
+                "access")
+        return [{k: a.get(k) for k in keep} | {"team": (a.get("team") or {}).get("slug"), "stage": bool(a["stage"]),
+                                             "prod": bool(a["prod"])} for a in svc.list_agents(db, acc)]
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def get_agent(slug: str) -> dict:
-    """Detalhe completo: spec, versões, testes, deployments, jobs, endpoints e uso."""
-    def go(db):
-        a = svc.get_agent(db, slug)
+async def get_agent(ctx: Context, slug: str) -> dict:
+    """Detalhe: spec, versões, testes, deployments, jobs, endpoints e uso (conforme o seu acesso)."""
+    def go(db, acc):
+        a = _agent(db, acc, slug)
         svc.refresh_deployments(db, [a])
-        return svc.agent_dict(db, a, detail=True)
-    return await _run(go)
+        return svc.agent_dict(db, a, detail=True, acc=acc)
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def run_tests(slug: str) -> dict:
+async def run_tests(ctx: Context, slug: str) -> dict:
     """Deploy em stage (container isolado) + smoke (health, A2A, ACP, OpenAI, MCP) + casos da spec."""
-    return svc.test_dict(await _run(svc.run_tests, slug, ACTOR))
+    def go(db, acc):
+        _agent(db, acc, slug, "edit")
+        return svc.test_dict(svc.run_tests(db, slug, acc.p.name))
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def deploy_stage(slug: str) -> dict:
+async def deploy_stage(ctx: Context, slug: str) -> dict:
     """Deploy no ambiente de stage."""
-    return svc.dep_dict(await _run(svc.deploy_env, slug, "stage", ACTOR))
+    def go(db, acc):
+        _agent(db, acc, slug, "edit")
+        return svc.dep_dict(svc.deploy_env(db, slug, "stage", acc.p.name))
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def promote_to_production(slug: str) -> dict:
-    """Promove para produção. Só funciona se a versão atual passou nos testes de stage."""
-    return svc.dep_dict(await _run(svc.promote, slug, ACTOR))
+async def promote_to_production(ctx: Context, slug: str, note: str = "") -> dict:
+    """Promove para produção (só se a versão atual passou nos testes de stage). Se o seu papel não promove
+    direto (developer, ou time com aprovação obrigatória), cria um pedido para um mantenedor aprovar e devolve
+    status="approval_pending"."""
+    return await _run(ctx, lambda db, acc: svc.org.promote(db, acc, slug, note))
 
 
 @mcp.tool()
-async def ship_agent(slug: str) -> list:
-    """Atalho: (sub-agentes primeiro) testa em stage, registra e promove para produção se aprovado."""
-    return await _run(svc.ship, slug, ACTOR)
+async def ship_agent(ctx: Context, slug: str, note: str = "") -> dict:
+    """Atalho: (sub-agentes primeiro) testa em stage, registra e promove para produção se aprovado. Sem
+    permissão de promover direto, termina com um pedido de aprovação (status="approval_pending") — avise o
+    usuário que um mantenedor do time precisa aprovar em Aprovações."""
+    return await _run(ctx, lambda db, acc: svc.org.ship(db, acc, slug, note))
 
 
 @mcp.tool()
-async def stop_agent(slug: str, env: str = "prod") -> dict:
-    """Para o container do agente (env: stage|prod)."""
-    await _run(svc.stop, slug, env, ACTOR)
-    return {"stopped": slug, "env": env}
+async def stop_agent(ctx: Context, slug: str, env: str = "prod") -> dict:
+    """Para o container do agente (env: stage|prod). Produção: só mantenedores/admins."""
+    def go(db, acc):
+        _agent(db, acc, slug, "manage" if env == "prod" else "edit")
+        svc.stop(db, slug, env, acc.p.name)
+        return {"stopped": slug, "env": env}
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def chat_with_agent(slug: str, message: str, env: str = "prod") -> dict:
+async def chat_with_agent(ctx: Context, slug: str, message: str, env: str = "prod") -> dict:
     """Conversa com um agente deployado. Para agente-com-harness, dispara um job (prefira run_harness_job)."""
-    return await _run(svc.chat, slug, message, env, "mcp", ACTOR)
+    def go(db, acc):
+        _agent(db, acc, slug, "consume" if env == "prod" else "edit")
+        return svc.chat(db, slug, message, env, "mcp", acc.p.name)
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def run_harness_job(slug: str, task: str, env: str = "stage", timeout_s: int = 180, wait: bool = True) -> dict:
+async def run_harness_job(ctx: Context, slug: str, task: str, env: str = "stage", timeout_s: int = 180,
+                          wait: bool = True) -> dict:
     """Job de harness num container efêmero: executa a `task` e devolve resultado + diff + logs + tokens.
     wait=false devolve o job em fila na hora (acompanhe com get_job; cancele com cancel_job)."""
-    if wait:
-        return svc.job_dict(await _run(svc.run_harness_job, slug, task, env, timeout_s, ACTOR, "mcp"))
-    return svc.job_dict(await _run(svc.submit_job, slug, task, env, timeout_s, ACTOR, "mcp"))
+    def go(db, acc):
+        _agent(db, acc, slug, "consume" if env == "prod" else "edit")
+        if wait:
+            return svc.job_dict(svc.run_harness_job(db, slug, task, env, timeout_s, acc.p.name, "mcp"))
+        return svc.job_dict(svc.submit_job(db, slug, task, env, timeout_s, acc.p.name, "mcp"))
+    return await _run(ctx, go)
+
+
+def _job(db, acc, job_id: int) -> Job:
+    job = db.get(Job, job_id)
+    a = db.get(svc.Agent, job.agent_id) if job else None
+    if not job or not a or not acc.can("usage", a):
+        raise svc.PlatformError(f"job {job_id} não encontrado")
+    return job
 
 
 @mcp.tool()
-async def get_job(job_id: int) -> dict:
+async def get_job(ctx: Context, job_id: int) -> dict:
     """Estado atual de um job de harness."""
-    def go(db):
-        job = db.get(Job, job_id)
-        if not job:
-            raise svc.PlatformError(f"job {job_id} não encontrado")
-        return svc.job_dict(job)
-    return await _run(go)
+    return await _run(ctx, lambda db, acc: svc.job_dict(_job(db, acc, job_id)))
 
 
 @mcp.tool()
-async def cancel_job(job_id: int) -> dict:
+async def cancel_job(ctx: Context, job_id: int) -> dict:
     """Cancela um job em fila ou rodando (o container é removido)."""
-    return svc.job_dict(await _run(svc.cancel_job, job_id, ACTOR))
+    def go(db, acc):
+        _job(db, acc, job_id)
+        return svc.job_dict(svc.cancel_job(db, job_id, acc.p.name))
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def create_consumer_key(name: str, agents: list[str]) -> dict:
+async def create_consumer_key(ctx: Context, name: str, agents: list[str]) -> dict:
     """Gera uma chave de API que SÓ consegue invocar os agentes listados (escopo invoke) — é ela que vai
-    para LibreChat, Slack, Claude Desktop etc. O valor aparece só nesta resposta."""
-    def go(db):
+    para LibreChat, Slack, Claude Desktop etc. Os agentes precisam ser agentes que você pode usar; a chave é sua
+    e morre se você perder o acesso. O valor aparece só nesta resposta."""
+    def go(db, acc):
+        if not agents:
+            raise svc.PlatformError("informe os agentes")
         for s in agents:
-            svc.get_agent(db, s)
-        row, raw = auth.create_api_key(db, name, ["invoke"], agents, ACTOR)
-        svc.audit(db, ACTOR, "api_key.create", name, f"invoke {agents}")
+            _agent(db, acc, s, "consume")
+        row, raw = auth.create_api_key(db, name, ["invoke"], agents, acc.p.name,
+                                       user_id=acc.p.user_id if acc.p.is_user else None)
+        svc.audit(db, acc.p.name, "api_key.create", name, f"invoke {agents}")
         return {"key": raw, "agents": row.agents, "note": "guarde agora: não será exibida de novo"}
-    return await _run(go)
+    return await _run(ctx, go)
 
 
 @mcp.tool()
-async def connect_agent(slug: str, client: str, mode: str = "mcp") -> dict:
+async def connect_agent(ctx: Context, slug: str, client: str, mode: str = "mcp") -> dict:
     """Conecta um agente em produção a uma ferramenta, plug and play: gera uma chave só para essa ferramenta e esse
     agente e devolve a configuração pronta para colar. client: claude-code | claude-desktop | codex | opencode |
     cursor | vscode | librechat | open-webui | openai-sdk | generic-mcp. mode: "mcp" (o agente vira uma ferramenta
     do cliente — todas as plataformas) ou "model" (o agente vira um modelo no chat — librechat, open-webui,
     opencode, openai-sdk). Mostre ao usuário o conteúdo e os passos; a chave aparece só nesta resposta."""
-    return await _run(svc.connect.connect, slug, client, mode, ACTOR)
+    def go(db, acc):
+        _agent(db, acc, slug, "consume")
+        return svc.connect.connect(db, slug, client, mode, acc.p.name,
+                                   user_id=acc.p.user_id if acc.p.is_user else None)
+    return await _run(ctx, go)
+
+
+@mcp.tool()
+async def request_agent_access(ctx: Context, slug: str, reason: str = "") -> dict:
+    """Pede acesso de uso a um agente de outro time (visibilidade "org"). Um mantenedor do time decide."""
+    return await _run(ctx, lambda db, acc: svc.org.request_access(db, acc, slug, reason))
+
+
+@mcp.tool()
+async def list_approvals(ctx: Context) -> dict:
+    """Pedidos que você pode decidir agora (promoções para produção e pedidos de acesso) e os seus pedidos."""
+    return await _run(ctx, lambda db, acc: svc.org.approvals(db, acc))
+
+
+@mcp.tool()
+async def decide_approval(ctx: Context, kind: str, request_id: int, approve: bool, note: str = "") -> dict:
+    """Aprova ou recusa um pedido. kind: "promotion" (promoção para produção — quem pediu não pode aprovar) ou
+    "access" (uso de um agente do seu time). Confirme com o usuário antes de aprovar."""
+    def go(db, acc):
+        if kind == "promotion":
+            return svc.org.decide_promotion(db, acc, request_id, approve, note)
+        if kind == "access":
+            return svc.org.decide_access(db, acc, request_id, approve)
+        raise svc.PlatformError("kind deve ser promotion ou access")
+    return await _run(ctx, go)

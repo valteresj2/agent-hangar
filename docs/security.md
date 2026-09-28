@@ -7,15 +7,31 @@ describes what is protected today, and what is **not**.
 
 | Credential | Power | Where it lives |
 |---|---|---|
-| `ADMIN_TOKEN` | Everything | `.env` of the hangar only. It is never injected into agents or jobs. Use it to bootstrap, then prefer API keys. |
-| API key, scope `admin` | UI, `/api`, the hangar MCP, every agent | Shown once, stored as SHA-256. Revocable. |
-| API key, scope `invoke` | Only `/gw/<slug>` for the listed agents (or all, if none listed) | This is what goes into LibreChat, Slack bots, OpenCode… |
+| `ADMIN_TOKEN` | Everything | `.env` of the hangar only. It is never injected into agents or jobs. Use it to bootstrap and as the break-glass login; keep it in a vault once SSO works. |
+| UI session | The user's roles (see [access.md](access.md)) | `HttpOnly`, `SameSite=Lax` cookie opened by the OAuth2 login (or by a token login). Only its hash is stored; it expires (`SESSION_TTL_HOURS`) and is revoked on logout or deactivation. Writes need the `X-CSRF-Token` header (double submit). |
+| API key, scope `user` | Acts as its owner: `/api`, the hangar MCP, CLI | Personal token. It dies when the owner is deactivated. |
+| API key, scope `admin` | UI, `/api`, the hangar MCP, every agent | Shown once, stored as SHA-256. Revocable. Created by admins only. |
+| API key, scope `invoke` | Only `/gw/<slug>` for the listed agents | This is what goes into LibreChat, Slack bots, OpenCode… A key owned by a user is revoked automatically when that user loses access to one of the agents. |
+| API key, scope `scim` | Only `/scim/v2` | Used by the directory (Entra ID, Okta) for provisioning. |
 | Per-agent internal token | `HMAC(INTERNAL_SECRET, slug)` | Injected into that agent's container only. With `X-Agent-Slug`, the hangar lets it call **only its own sub-agents** and, if the spec has the `platform_dashboard` tool, the read-only dashboard. A compromised agent cannot impersonate another. |
 | Job token | Single job's callback | Random per job; accepted once. |
 | Connection API keys | Your LLM provider | Encrypted at rest with Fernet (`HANGAR_SECRET_KEY`). Never returned by the API (only the last 4 characters). Decrypted only to start the container that needs it. |
 
 Keep `HANGAR_SECRET_KEY` safe and backed up. Losing it makes the stored connection keys unreadable, so you would
 have to re-enter them.
+
+## Login and access control
+
+Summary; the full model is in [access.md](access.md).
+
+- **OAuth2 authorization code with PKCE.** `state` and the verifier travel in a signed, 10-minute `HttpOnly`
+  cookie. The profile is read from the provider API: Google userinfo, Microsoft Graph, GitHub.
+- **Restrictions are checked on the callback.** They are the allowed domains, a fixed Entra tenant (never
+  `common`) and required GitHub organizations.
+- **An existing user is linked by e-mail only when the provider vouches for it.** That means a verified e-mail
+  on Google or GitHub, or a fixed tenant on Entra. Otherwise a misconfigured provider could take over accounts.
+- **Deactivation takes effect immediately.** Deactivating a user (UI or SCIM) ends their sessions and revokes
+  all their keys at once. Losing a team role or a grant revokes the invoke keys that no longer apply.
 
 ## Networks
 
@@ -79,8 +95,8 @@ These are not implemented yet:
 - Human approval for destructive actions.
 - Input/output guardrails.
 - Secret references for HTTP tool auth headers (today, do not put tokens in tool URLs).
-- OIDC/SSO and RBAC per team.
-- Budgets and rate limits.
+- Rate limits (monthly budgets per team exist; see [access.md](access.md)).
+- SAML directly (use a broker such as Keycloak with the generic OAuth2 provider).
 
 ## Reporting a vulnerability
 

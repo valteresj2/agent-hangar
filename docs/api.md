@@ -1,23 +1,64 @@
 # HTTP API
 
-Interactive OpenAPI docs: `GET /docs` (admin credential required). Authenticate with
-`Authorization: Bearer <token>` or `X-API-Key: <token>`.
+Interactive OpenAPI docs: `GET /docs`. Authenticate with `Authorization: Bearer <token>` or
+`X-API-Key: <token>`. The token is an admin key, a personal token (scope `user`) or a session token.
+The browser UI uses the session cookie and must send `X-CSRF-Token` (the value of the `hangar_csrf` cookie) on
+writes.
 
-## Admin API (`/api`, scope `admin`)
+Every route below checks the caller's permission on the resource ([access.md](access.md)). Lists are filtered to
+what the caller can see. Admins see everything.
+
+## Login and session (`/api/auth`, open)
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/auth/providers` | Configured login providers |
+| GET | `/api/auth/login/{provider}?next=#/…` | Redirects to Google, Microsoft, GitHub or generic OAuth2 (authorization code + PKCE) |
+| GET | `/api/auth/callback/{provider}` | Provider callback; opens the session and redirects to the UI |
+| POST | `/api/auth/token` | `{token}` → session cookie (ADMIN_TOKEN, admin key or personal token) |
+| POST | `/api/auth/logout` | Ends the session |
+| GET | `/api/me` | Who am I: company role, teams, pending approvals |
+
+## Company, teams, users, approvals
+
+| Method | Path | Description |
+|---|---|---|
+| GET / PATCH | `/api/org` | Company name and default visibility (PATCH: admin) |
+| GET / POST | `/api/teams` | List (with spend and your role) / create (admin) |
+| GET / PATCH / DELETE | `/api/teams/{team}` | Detail / name, description (maintainer), `require_approval`, `budget_usd_month`, `budget_enforce` (admin) / delete (admin, no agents) |
+| GET / POST | `/api/teams/{team}/members` | Members / add `{email, role}` (maintainer; pre-registers unknown e-mails) |
+| PATCH / DELETE | `/api/teams/{team}/members/{user_id}` | Change role / remove |
+| GET / POST / PATCH | `/api/users`, `/api/users/{id}` | List (auditor) / pre-register / role and `active` (admin; deactivating revokes sessions and keys) |
+| GET | `/api/approvals` | What you can decide now, and your own requests |
+| POST | `/api/promotions/{id}/approve` · `/reject` | Production approval (the requester cannot approve) |
+| POST | `/api/agents/{slug}/access-requests` | `{reason}` request to use an agent of another team |
+| GET | `/api/agents/{slug}/grants` | Pending and approved access (maintainer) |
+| POST | `/api/access-requests/{id}/approve` · `/reject` · `/revoke` | Decide or revoke (revoking also revokes the person's keys) |
+| PATCH | `/api/agents/{slug}/access` | `{visibility, expose_spec, team}` (maintainer) |
+| GET | `/api/sso` | Providers, group mappings, SCIM URL (admin) |
+| PUT | `/api/sso/{provider}` | `{enabled, client_id, client_secret, settings}` (secret encrypted) |
+| POST / DELETE | `/api/sso/mappings`, `/api/sso/mappings/{id}` | Group → team `{provider, external_group, team, role}` |
+
+## SCIM 2.0 (`/scim/v2`, scope `scim`)
+
+`Users`, `Groups`, `ServiceProviderConfig`, `ResourceTypes` and `Schemas`, with filters (`userName eq`,
+`externalId eq`, `displayName eq`) and PATCH in the Entra ID and Okta formats. See [access.md](access.md#scim-20-provisioning).
+
+## Agents and platform (`/api`)
 
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/health` | Open. `{status, version}` |
 | GET | `/api/overview` | KPIs, 14-day series, top agents, cost |
 | GET | `/api/spec/schema` | JSON Schema of the agent spec |
-| GET / POST | `/api/agents` | List / register `{name, objective, final_output, owner?, slug?}` |
+| GET / POST | `/api/agents` | List (with `team`, `visibility`, `access`, `permissions`) / register `{name, objective, final_output, owner?, slug?, team?, visibility?}` (developer+) |
 | GET | `/api/agents/{slug}` | Detail: spec, versions, tests, deployments, jobs, endpoints, usage |
 | PATCH | `/api/agents/{slug}` | JSON Merge Patch on spec (and name/objective/final_output/owner) |
 | PUT | `/api/agents/{slug}/spec` | Replace the spec |
 | POST | `/api/agents/{slug}/rollback` | `{version}` → new version with that spec |
 | POST | `/api/agents/{slug}/test` | Deploy stage + run tests |
-| POST | `/api/agents/{slug}/deploy` | `{env: stage|prod}` (prod is gated by tests) |
-| POST | `/api/agents/{slug}/ship` | Sub-agents → stage → tests → prod |
+| POST | `/api/agents/{slug}/deploy` | `{env: stage\|prod}`. Prod is gated by tests; without the right to promote it returns `status: approval_pending` and a request |
+| POST | `/api/agents/{slug}/ship` | Sub-agents → stage → tests → prod. The last step can be `approval_pending` |
 | POST | `/api/agents/{slug}/stop` | `{env}` |
 | POST | `/api/agents/{slug}/chat` | `{message, env}` |
 | GET | `/api/agents/{slug}/logs?env=` | Container logs |
@@ -32,7 +73,7 @@ Interactive OpenAPI docs: `GET /docs` (admin credential required). Authenticate 
 | POST | `/api/apply` | GitOps document `{skills, mcp_servers, agents}` (idempotent) |
 | GET | `/api/templates`, `/api/templates/{id}` | Gallery |
 | POST | `/api/templates/{id}/apply` | `{connection?, harness_connection?}` |
-| GET / POST | `/api/keys` | List / create `{name, scopes: [admin|invoke], agents: []}`; the key is returned once |
+| GET / POST | `/api/keys` | Your keys (admin: all) / create `{name, scopes: [user\|invoke\|admin\|scim], agents: []}`; the key is returned once |
 | DELETE | `/api/keys/{id}` | Revoke (also disconnects a tool connection) |
 | GET | `/api/connect/clients` | Tools that can be connected and the modes each supports (`mcp`, `model`) |
 | GET | `/api/agents/{slug}/connections` | Active tool connections of an agent |
@@ -40,7 +81,7 @@ Interactive OpenAPI docs: `GET /docs` (admin credential required). Authenticate 
 | POST | `/api/agents/{slug}/connections` | `{client, mode}` → per-tool `invoke` key (returned once) + `{language, file, content, steps}` |
 | GET | `/api/tests`, `/api/deployments`, `/api/usage`, `/api/audit` | Recent records |
 
-## Gateway (`/gw/<slug>`, scope `invoke` for that agent, or `admin`)
+## Gateway (`/gw/<slug>`: invoke key for that agent, a user who can use it, or admin)
 
 `/gw/<slug>/…` = prod, `/gw-stage/<slug>/…` = stage.
 
@@ -54,11 +95,12 @@ Interactive OpenAPI docs: `GET /docs` (admin credential required). Authenticate 
 Optional header `X-Channel: <name>` tags usage for per-channel metrics. Without it, a key created by a tool
 connection tags usage with its tool (`claude-code`, `open-webui`, …); other keys fall back to `api`.
 
-## Platform MCP (`/mcp`, scope `admin`)
+## Platform MCP (`/mcp`, admin key or personal token)
 
-The tools are:
+The client acts with the key owner's roles. The tools are:
 
-- **Guidance:** `platform_guide`, `get_spec_schema`.
+- **Guidance:** `platform_guide`, `get_spec_schema`, `whoami`.
+- **Access:** `request_agent_access`, `list_approvals`, `decide_approval`.
 - **Catalog:** `list_catalog`, `register_llm_connection`, `register_skill`, `register_mcp_server`.
 - **Templates:** `list_templates`, `apply_template`.
 - **Build:** `register_agent`, `design_agent` (merge patch plus `remove`), `rollback_agent`, `build_multi_agent`.

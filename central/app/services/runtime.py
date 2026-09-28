@@ -159,8 +159,9 @@ def promote(db: Session, slug: str, actor="admin") -> Deployment:
     return deploy_env(db, slug, "prod", actor)
 
 
-def ship(db: Session, slug: str, actor="admin", _seen=None) -> list[dict]:
-    """Sub-agentes primeiro -> stage -> testes -> produção (só se os testes passarem)."""
+def ship(db: Session, slug: str, actor="admin", _seen=None, promote_prod: bool = True) -> list[dict]:
+    """Sub-agentes primeiro -> stage -> testes -> produção (só se os testes passarem). promote_prod=False para
+    depois dos testes: quem não pode promover direto gera um pedido de aprovação (services/org.py)."""
     from .testing import run_tests
 
     _seen = _seen if _seen is not None else set()
@@ -170,12 +171,14 @@ def ship(db: Session, slug: str, actor="admin", _seen=None) -> list[dict]:
     a = get_agent(db, slug)
     steps = []
     for sub in spec_of(a).get("sub_agents", []):
-        steps += ship(db, sub, actor, _seen)
+        steps += ship(db, sub, actor, _seen, promote_prod)
     run = run_tests(db, slug, actor)
     steps.append({"agent": slug, "step": "tests", "status": run.status, "summary": run.summary})
     if run.status != "passed":
         raise PlatformError(f"Testes reprovados para '{slug}': {run.summary}. Veja os resultados e ajuste com "
                             "design_agent.")
+    if not promote_prod:
+        return steps
     dep = promote(db, slug, actor)
     steps.append({"agent": slug, "step": "prod", "status": dep.status, "url": dep.url})
     return steps

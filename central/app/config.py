@@ -24,6 +24,13 @@ SECRET_KEY = _env("HANGAR_SECRET_KEY")
 INTERNAL_SECRET = _env("INTERNAL_SECRET") or _env("INTERNAL_TOKEN")
 
 PUBLIC_BASE_URL = _env("PUBLIC_BASE_URL", "http://localhost:8090").rstrip("/")
+
+# Login (OAuth2). Sessão da UI em cookie HttpOnly; e-mails desta lista viram admin da plataforma no login.
+# Credenciais dos provedores: OAUTH_GOOGLE_*, OAUTH_MICROSOFT_*, OAUTH_GITHUB_*, OAUTH_OAUTH2_* (ver .env.example)
+# ou na página "SSO e SCIM" da UI (o que for salvo lá tem prioridade).
+SESSION_TTL_HOURS = int(_env("SESSION_TTL_HOURS", "12"))
+BOOTSTRAP_ADMIN_EMAILS = {e.strip().lower() for e in _env("BOOTSTRAP_ADMIN_EMAILS").split(",") if e.strip()}
+COOKIE_SECURE = _env("COOKIE_SECURE", "1" if PUBLIC_BASE_URL.startswith("https://") else "0") == "1"
 INTERNAL_BASE_URL = _env("INTERNAL_BASE_URL", "http://central:8080").rstrip("/")
 
 # Imagens. HANGAR_REGISTRY=ghcr.io/<owner> usa as imagens publicadas; o padrão usa os builds locais.

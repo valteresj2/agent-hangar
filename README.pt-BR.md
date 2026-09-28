@@ -31,6 +31,15 @@ OpenCode, no Claude Desktop, num bot de Slack, em outro agente (via A2A) ou em q
 também é **um servidor MCP próprio**, então as skills e tools dele continuam funcionando dentro de outras
 ferramentas.
 
+**Times e SSO:**
+- Cada pessoa entra com Google, Microsoft Entra ID, GitHub ou outro provedor OAuth2.
+- Cada agente pertence a um time, com os papéis mantenedor, developer e consumer.
+- Produção exige a aprovação de outro mantenedor.
+- Os outros times encontram agentes no catálogo da empresa e pedem acesso.
+- O SCIM sincroniza usuários e grupos com o diretório.
+
+Veja [docs/access.md](docs/access.md).
+
 **Plug and play:** na aba **Conectar** do agente (ou `hangar connect <slug> <ferramenta>`) você escolhe a
 ferramenta e o modo, e recebe uma chave só daquela ferramenta com a configuração pronta para colar. Toda ferramenta
 pode usar o agente **via MCP** (Claude Code, Claude Desktop, Codex, OpenCode, Cursor, VS Code, LibreChat, Open WebUI);

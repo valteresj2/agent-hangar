@@ -24,25 +24,20 @@ function toast(msg, bad) {
   const d = document.createElement('div'); d.textContent = msg; if (bad) d.className = 'bad';
   $('#toast').append(d); setTimeout(() => d.remove(), bad ? 8000 : 3500);
 }
-const TK = 'hangar_token';
-const store = { get: () => { try { return localStorage.getItem(TK); } catch { return null; } },
-  set: v => { try { localStorage.setItem(TK, v); } catch { /* sem storage: pede de novo */ } },
-  del: () => { try { localStorage.removeItem(TK); } catch { /* idem */ } } };
-function token() {
-  let t = store.get();
-  if (!t) { t = (prompt('Token de admin (ADMIN_TOKEN) ou chave de API com escopo admin (ah_…):') || '').trim(); store.set(t); }
-  return t;
-}
-$('#logout').onclick = () => { store.del(); location.reload(); };
-const authHeaders = () => ({ 'Authorization': 'Bearer ' + token(), 'Content-Type': 'application/json' });
+/* Sessão: cookie HttpOnly aberto pelo login (OAuth2 ou token). Escritas mandam o X-CSRF-Token (double-submit). */
+const cookieVal = n => (document.cookie.split('; ').find(c => c.startsWith(n + '=')) || '').slice(n.length + 1);
+const authHeaders = () => ({ 'Content-Type': 'application/json', 'X-CSRF-Token': cookieVal('hangar_csrf') });
+let ME = null;  // /api/me: quem sou, papéis e times
+const can = (a, p) => (a.permissions || []).includes(p);
+$('#logout').onclick = async () => { await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {}); location.hash = '#/'; location.reload(); };
 
+class AuthError extends Error {}
 async function api(path, opts = {}) {
   const r = await fetch('/api' + path, {
-    method: opts.method || 'GET', headers: authHeaders(),
+    method: opts.method || 'GET', headers: authHeaders(), credentials: 'same-origin',
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
-  if (r.status === 401) { store.del(); throw new Error('Credencial inválida — recarregue a página para informar outra'); }
-  if (r.status === 403) throw new Error('Esta chave não tem escopo admin');
+  if (r.status === 401) { showLogin(); throw new AuthError('Sessão expirada — entre de novo'); }
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.detail || data.error || r.statusText);
   return data;
@@ -104,33 +99,73 @@ async function dashboard() {
   </div>`;
 }
 
-async function agentsPage() {
+const ACCESS = { admin: ['admin', 'warn'], auditor: ['auditor', 'info'], maintainer: ['mantenedor', 'ok'], developer: ['developer', 'ok'],
+  consumer: ['consumer', 'info'], granted: ['pode usar', 'info'], viewer: ['só catálogo', ''] };
+const accessPill = l => { const [t, c] = ACCESS[l] || [l, '']; return l ? `<span class="pill ${c}">${esc(t)}</span>` : ''; };
+const VIS = { private: '🔒 privado', org: '🏢 empresa', open: '🌐 aberto' };
+const visPill = v => `<span class="chip" title="visibilidade">${VIS[v] || esc(v)}</span>`;
+
+async function agentsPage(view) {
   const list = await api('/agents');
-  const render = q => {
-    const rows = list.filter(a => (a.name + a.slug + a.objective).toLowerCase().includes(q.toLowerCase()));
-    $('#rows').innerHTML = rows.length ? rows.map(a => `
+  const catalogView = view === 'catalog';
+  // meus = dos meus times + concessões explícitas; agentes "abertos" ficam no catálogo (marcados como "pode usar")
+  const isOwn = a => ['maintainer', 'developer', 'consumer'].includes(a.access) || (a.access === 'granted' && a.visibility !== 'open');
+  const own = ME.is_admin ? list : list.filter(isOwn);
+  const others = ME.is_admin ? list : list.filter(a => !isOwn(a));
+  const shown = catalogView ? others : own;
+  const teams = [...new Set(shown.map(a => a.team && a.team.name).filter(Boolean))].sort();
+  const render = () => {
+    const q = $('#q').value.toLowerCase(), tf = $('#tf').value;
+    const rows = shown.filter(a => (a.name + a.slug + a.objective).toLowerCase().includes(q) && (!tf || (a.team && a.team.name === tf)));
+    $('#rows').innerHTML = rows.length ? rows.map(a => catalogView ? `
+      <tr class="click" onclick="location.hash='#/agents/${a.slug}'">
+        <td><b>${esc(a.name)}</b><div class="mute small">${esc(a.objective).slice(0, 110)}</div></td>
+        <td>${esc(a.team ? a.team.name : '—')}</td><td>${kindPill(a.kind)} ${harnessPill(a.harness)}</td>
+        <td>${a.prod ? '<span class="pill ok">em produção</span>' : pill(a.status)}</td>
+        <td>${a.last_test ? pill(a.last_test.status) : '<span class="mute">—</span>'}</td><td>${visPill(a.visibility)}</td><td>${accessPill(a.access)}</td>
+        <td>${a.access === 'viewer' ? `<button class="ghost ar-go" data-s="${a.slug}" onclick="event.stopPropagation()">Solicitar acesso</button>` : ''}</td></tr>` : `
       <tr class="click" onclick="location.hash='#/agents/${a.slug}'">
         <td><b>${esc(a.name)}</b><div class="mute small">${esc(a.objective).slice(0, 90)}</div></td>
-        <td>${kindPill(a.kind)} ${harnessPill(a.harness)}</td><td>${pill(a.status)}</td><td>v${a.version}</td>
+        <td>${esc(a.team ? a.team.name : '—')}<div>${accessPill(a.access)}</div></td>
+        <td>${kindPill(a.kind)} ${harnessPill(a.harness)}</td><td>${pill(a.status)}${a.pending_promotion ? ' <span class="pill warn">aguarda aprovação</span>' : ''}</td><td>v${a.version}</td>
         <td><span class="dot ${a.stage ? 'on' : ''}"></span>stage &nbsp;<span class="dot ${a.prod ? 'on' : ''}"></span>prod</td>
         <td>${a.last_test ? pill(a.last_test.status) : '<span class="mute">—</span>'}</td>
-        <td>${fmt(a.requests_7d)}</td><td>${usd(a.cost_7d)}</td><td class="mute">${esc(a.model)}</td></tr>`).join('') : '<tr><td colspan="9" class="empty">Nenhum agente. Peça no chat (Claude/ChatGPT/Codex) conectado ao MCP do hangar, use um <a href="#/templates">template</a> ou clique em “Novo agente”.</td></tr>';
+        <td>${fmt(a.requests_7d)}</td><td>${usd(a.cost_7d)}</td><td class="mute">${esc(a.model)}</td></tr>`).join('')
+      : `<tr><td colspan="10" class="empty">${catalogView ? 'Nenhum agente de outros times visível para você.' : 'Nenhum agente seu ainda. Peça no chat (Claude/ChatGPT/Codex) conectado ao MCP do hangar, use um <a href="#/templates">template</a>, crie em “Novo agente” ou procure no <a href="#/agents/catalog">catálogo da empresa</a>.'}</td></tr>`;
+    document.querySelectorAll('.ar-go').forEach(b => b.onclick = e => { e.stopPropagation(); requestAccessDialog(b.dataset.s); });
   };
-  main.innerHTML = `<div class="row between"><div><h1>Agentes</h1><div class="sub">${list.length} registrados</div></div>
-    <div class="row"><input id="q" placeholder="Buscar…" style="max-width:260px"><a href="#/agents/new"><button>+ Novo agente</button></a></div></div>
-    <div class="card scroll"><table><tr><th>Agente</th><th>Tipo</th><th>Status</th><th>Versão</th><th>Ambientes</th><th>Último teste</th><th>Req. 7d</th><th>Custo 7d</th><th>Modelo</th></tr><tbody id="rows"></tbody></table></div>`;
-  render(''); $('#q').oninput = e => render(e.target.value);
+  main.innerHTML = `<div class="row between"><div><h1>Agentes</h1><div class="sub">${catalogView ? 'Catálogo da empresa: agentes de outros times que você pode encontrar e pedir para usar' : (ME.is_admin ? 'Todos os agentes da empresa (você é admin)' : 'Agentes dos seus times e os que você recebeu acesso')}</div></div>
+    <div class="row"><select id="tf" style="width:auto"><option value="">Todos os times</option>${teams.map(t => `<option>${esc(t)}</option>`).join('')}</select>
+      <input id="q" placeholder="Buscar…" style="max-width:240px">${ME.can_create_agents ? '<a href="#/agents/new"><button>+ Novo agente</button></a>' : ''}</div></div>
+    <div class="tabs" style="margin-top:0"><a href="#/agents" class="${catalogView ? '' : 'on'}">${ME.is_admin ? 'Todos' : 'Meus agentes'} (${own.length})</a><a href="#/agents/catalog" class="${catalogView ? 'on' : ''}">Catálogo da empresa (${others.length})</a></div>
+    <div class="card scroll"><table>${catalogView
+      ? '<tr><th>Agente</th><th>Time</th><th>Tipo</th><th>Status</th><th>Testes</th><th>Visibilidade</th><th>Seu acesso</th><th></th></tr>'
+      : '<tr><th>Agente</th><th>Time</th><th>Tipo</th><th>Status</th><th>Versão</th><th>Ambientes</th><th>Último teste</th><th>Req. 7d</th><th>Custo 7d</th><th>Modelo</th></tr>'}<tbody id="rows"></tbody></table></div>`;
+  render(); $('#q').oninput = render; $('#tf').onchange = render;
+}
+
+async function requestAccessDialog(slug) {
+  const reason = prompt('Para que você vai usar este agente? (vai para o mantenedor do time)');
+  if (reason === null) return;
+  try { await api(`/agents/${slug}/access-requests`, { method: 'POST', body: { reason } }); toast('Pedido enviado ao time dono do agente'); route(); }
+  catch (e) { toast(e.message, true); }
 }
 
 async function newAgentPage() {
-  const c = await api('/catalog');
+  const [c, teamList] = await Promise.all([api('/catalog'), api('/teams')]);
+  const myTeams = teamList.filter(t => ME.is_admin || ['maintainer', 'developer'].includes(t.my_role));
   const conns = c.llm_connections;
   const opt = (list, empty) => `<option value="">${empty}</option>` + list.map(x => `<option value="${esc(x.name)}">${esc(x.name)} · ${esc(x.protocol)} · ${esc(x.model_name)}</option>`).join('');
   main.innerHTML = `<a href="#/agents" class="mute small">← Agentes</a><h1>Novo agente</h1>
   <div class="sub">O jeito principal é pedir pelo chat (MCP) — este formulário cobre o básico; depois refine na aba <b>Spec</b>.</div>
   <div class="card"><div class="grid g2">
     <label>Nome<input id="na-name" placeholder="ex.: Triagem de chamados"></label>
-    <label>Responsável<input id="na-owner" placeholder="time ou pessoa (opcional)"></label></div>
+    <label>Contato<input id="na-owner" placeholder="pessoa ou canal para dúvidas (opcional)"></label></div>
+    <div class="grid g2 mt">
+      <label>Time<select id="na-team">${myTeams.map(t => `<option value="${esc(t.slug)}">${esc(t.name)}</option>`).join('')}</select></label>
+      <label>Visibilidade<select id="na-vis"><option value="">padrão da empresa (${esc(VIS[ME.org.default_visibility] || ME.org.default_visibility)})</option>
+        <option value="private">${VIS.private} — só o time vê</option><option value="org">${VIS.org} — no catálogo, uso sob pedido</option>
+        <option value="open">${VIS.open} — qualquer pessoa da empresa usa</option></select></label></div>
     <label class="mt">Objetivo<input id="na-obj" placeholder="o que o agente faz"></label>
     <label class="mt">Saída final<input id="na-out" placeholder="o que ele entrega"></label>
     <label class="mt">Instruções<textarea id="na-ins" rows="5" placeholder="como ele deve se comportar"></textarea></label>
@@ -141,43 +176,56 @@ async function newAgentPage() {
       <label>Conexão de LLM<select id="na-conn">${opt(conns, 'nenhuma (mock — só para testar o fluxo)')}</select></label></div>
     <div class="row mt"><button id="na-go">Criar</button><label class="row small"><input type="checkbox" id="na-ship" style="width:auto"> testar e shipar em seguida</label></div></div>`;
   $('#na-go').onclick = e => act(e.target, async () => {
-    const body = { name: $('#na-name').value.trim(), objective: $('#na-obj').value.trim(), final_output: $('#na-out').value.trim(), owner: $('#na-owner').value.trim() };
+    const body = { name: $('#na-name').value.trim(), objective: $('#na-obj').value.trim(), final_output: $('#na-out').value.trim(), owner: $('#na-owner').value.trim(), team: $('#na-team').value, visibility: $('#na-vis').value || null };
     if (!body.name || !body.objective || !body.final_output) throw new Error('Nome, objetivo e saída final são obrigatórios');
     const a = await api('/agents', { method: 'POST', body });
     const kind = $('#na-kind').value, conn = $('#na-conn').value;
     const patch = { instructions: $('#na-ins').value };
     if (kind === 'chat') { if (conn) patch.llm = { connection: conn }; } else patch.harness = { id: kind, ...(conn ? { connection: conn } : {}) };
     await api('/agents/' + a.slug, { method: 'PATCH', body: patch });
-    if ($('#na-ship').checked) { await api(`/agents/${a.slug}/ship`, { method: 'POST' }); toast('Agente em produção'); }
+    if ($('#na-ship').checked) shipResult(await api(`/agents/${a.slug}/ship`, { method: 'POST' }));
     location.hash = '#/agents/' + a.slug;
   }, 'Agente criado');
 }
 
+function shipResult(steps) {
+  const last = steps[steps.length - 1] || {};
+  if (last.status === 'approval_pending') toast('Testes aprovados — pedido de promoção enviado para um mantenedor do time');
+  else toast('Agente em produção');
+}
+
 async function agentDetail(slug, tab = 'overview') {
   const a = await api('/agents/' + slug);
-  const tabs = ['overview', 'connect', 'topology', 'spec', 'versions', 'tests', 'jobs', 'deployments', 'usage', 'playground'];
-  const names = { overview: 'Visão geral', connect: 'Conectar', topology: 'Multiagente', spec: 'Spec', versions: 'Versões', tests: 'Testes', jobs: 'Jobs', deployments: 'Deployments', usage: 'Uso', playground: 'Playground' };
-  const shown = tabs.filter(t => (t !== 'topology' || a.kind === 'multi') && (t !== 'jobs' || a.harness));
+  const tabs = ['overview', 'connect', 'topology', 'spec', 'versions', 'tests', 'jobs', 'deployments', 'usage', 'playground', 'access'];
+  const names = { overview: 'Visão geral', connect: 'Conectar', topology: 'Multiagente', spec: 'Spec', versions: 'Versões', tests: 'Testes', jobs: 'Jobs', deployments: 'Deployments', usage: 'Uso', playground: 'Playground', access: 'Acesso' };
+  const need = { connect: 'consume', spec: 'view_spec', versions: 'view_spec', tests: 'view_spec', jobs: 'usage', deployments: 'view_spec', usage: 'usage', playground: 'consume', access: 'manage' };
+  const shown = tabs.filter(t => (t !== 'topology' || a.kind === 'multi') && (t !== 'jobs' || a.harness) && (!need[t] || can(a, need[t])));
+  const direct = can(a, 'promote');
   main.innerHTML = `
-  <div class="row between"><div><a href="#/agents" class="mute small">← Agentes</a>
-    <h1>${esc(a.name)} ${kindPill(a.kind)} ${harnessPill(a.harness)} ${pill(a.status)}</h1><div class="sub">${esc(a.objective)}</div></div>
+  <div class="row between"><div><a href="#/agents${['viewer'].includes(a.access) ? '/catalog' : ''}" class="mute small">← Agentes</a>
+    <h1>${esc(a.name)} ${kindPill(a.kind)} ${harnessPill(a.harness)} ${pill(a.status)}</h1>
+    <div class="sub">${esc(a.objective)}<br><span class="small">Time <b>${esc(a.team ? a.team.name : '—')}</b> · ${visPill(a.visibility)} · seu acesso: ${accessPill(a.access)}</span></div></div>
     <div class="row">
-      <button id="b-test" class="ghost">Rodar testes</button>
+      ${can(a, 'edit') ? `<button id="b-test" class="ghost">Rodar testes</button>
       <button id="b-stage" class="ghost">Deploy stage</button>
-      <button id="b-ship">Shipar → produção</button>
-      <button id="b-stop" class="ghost">Parar prod</button>
-      <button id="b-del" class="danger">Excluir</button>
+      <button id="b-ship" title="${direct ? '' : 'Testa em stage e pede a aprovação de um mantenedor do time'}">${direct ? 'Shipar → produção' : 'Testar e pedir aprovação'}</button>` : ''}
+      ${can(a, 'manage') ? `<button id="b-stop" class="ghost">Parar prod</button><button id="b-del" class="danger">Excluir</button>` : ''}
+      ${can(a, 'request_access') ? '<button id="b-req">Solicitar acesso</button>' : ''}
     </div></div>
+  ${a.pending_promotion ? `<div class="card warn-card">Há um pedido de promoção para produção aguardando aprovação — veja em <a href="#/approvals">Aprovações</a>.</div>` : ''}
   <div class="tabs">${shown.map(t => `<a href="#/agents/${slug}/${t}" class="${t === tab ? 'on' : ''}">${names[t]}</a>`).join('')}</div>
   <div id="tab"></div>`;
   const reload = () => route();
-  $('#b-test').onclick = e => act(e.target, () => api(`/agents/${slug}/test`, { method: 'POST' }).then(r => { toast(`Testes: ${r.summary}`, r.status !== 'passed'); reload(); }));
-  $('#b-stage').onclick = e => act(e.target, () => api(`/agents/${slug}/deploy`, { method: 'POST', body: { env: 'stage' } }).then(reload), 'Deploy em stage concluído');
-  $('#b-ship').onclick = e => act(e.target, () => api(`/agents/${slug}/ship`, { method: 'POST' }).then(reload), 'Agente em produção');
-  $('#b-stop').onclick = e => act(e.target, () => api(`/agents/${slug}/stop`, { method: 'POST', body: { env: 'prod' } }).then(reload), 'Produção parada');
-  $('#b-del').onclick = e => confirm(`Excluir ${a.name} e seus containers?`) && act(e.target, () => api('/agents/' + slug, { method: 'DELETE' }).then(() => location.hash = '#/agents'));
+  const on = (id, fn) => { const b = $(id); if (b) b.onclick = fn; };
+  on('#b-test', e => act(e.target, () => api(`/agents/${slug}/test`, { method: 'POST' }).then(r => { toast(`Testes: ${r.summary}`, r.status !== 'passed'); reload(); })));
+  on('#b-stage', e => act(e.target, () => api(`/agents/${slug}/deploy`, { method: 'POST', body: { env: 'stage' } }).then(reload), 'Deploy em stage concluído'));
+  on('#b-ship', e => act(e.target, () => api(`/agents/${slug}/ship`, { method: 'POST' }).then(r => { shipResult(r); reload(); })));
+  on('#b-stop', e => act(e.target, () => api(`/agents/${slug}/stop`, { method: 'POST', body: { env: 'prod' } }).then(reload), 'Produção parada'));
+  on('#b-del', e => confirm(`Excluir ${a.name} e seus containers?`) && act(e.target, () => api('/agents/' + slug, { method: 'DELETE' }).then(() => location.hash = '#/agents')));
+  on('#b-req', () => requestAccessDialog(slug));
   const t = $('#tab');
-  ({ overview, connect: agentConnect, topology, spec: specEditor, versions, tests, jobs, deployments, usage, playground })[tabs.includes(tab) ? tab : 'overview'](t, a);
+  const key = shown.includes(tab) ? tab : 'overview';
+  ({ overview, connect: agentConnect, topology, spec: specEditor, versions, tests, jobs, deployments, usage, playground, access: agentAccess })[key](t, a);
 }
 
 async function agentConnect(t, a) {
@@ -188,7 +236,7 @@ async function agentConnect(t, a) {
   <div class="card"><h2>Conectar a ferramentas — plug and play, opcional por ferramenta</h2>
     <div class="mute small"><b>MCP</b>: o agente vira uma <i>ferramenta</i> que o LLM da ferramenta chama (todas as plataformas).
     <b>Modelo</b>: o agente vira um <i>modelo</i> no seletor do chat e conduz a conversa — recebe anexos e usa as próprias tools (LibreChat, Open WebUI, OpenCode, SDKs).
-    Cada conexão gera uma chave só desta ferramenta e deste agente: revogue quando quiser, sem afetar as outras; o uso aparece por ferramenta.</div></div>
+    Cada conexão gera uma chave só desta ferramenta e deste agente, <b>em seu nome</b>: revogue quando quiser, sem afetar as outras; o uso aparece por ferramenta. Se você perder o acesso ao agente, suas chaves são revogadas automaticamente.${can(a, 'manage') ? '' : ' Você vê só as suas conexões.'}</div></div>
   <div id="cn-list"></div>
   <div id="cn-out"></div>
   <div class="grid g3 mt">${clients.map(c => `<div class="card"><h2>${esc(c.label)}</h2><div class="mute small">${esc(c.note)}</div>
@@ -222,6 +270,7 @@ async function agentConnect(t, a) {
 }
 
 function specEditor(t, a) {
+  if (!can(a, 'edit')) { t.innerHTML = `<div class="card"><h2>Spec (v${a.version}) — somente leitura</h2><pre>${esc(JSON.stringify(a.spec, null, 2))}</pre></div>`; return; }
   t.innerHTML = `<div class="card"><div class="row between"><h2>Spec (v${a.version})</h2>
       <div class="row"><a class="small" href="/api/spec/schema" target="_blank" id="schema-link">JSON Schema</a><button id="sp-save">Salvar como nova versão</button></div></div>
     <div class="mute small">Substitui a spec inteira (PUT). Validação no servidor: campos desconhecidos ou combinações inválidas (ex.: <code>llm.connection</code> + <code>harness</code>) são recusados com a mensagem do erro. Salvar sem mudanças não cria versão.</div>
@@ -238,6 +287,7 @@ function specEditor(t, a) {
 }
 
 function overview(t, a) {
+  if (!a.spec) return overviewLimited(t, a);
   const s = a.spec;
   const list = (arr, f = x => x) => arr.length ? arr.map(x => `<span class="chip">${esc(f(x))}</span>`).join('') : '<span class="mute">nenhum</span>';
   const compositionCard = a.harness ? `
@@ -262,7 +312,7 @@ function overview(t, a) {
   t.innerHTML = `<div class="grid g2">
     <div class="card"><h2>Registro</h2><dl class="kv">
       <dt>Slug</dt><dd>${copyable(a.slug)}</dd><dt>Saída final</dt><dd>${esc(a.final_output)}</dd>
-      <dt>Responsável</dt><dd>${esc(a.owner) || '—'}</dd><dt>Versão atual</dt><dd>v${a.version}</dd>
+      <dt>Time</dt><dd>${esc(a.team ? a.team.name : '—')}</dd><dt>Contato</dt><dd>${esc(a.owner) || '—'}</dd><dt>Versão atual</dt><dd>v${a.version}</dd>
       <dt>Criado</dt><dd>${ago(a.created_at)} atrás</dd><dt>Atualizado</dt><dd>${ago(a.updated_at)} atrás</dd></dl></div>
     ${compositionCard}
     <div class="card"><h2>Instruções</h2><pre>${esc(s.instructions) || '(sem instruções)'}</pre></div>
@@ -284,7 +334,7 @@ function versions(t, a) {
   const tested = new Set(a.tests.filter(x => x.status === 'passed').map(x => x.version));
   t.innerHTML = [...a.versions].sort((x, y) => y.version - x.version).map(v => `<div class="card mt"><div class="row between"><b>v${v.version}${v.version === a.version ? ' <span class="pill ok">atual</span>' : ''}${tested.has(v.version) ? ' <span class="pill info">testada ✓</span>' : ''}</b>
     <span class="row"><span class="mute small">${esc(v.created_by)} · ${ago(v.created_at)} atrás</span>
-    ${v.version !== a.version ? `<button class="ghost rb" data-v="${v.version}">Restaurar</button>` : ''}</span></div>
+    ${v.version !== a.version && can(a, 'edit') ? `<button class="ghost rb" data-v="${v.version}">Restaurar</button>` : ''}</span></div>
     <details><summary>Ver spec</summary><pre>${esc(JSON.stringify(v.spec, null, 2))}</pre></details></div>`).join('');
   t.querySelectorAll('.rb').forEach(b => b.onclick = e => confirm(`Restaurar a spec da v${b.dataset.v} como uma nova versão? (depois rode testes/ship)`) &&
     act(e.target, () => api(`/agents/${a.slug}/rollback`, { method: 'POST', body: { version: +b.dataset.v } }).then(route), 'Versão restaurada'));
@@ -324,6 +374,7 @@ async function deployments(t, a) {
 
 function usage(t, a) {
   const u = a.usage;
+  if (!u) { t.innerHTML = '<div class="empty">Uso visível só para o time.</div>'; return; }
   t.innerHTML = `<div class="grid g2"><div class="card"><h2>Requisições (14d)</h2>${bars(u.series)}</div><div class="card"><h2>Custo (14d, US$)</h2>${bars(u.series, 'cost_usd')}</div></div>
   <div class="card mt scroll"><h2>Últimas chamadas</h2><table><tr><th>Quando</th><th>Env</th><th>Canal</th><th>Protocolo</th><th>Tokens</th><th>Custo</th><th>Latência</th><th></th></tr>
   ${u.recent.map(r => `<tr><td>${ago(r.at)}</td><td>${r.env}</td><td>${esc(r.channel)}</td><td>${r.protocol}</td><td>${fmt(r.tokens)}</td><td>${usd(r.cost_usd)}</td><td>${r.latency_ms}ms</td><td>${r.ok ? '✅' : '❌'}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">Sem uso registrado</td></tr>'}</table></div>`;
@@ -331,7 +382,7 @@ function usage(t, a) {
 
 function playground(t, a) {
   if (a.harness) return playgroundHarness(t, a);
-  t.innerHTML = `<div class="card"><div class="row between"><h2>Playground</h2><select id="penv" style="width:auto"><option>prod</option><option>stage</option></select></div>
+  t.innerHTML = `<div class="card"><div class="row between"><h2>Playground</h2><select id="penv" style="width:auto"><option>prod</option>${can(a, 'edit') ? '<option>stage</option>' : ''}</select></div>
     <div id="chat" class="chat"></div><div class="row"><input id="pmsg" placeholder="Mensagem para o agente…" style="flex:1"><button id="psend">Enviar</button></div></div>`;
   const add = (c, x) => { const d = document.createElement('div'); d.className = 'msg ' + c; d.textContent = x; $('#chat').append(d); d.scrollIntoView(); return d; };
   const send = async () => {
@@ -348,7 +399,7 @@ function playground(t, a) {
 
 function playgroundHarness(t, a) {
   t.innerHTML = `<div class="card"><div class="row between"><h2>Playground — job de harness</h2>
-      <select id="penv" style="width:auto"><option>stage</option><option>prod</option></select></div>
+      <select id="penv" style="width:auto">${can(a, 'edit') ? '<option>stage</option>' : ''}<option>prod</option></select></div>
     <div class="mute small">Cada execução sobe um container Docker isolado (${esc(a.spec.harness.id)}), roda a tarefa e é destruída. Pode levar até alguns minutos.</div>
     <textarea id="ptask" placeholder="Descreva a tarefa que o agente deve executar…" rows="3" class="mt"></textarea>
     <div class="row mt"><button id="prun">Rodar job</button><button id="pcancel" class="danger" hidden>Cancelar</button><span id="pstatus" class="mute small"></span></div>
@@ -509,8 +560,8 @@ async function connectPage() {
   const mcpName = 'agent-hangar';
   main.innerHTML = `<h1>Conectar clientes</h1><div class="sub">Conecte o MCP do hangar ao seu cliente e peça: “crie um agente que…”</div>
   <div class="card hero"><b>Conectar um agente pronto a uma ferramenta?</b> Abra o agente em <a href="#/agents">Agentes</a> → aba <b>Conectar</b>: escolha a ferramenta (Claude Code, Codex, OpenCode, Cursor, VS Code, LibreChat, Open WebUI…) e o modo (MCP ou modelo) e receba a configuração pronta, com uma chave só daquela ferramenta. Os exemplos abaixo são genéricos.</div>
-  <div class="card warn-card mt"><b>Qual chave usar?</b> Para <b>construir</b> agentes (MCP do hangar) use uma chave com escopo <code>admin</code>.
-    Para <b>consumir</b> um agente (LibreChat, Slack, OpenCode…) gere uma chave <code>invoke</code> restrita àquele agente em <a href="#/keys">Chaves de API</a> — nunca distribua o ADMIN_TOKEN.
+  <div class="card warn-card mt"><b>Qual chave usar?</b> Para <b>construir</b> agentes (MCP do hangar) use o seu <b>token pessoal</b> (escopo <code>user</code>, em <a href="#/keys">Chaves de API</a>): o cliente age como você, com os seus times e papéis.
+    Para <b>consumir</b> um agente (LibreChat, Slack, OpenCode…) use a aba <b>Conectar</b> do agente ou uma chave <code>invoke</code> restrita a ele — nunca distribua o ADMIN_TOKEN.
     Nos exemplos, troque <code>${esc(K)}</code> pela chave.</div>
   <div class="grid mt">
   <div class="card"><h2>Claude Code (CLI)</h2><pre>claude mcp add --transport http ${mcpName} ${esc(c.mcp_url)} --header "Authorization: Bearer ${esc(K)}"</pre></div>
@@ -565,25 +616,27 @@ hangar ship &lt;slug&gt;</pre></div>
 }
 
 async function keysPage() {
-  const [keys, agents] = await Promise.all([api('/keys'), api('/agents')]);
-  main.innerHTML = `<h1>Chaves de API</h1><div class="sub">Credenciais com escopo mínimo. <b>invoke</b>: só chama agentes pelo gateway (opcionalmente só alguns). <b>admin</b>: administra tudo (UI, API, MCP do hangar).</div>
+  const [keys, all] = await Promise.all([api('/keys'), api('/agents')]);
+  const agents = all.filter(a => can(a, 'consume'));
+  main.innerHTML = `<h1>Chaves de API</h1><div class="sub">${ME.is_admin ? 'Todas as chaves da empresa.' : 'Suas chaves.'} <b>user</b>: token pessoal — age como você (CLI <code>hangar</code>, MCP da plataforma no Claude/Codex). <b>invoke</b>: só chama os agentes escolhidos pelo gateway (LibreChat, Slack, SDKs).${ME.is_admin ? ' <b>admin</b>: administra tudo. <b>scim</b>: provisionamento pelo diretório.' : ''} Suas chaves morrem se você perder o acesso.</div>
   <div class="card"><h2>Nova chave</h2><div class="grid g4">
-    <input id="k-name" placeholder="nome (ex.: librechat-vendas)">
-    <select id="k-scope"><option value="invoke">invoke — consumir agentes</option><option value="admin">admin — administrar</option></select>
-    <select id="k-agents" multiple size="4" title="Ctrl/Cmd+clique para vários; nenhum = todos">${agents.map(a => `<option value="${esc(a.slug)}">${esc(a.name)}</option>`).join('')}</select>
+    <input id="k-name" placeholder="nome (ex.: meu-notebook, librechat-vendas)">
+    <select id="k-scope">${ME.user ? '<option value="user">user — token pessoal (CLI/MCP)</option>' : ''}<option value="invoke">invoke — consumir agentes</option>${ME.is_admin ? '<option value="admin">admin — administrar</option><option value="scim">scim — provisionamento</option>' : ''}</select>
+    <select id="k-agents" multiple size="4" title="Ctrl/Cmd+clique para vários">${agents.map(a => `<option value="${esc(a.slug)}">${esc(a.name)}</option>`).join('')}</select>
     <button id="k-go">Gerar chave</button></div>
-    <div class="mute small mt">Agentes selecionados restringem uma chave <b>invoke</b>; sem seleção ela invoca todos. O valor da chave aparece uma única vez.</div>
+    <div class="mute small mt">Agentes selecionados restringem uma chave <b>invoke</b>${ME.is_admin ? ' (sem seleção, só admin: invoca todos)' : ' (obrigatório)'}. O valor da chave aparece uma única vez.</div>
     <div id="k-new"></div></div>
   <div class="card mt scroll"><table><tr><th>Nome</th><th>Prefixo</th><th>Escopo</th><th>Agentes</th><th>Criada</th><th>Último uso</th><th></th></tr>
   ${keys.map(k => `<tr class="${k.revoked ? 'mute' : ''}"><td><b>${esc(k.name)}</b><div class="small mute">por ${esc(k.created_by)}</div></td><td><code class="inline">${esc(k.prefix)}…</code></td>
-    <td>${k.scopes.map(s => `<span class="pill ${s === 'admin' ? 'warn' : 'info'}">${esc(s)}</span>`).join(' ')}</td>
-    <td>${k.scopes.includes('admin') ? '<span class="mute">todos</span>' : (k.agents.length ? k.agents.map(s => `<span class="chip">${esc(s)}</span>`).join('') : '<span class="mute">todos</span>')}</td>
+    <td>${k.scopes.map(s => `<span class="pill ${s === 'admin' || s === 'scim' ? 'warn' : s === 'user' ? 'ok' : 'info'}">${esc(s)}</span>`).join(' ')}</td>
+    <td>${k.scopes.includes('admin') ? '<span class="mute">todos</span>' : k.scopes.includes('user') ? '<span class="mute">os seus</span>' : k.scopes.includes('scim') ? '<span class="mute">—</span>' : (k.agents.length ? k.agents.map(s => `<span class="chip">${esc(s)}</span>`).join('') : '<span class="mute">todos</span>')}</td>
     <td class="mute">${ago(k.created_at)}</td><td class="mute">${k.last_used_at ? ago(k.last_used_at) : 'nunca'}</td>
     <td>${k.revoked ? '<span class="pill bad">revogada</span>' : `<button class="ghost k-rev" data-id="${k.id}" data-n="${esc(k.name)}">Revogar</button>`}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Nenhuma chave ainda</td></tr>'}</table></div>`;
   $('#k-go').onclick = e => act(e.target, async () => {
     const name = $('#k-name').value.trim(); if (!name) throw new Error('Dê um nome à chave');
     const scope = $('#k-scope').value;
     const agentsSel = scope === 'invoke' ? [...$('#k-agents').selectedOptions].map(o => o.value) : [];
+    if (scope === 'invoke' && !agentsSel.length && !ME.is_admin) throw new Error('Escolha os agentes que a chave pode chamar');
     const r = await api('/keys', { method: 'POST', body: { name, scopes: [scope], agents: agentsSel } });
     $('#k-new').innerHTML = `<div class="card mt warn-card"><b>Copie agora — não será exibida de novo:</b>${copyable(r.key)}</div>`;
   });
@@ -592,11 +645,13 @@ async function keysPage() {
 }
 
 async function templatesPage() {
-  const [list, c] = await Promise.all([api('/templates'), api('/catalog')]);
+  const [list, c, teamList] = await Promise.all([api('/templates'), api('/catalog'), api('/teams')]);
+  const myTeams = teamList.filter(t => ME.is_admin || ['maintainer', 'developer'].includes(t.my_role));
   const conns = c.llm_connections;
   const opts = (p, empty) => `<option value="">${empty}</option>` + conns.filter(x => !p || x.protocol === p).map(x => `<option value="${esc(x.name)}">${esc(x.name)} · ${esc(x.model_name)}</option>`).join('');
   const HP = { 'claude-code': 'anthropic', codex: 'openai', hermes: 'openai', 'deepseek-harness': 'deepseek' };
   main.innerHTML = `<h1>Templates</h1><div class="sub">Agentes prontos para aplicar, testar e shipar. Sem conexão de LLM eles nascem em modo mock (bom para ver o fluxo).</div>
+  ${myTeams.length ? `<div class="card row"><b>Aplicar no time</b><select id="tp-team" style="width:auto">${myTeams.map(t => `<option value="${esc(t.slug)}">${esc(t.name)}</option>`).join('')}</select></div>` : '<div class="card warn-card">Só developers e maintainers de um time aplicam templates.</div>'}<div class="mt"></div>
   <div class="grid g2">${list.map(t => `<div class="card tpl"><div class="row between"><h2>${esc(t.title)}</h2>${t.harness ? harnessPill({ id: t.harness }) : t.agents.length > 1 ? kindPill('multi') : kindPill('single')}</div>
     <div>${esc(t.description)}</div><div class="mt">${t.tags.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div>
     <div class="mute small mt">Agentes: ${t.agents.map(esc).join(', ')}<br>Precisa de: ${esc(t.needs)}</div>
@@ -607,13 +662,14 @@ async function templatesPage() {
     <div id="tp-${t.id}-out"></div></div>`).join('') || '<div class="empty">Nenhum template em TEMPLATES_DIR</div>'}</div>`;
   const apply = async (id, ship) => {
     const h = $(`#tp-${id}-h`), cc = $(`#tp-${id}-c`);
-    const out = await api(`/templates/${id}/apply`, { method: 'POST', body: { connection: cc ? cc.value : '', harness_connection: h ? h.value : '' } });
+    const team = $('#tp-team') ? $('#tp-team').value : null;
+    const out = await api(`/templates/${id}/apply`, { method: 'POST', body: { connection: cc ? cc.value : '', harness_connection: h ? h.value : '', team } });
     const agentsOut = out.filter(x => x.kind === 'agent');
-    if (ship) await api(`/agents/${agentsOut[agentsOut.length - 1].slug}/ship`, { method: 'POST' });
+    if (ship) shipResult(await api(`/agents/${agentsOut[agentsOut.length - 1].slug}/ship`, { method: 'POST' }));
     $(`#tp-${id}-out`).innerHTML = `<div class="mt small">${agentsOut.map(x => `<a href="#/agents/${x.slug}">${esc(x.slug)}</a> <span class="mute">(${esc(x.action)}, v${x.version})</span>`).join(' · ')}</div>`;
   };
   document.querySelectorAll('.tp-go').forEach(b => b.onclick = e => act(e.target, () => apply(b.dataset.id, false), 'Template aplicado'));
-  document.querySelectorAll('.tp-ship').forEach(b => b.onclick = e => act(e.target, () => apply(b.dataset.id, true), 'Template aplicado e em produção'));
+  document.querySelectorAll('.tp-ship').forEach(b => b.onclick = e => act(e.target, () => apply(b.dataset.id, true)));
 }
 
 async function auditPage() {
@@ -625,20 +681,24 @@ async function auditPage() {
 /* ---------- roteamento ---------- */
 async function route() {
   const [, r = '', a, b] = location.hash.split('/');
+  if (r === 'login' || !ME) return;
   document.querySelectorAll('nav a').forEach(x => x.classList.toggle('on', x.dataset.r === r));
   try {
     if (r === 'agents' && a === 'new') await newAgentPage();
+    else if (r === 'agents' && a === 'catalog') await agentsPage('catalog');
     else if (r === 'agents' && a) await agentDetail(a, b);
-    else await ({ '': dashboard, agents: agentsPage, templates: templatesPage, keys: keysPage, deployments: deploymentsPage, tests: testsPage, usage: usagePage, catalog: catalogPage, providers: providersPage, connect: connectPage, audit: auditPage }[r] || dashboard)();
-  } catch (e) { main.innerHTML = `<div class="card"><h2>Erro</h2>${esc(e.message)}</div>`; }
+    else if (r === 'teams' && a) await teamDetail(a);
+    else await ({ '': dashboard, agents: agentsPage, templates: templatesPage, keys: keysPage, deployments: deploymentsPage, tests: testsPage, usage: usagePage, catalog: catalogPage, providers: providersPage, connect: connectPage, audit: auditPage,
+      approvals: approvalsPage, teams: teamsPage, users: usersPage, sso: ssoPage }[r] || dashboard)();
+  } catch (e) { if (!(e instanceof AuthError)) main.innerHTML = `<div class="card"><h2>Erro</h2>${esc(e.message)}</div>`; }
 }
-window.addEventListener('hashchange', route);
-route();
+window.addEventListener('hashchange', () => { if (location.hash.startsWith('#/login')) showLogin(); else route(); });
+boot();
 // auto-refresh só em páginas de leitura (nunca em formulários, editor de spec ou playground)
-const NO_REFRESH = ['new', 'playground', 'spec'];
+const NO_REFRESH = ['new', 'playground', 'spec', 'access'];
 setInterval(() => {
   const parts = location.hash.split('/');
-  if (document.hidden || ['keys', 'templates', 'catalog', 'providers', 'connect'].includes(parts[1])) return;
+  if (!ME || document.hidden || ['keys', 'templates', 'catalog', 'providers', 'connect', 'teams', 'users', 'sso', 'login'].includes(parts[1])) return;
   if (NO_REFRESH.includes(parts[2]) || NO_REFRESH.includes(parts[3]) || document.activeElement.matches('input,textarea,select')) return;
   route();
 }, 15000);

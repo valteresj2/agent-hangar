@@ -66,3 +66,22 @@ textarea.code{font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
   main{padding:16px}.g2{grid-template-columns:1fr}.kv{grid-template-columns:1fr}
 }
 .grid>button{align-self:start}
+/* login, sessão e acesso */
+body.login-mode #side,body.login-mode main{display:none}
+#login{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:16px}
+#login[hidden]{display:none}
+.login-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:28px 28px 22px;width:100%;max-width:420px;box-shadow:0 10px 40px #0001}
+.login-card .brand{padding:0 0 18px}
+.sso-list{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.sso-btn{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;color:var(--ink);text-decoration:none;font-weight:600}
+.sso-btn:hover{border-color:var(--accent);background:var(--accent-2)}
+.sso-btn .ic,.sso-ic{display:inline-flex;width:24px;height:24px;border-radius:6px;background:var(--accent-2);color:var(--accent);align-items:center;justify-content:center;font-weight:700}
+.bad-card{border-color:var(--bad);background:var(--bad-bg);color:var(--bad);margin-bottom:12px}
+.who{display:flex;gap:10px;align-items:center;padding:6px 4px 10px}
+.who img,.who .av{width:32px;height:32px;border-radius:50%;flex-shrink:0}
+.who .av{display:inline-flex;align-items:center;justify-content:center;background:var(--accent-2);color:var(--accent);font-weight:700}
+.badge{display:inline-block;min-width:18px;padding:0 6px;border-radius:99px;background:var(--bad);color:#fff;font-size:11px;text-align:center;margin-left:4px}
+nav a[hidden]{display:none}
+.click-card{cursor:pointer}.click-card:hover{border-color:var(--accent)}
+.hbar.budget.warn i{background:var(--warn)}.hbar.budget.over i{background:var(--bad)}.hbar.budget.ok i{background:var(--ok)}
+@media(max-width:800px){.who{display:none}}

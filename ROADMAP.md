@@ -30,12 +30,12 @@ Each item links to a GitHub issue once the repository is public. Priorities foll
 
 ## v0.4 — observable & governed
 - OpenTelemetry traces end-to-end (gateway → agent → LLM → tools → sub-agents), Langfuse export
-- Budgets and rate limits per agent and per consumer key
+- Rate limits per agent and per consumer key (monthly budgets per team: done)
 - Guardrails (prompt-injection detection, PII redaction) as gateway plugins
 - Secret references for HTTP tool auth (`secret:crm-token`)
 
 ## v1.0 — enterprise-ready
 - Kubernetes runtime driver + Helm chart + NetworkPolicies
-- OIDC/SSO, RBAC per team/project, multi-tenancy
+- Multi-tenancy (several companies per installation; `org_id` is already on the tables). Done earlier: OAuth2 SSO, teams and roles, SCIM
 - Egress allowlist for jobs; human approval for destructive harness actions
 - Exportable audit trail (SIEM)

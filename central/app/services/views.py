@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import config
-from ..models import Agent, Deployment, TestRun, UsageEvent, now
+from ..models import Agent, Deployment, PromotionRequest, Team, TestRun, UsageEvent, now
 from .common import iso, spec_of
 from .jobs import job_dict
 from .usage import agent_usage
@@ -27,7 +27,9 @@ def endpoints(slug: str) -> dict:
             "agent_card": base + "/.well-known/agent.json", "acp": base + "/acp/runs", "mcp": base + "/mcp"}
 
 
-def agent_dict(db: Session, a: Agent, detail=False) -> dict:
+def agent_dict(db: Session, a: Agent, detail=False, acc=None) -> dict:
+    """acc (services.access.Access): inclui o nível de acesso e as permissões de quem pede e esconde o que
+    ele não pode ver (spec, versões, jobs, logs de deploy e resultados de teste de agentes de outros times)."""
     since = now() - timedelta(days=7)
     reqs, tok, cost = db.execute(
         select(func.count(UsageEvent.id), func.coalesce(func.sum(UsageEvent.tokens_in + UsageEvent.tokens_out), 0),
@@ -48,7 +50,23 @@ def agent_dict(db: Session, a: Agent, detail=False) -> dict:
            "stage": next((dep_dict(d) for d in a.deployments if d.env == "stage" and d.status == "running"), None),
            "prod": next((dep_dict(d) for d in a.deployments if d.env == "prod" and d.status == "running"), None),
            "last_test": test_dict(a.tests[0]) if a.tests else None,
-           "requests_7d": reqs, "tokens_7d": int(tok), "cost_7d": round(float(cost), 4)}
+           "requests_7d": reqs, "tokens_7d": int(tok), "cost_7d": round(float(cost), 4),
+           "visibility": a.visibility, "expose_spec": a.expose_spec, "team": _team(db, a.team_id)}
+    perms = acc.permissions(a) if acc is not None else None
+    if perms is not None:
+        # pedido de promoção pendente é assunto interno do time
+        out.update(access=acc.level(a), permissions=sorted(perms), pending_promotion=bool(
+            perms & {"edit", "approve"} and db.scalar(select(func.count(PromotionRequest.id)).where(
+                PromotionRequest.agent_id == a.id, PromotionRequest.status == "pending"))))
+        if "usage" not in perms:
+            out.update(requests_7d=None, tokens_7d=None, cost_7d=None)
+    if detail and perms is not None and "view_spec" not in perms:
+        out.update(spec=None, versions=[], jobs=[], deployments=[], endpoints=endpoints(a.slug),
+                   tests=[{k: v for k, v in test_dict(t).items() if k != "results"} for t in a.tests[:5]],
+                   usage=agent_usage(db, a.id) if "usage" in perms else None)
+        if out["last_test"]:
+            out["last_test"].pop("results", None)
+        return out
     if detail:
         out.update(
             spec=spec,
@@ -63,8 +81,16 @@ def agent_dict(db: Session, a: Agent, detail=False) -> dict:
     return out
 
 
-def list_agents(db: Session) -> list[dict]:
+def _team(db: Session, team_id: int | None) -> dict | None:
+    t = db.get(Team, team_id) if team_id else None
+    return {"id": t.id, "slug": t.slug, "name": t.name} if t else None
+
+
+def list_agents(db: Session, acc=None) -> list[dict]:
     from .runtime import refresh_deployments
 
     refresh_deployments(db)
-    return [agent_dict(db, a) for a in db.scalars(select(Agent).order_by(Agent.updated_at.desc()))]
+    agents = db.scalars(select(Agent).order_by(Agent.updated_at.desc())).all()
+    if acc is not None:
+        agents = acc.visible(agents)
+    return [agent_dict(db, a, acc=acc) for a in agents]

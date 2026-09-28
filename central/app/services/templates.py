@@ -43,13 +43,15 @@ def get_template(template_id: str) -> dict:
 
 
 def apply_template(db: Session, template_id: str, connection: str = "", harness_connection: str = "",
-                   actor="admin") -> list[dict]:
+                   actor="admin", acc=None, team: str | int | None = None) -> list[dict]:
     """Aplica o template. `connection` preenche o LLM dos agentes de chat; `harness_connection` o dos
     agentes-com-harness (se o protocolo bater). Sem conexões, os agentes nascem em modo mock."""
     doc = copy.deepcopy(get_template(template_id)["document"])
     if connection and get_connection(db, connection).protocol != "openai":
         raise PlatformError(f"'{connection}' não é uma conexão protocol='openai' (necessária para agente de chat)")
     for a in doc.get("agents", []):
+        if team:
+            a["team"] = team
         spec = a.setdefault("spec", {})
         h = spec.get("harness")
         if h and harness_connection:
@@ -63,4 +65,4 @@ def apply_template(db: Session, template_id: str, connection: str = "", harness_
             spec.setdefault("llm", {})
             if not spec["llm"].get("connection"):
                 spec["llm"]["connection"] = connection
-    return apply_document(db, doc, actor)
+    return apply_document(db, doc, actor, acc, trusted_catalog=True)

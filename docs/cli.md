@@ -2,7 +2,7 @@
 
 ```bash
 pip install ./cli            # from a clone; requires Python 3.10+
-hangar login http://localhost:8090 --token <admin key>
+hangar login http://localhost:8090 --token <personal token>   # UI → Chaves de API → scope "user"
 ```
 
 Credentials are read from `HANGAR_URL` / `HANGAR_TOKEN`, or from `~/.config/hangar/config.json` (written by
@@ -10,7 +10,8 @@ Credentials are read from `HANGAR_URL` / `HANGAR_TOKEN`, or from `~/.config/hang
 
 | Command | What it does |
 |---|---|
-| `hangar agents ls` | Table of agents: status, version, stage/prod, requests and cost (7d) |
+| `hangar whoami` | Your company role and teams |
+| `hangar agents ls [--mine]` | Agents you can see: team, your access, status, version, stage/prod, requests and cost (7d) |
 | `hangar agents get <slug> [--spec]` | Detail, or just the spec as YAML |
 | `hangar apply -f file.yaml [--ship]` | GitOps apply (`{skills, mcp_servers, agents}`; multiple YAML documents allowed; `-` = stdin). Template files are accepted too |
 | `hangar export <slug>` | Print an agent as an applyable YAML document |
@@ -24,7 +25,10 @@ Credentials are read from `HANGAR_URL` / `HANGAR_TOKEN`, or from `~/.config/hang
 | `hangar jobs get <id>` / `hangar jobs cancel <id>` | Inspect / cancel |
 | `hangar templates ls` / `hangar templates apply <id> [--connection C] [--harness-connection H]` | Template gallery |
 | `hangar connect <slug> [tool] [--mode mcp\|model] [--preview] [--list]` | Plug an agent into a tool: creates a per-tool key and prints the config (steps on stderr). No tool = list tools |
-| `hangar keys ls` | `create <name> --scope invoke --agent <slug>` / `revoke <id>` | API keys (`create` prints the key on stdout) |
+| `hangar keys ls` / `create <name> --scope invoke --agent <slug>` / `revoke <id>` | API keys (`create` prints the key on stdout). `--scope user` = personal token for the CLI and the platform MCP |
+| `hangar teams ls` / `hangar teams add <team> <email> --role developer` | Teams (with spend) and members |
+| `hangar approvals ls` / `approve <kind> <id>` / `reject <kind> <id>` | Production (`promotion`) and access (`access`) approvals |
+| `hangar request-access <slug> <reason…>` | Ask a team to use its agent |
 
 ## Agents in CI
 

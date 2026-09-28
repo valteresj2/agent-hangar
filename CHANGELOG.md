@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Users, teams and roles.**
+  - Company roles: admin, auditor and member.
+  - Team roles: maintainer, developer and consumer.
+  - Every agent belongs to a team. Existing agents move to the default **Plataforma** team.
+- **Agent visibility** (`private`, `org`, `open`), with a **company catalog** and **access requests** that a
+  maintainer approves. Instructions and spec stay hidden from other teams unless `expose_spec` is on.
+- **Production approval (four eyes).**
+  - When a developer ships, or when the team requires approval, a pinned promotion request is created.
+  - Another maintainer or an admin approves it.
+- **Login with OAuth2** (authorization code + PKCE): Google, Microsoft Entra ID, GitHub, and a generic OAuth2
+  provider (Keycloak, Okta, Auth0; use Keycloak as the bridge for SAML).
+  - Allowed domains, a fixed tenant, and required GitHub organizations.
+  - Groups map to teams.
+  - `BOOTSTRAP_ADMIN_EMAILS`.
+- **SCIM 2.0** (`/scim/v2`): the directory provisions and deactivates users and syncs groups to teams.
+- **Sessions.** The UI uses a `HttpOnly` session cookie with CSRF protection instead of a token in
+  `localStorage`. "Sign in with token" remains as break-glass access.
+- **Keys belong to people.**
+  - New scopes `user` (personal token for the CLI and MCP) and `scim`.
+  - Keys are revoked automatically when the owner loses access or is deactivated.
+- **Monthly budget per team**, with an alert and an optional block (`429` at the gateway).
+- UI pages: Aprovações, Times, Usuários, SSO e SCIM; an agent **Acesso** tab; role-aware buttons and tabs.
+- CLI: `whoami`, `teams`, `approvals`, `request-access`, `agents ls --mine`, `templates apply --team`.
+- Platform MCP: tools act as the key owner. New tools: `whoami`, `request_agent_access`, `list_approvals` and
+  `decide_approval`. Catalog writes are admin-only.
 - **Plug-and-play tool connections.** A new **Connect** tab on each agent, `hangar connect`, the
   `connect_agent` platform MCP tool and `/api/agents/{slug}/connections`:
   - MCP mode is offered for every tool: Claude Code, Claude Desktop, Codex, OpenCode, Cursor, VS Code, LibreChat,

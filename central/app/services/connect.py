@@ -155,12 +155,12 @@ def snippet(client: str, mode: str, slug: str, agent_name: str, key: str = KEY_P
                        f'print(r.choices[0].message.content)\n'}
 
 
-def connect(db: Session, slug: str, client: str, mode: str, actor: str = "admin") -> dict:
+def connect(db: Session, slug: str, client: str, mode: str, actor: str = "admin", user_id: int | None = None) -> dict:
     """Cria a chave da conexão (invoke, só este agente) e devolve o trecho pronto com ela preenchida."""
     a = get_agent(db, slug)
     snippet(client, mode, a.slug, a.name)  # valida cliente/modo antes de criar a chave
     row, raw = auth.create_api_key(db, f"{a.slug} · {CLIENTS[client][0]} ({mode})"[:100], ["invoke"], [a.slug],
-                                   actor, client=client, mode=mode)
+                                   actor, client=client, mode=mode, user_id=user_id)
     audit(db, actor, "agent.connect", a.slug, f"{client} ({mode}) chave #{row.id}")
     return {"connection": connection_dict(row), "key": raw, **snippet(client, mode, a.slug, a.name, raw),
             "note": "A chave aparece só agora; revogar a conexão desliga só esta ferramenta."}
@@ -171,7 +171,10 @@ def connection_dict(k: ApiKey) -> dict:
     return {**auth.api_key_dict(k), "client_label": label}
 
 
-def connections(db: Session, slug: str) -> list[dict]:
-    rows = db.scalars(select(ApiKey).where(ApiKey.client.is_not(None), ApiKey.revoked_at.is_(None))
-                      .order_by(ApiKey.id.desc()))
+def connections(db: Session, slug: str, owner: int | None = None) -> list[dict]:
+    """owner: só as conexões desse usuário (quem não administra o agente vê só as próprias)."""
+    q = select(ApiKey).where(ApiKey.client.is_not(None), ApiKey.revoked_at.is_(None)).order_by(ApiKey.id.desc())
+    if owner is not None:
+        q = q.where(ApiKey.user_id == owner)
+    rows = db.scalars(q)
     return [connection_dict(k) for k in rows if k.agents == [slug]]

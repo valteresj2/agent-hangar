@@ -59,9 +59,15 @@ def mcp_tool_name(slug: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]", "_", slug).strip("_-") or "agent"
 
 
-def _record(agent_id, env, channel, proto, t0, ok, payload=None):
+def _record(agent_id, env, channel, proto, t0, ok, payload=None, user_id=None):
     with SessionLocal() as db:
-        svc.record_usage(db, agent_id, env, channel, proto, int((time.time() - t0) * 1000), ok, payload)
+        svc.record_usage(db, agent_id, env, channel, proto, int((time.time() - t0) * 1000), ok, payload,
+                         user_id=user_id)
+
+
+def user_of(request: Request) -> int | None:
+    p = request.scope.get("state", {}).get("principal")
+    return p.user_id if p is not None else None
 
 
 # ------------------------------------------------------------------ agente-com-harness: ponte de protocolos
@@ -179,6 +185,8 @@ async def _proxy(request: Request, slug: str, path: str, env: str):
         svc.refresh_deployments(db, [a])
         if not svc.active_deployment(a, env):
             return JSONResponse({"error": f"'{slug}' não está rodando em {env}"}, 503)
+        if svc.org.budget_blocked(db, a.team_id):
+            return JSONResponse({"error": "orçamento mensal do time esgotado — fale com o mantenedor do time"}, 429)
         spec = svc.spec_of(a)
         info = {"slug": a.slug, "name": a.name, "objective": a.objective, "final_output": a.final_output,
                 "version": a.current_version, "skills": spec.get("skills", []), "id": a.id}
@@ -188,6 +196,7 @@ async def _proxy(request: Request, slug: str, path: str, env: str):
         return await _proxy_harness(info, path, request, env)
 
     channel = channel_of(request)
+    uid = user_of(request)
     proto = protocol_of(path)
     fwd = {"content-type": request.headers.get("content-type", "application/json"),
            "accept": request.headers.get("accept", "application/json, text/event-stream")}
@@ -208,7 +217,7 @@ async def _proxy(request: Request, slug: str, path: str, env: str):
     except Exception as e:
         await client.aclose()
         if proto != "other":
-            _record(info["id"], env, channel, proto, t0, False)
+            _record(info["id"], env, channel, proto, t0, False, user_id=uid)
         return JSONResponse({"error": f"agente indisponível: {e}"}, 502)
     headers = {k: v for k, v in upstream.headers.items() if k.lower() not in HOP_BY_HOP}
     ok = upstream.status_code < 400
@@ -235,7 +244,7 @@ async def _proxy(request: Request, slug: str, path: str, env: str):
             await client.aclose()
             if proto != "other":
                 await run_in_threadpool(_record, info["id"], env, channel, proto, t0, ok,
-                                        {"usage": seen["usage"]} if seen["usage"] else None)
+                                        {"usage": seen["usage"]} if seen["usage"] else None, uid)
         # aiter_bytes (já descomprimido) combina com o content-encoding removido dos headers
         return StreamingResponse(relay(), status_code=upstream.status_code, headers=headers,
                                  background=BackgroundTask(done))
@@ -248,7 +257,7 @@ async def _proxy(request: Request, slug: str, path: str, env: str):
             payload = httpx.Response(200, content=content).json()
         except Exception:
             payload = None
-        await run_in_threadpool(_record, info["id"], env, channel, proto, t0, ok, payload)
+        await run_in_threadpool(_record, info["id"], env, channel, proto, t0, ok, payload, uid)
     return Response(content, upstream.status_code, headers=headers)
 
 

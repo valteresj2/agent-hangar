@@ -112,10 +112,13 @@ def cmd_agents_ls(a):
     rows = api().get("/agents")
     if out(rows, a.json):
         return
-    table([[x["slug"], x["kind"] + (f"/{x['harness']['id']}" if x.get("harness") else ""), x["status"],
+    if a.mine:
+        rows = [x for x in rows if x.get("access") in ("admin", "maintainer", "developer", "consumer")]
+    table([[x["slug"], (x.get("team") or {}).get("slug", ""), x.get("access") or "",
+            x["kind"] + (f"/{x['harness']['id']}" if x.get("harness") else ""), x["status"],
             f"v{x['version']}", "✓" if x.get("stage") else "", "✓" if x.get("prod") else "",
             x["requests_7d"], usd(x.get("cost_7d")), x["model"]] for x in rows],
-          ["slug", "kind", "status", "ver", "stage", "prod", "req7d", "cost7d", "model"])
+          ["slug", "team", "access", "kind", "status", "ver", "stage", "prod", "req7d", "cost7d", "model"])
 
 
 def cmd_agents_get(a):
@@ -168,6 +171,8 @@ def cmd_ship(a):
         return
     for s in steps:
         print(f"{s['agent']:<30} {s['step']:<6} {s['status']}  {s.get('summary') or s.get('url') or ''}")
+    if steps and steps[-1].get("status") == "approval_pending":
+        print(f"\ntestes ok — pedido #{steps[-1]['request']} aguarda um mantenedor do time: hangar approvals ls")
 
 
 def cmd_test(a):
@@ -183,6 +188,9 @@ def cmd_test(a):
 
 def cmd_deploy(a):
     r = api().post(f"/agents/{a.slug}/deploy", {"env": a.env})
+    if r["status"] == "approval_pending":
+        print(f"{a.slug} v{r['version']}: pedido de promoção #{r['request']['id']} aguarda aprovação de um mantenedor")
+        return
     print(f"{a.slug} v{r['version']} -> {a.env}: {r['status']} {r['url']}")
 
 
@@ -251,7 +259,7 @@ def cmd_templates_ls(a):
 
 def cmd_templates_apply(a):
     r = api().post(f"/templates/{a.id}/apply", {"connection": a.connection or "",
-                                                "harness_connection": a.harness_connection or ""})
+                                                "harness_connection": a.harness_connection or "", "team": a.team})
     for x in r:
         print(f"{x['kind']:<11} {x.get('slug') or x.get('name'):<30} {x['action']}")
 
@@ -308,6 +316,58 @@ def cmd_connect(a):
               file=sys.stderr)
 
 
+def cmd_whoami(a):
+    me = api().get("/me")
+    if out(me, a.json):
+        return
+    role = "admin" if me["is_admin"] else "auditor" if me["is_auditor"] else "membro"
+    who = me["user"]["email"] if me["user"] else me["name"]
+    print(f"{who} — {role} em {me['org']['name']}")
+    for t in me["teams"]:
+        print(f"  {t['slug']:<24} {t['role']:<11} ({t['source']})")
+    if me["pending"]:
+        print(f"{me['pending']} pedido(s) aguardando você: hangar approvals ls")
+
+
+def cmd_teams_ls(a):
+    rows = api().get("/teams")
+    if out(rows, a.json):
+        return
+    table([[t["slug"], t["name"], t["my_role"] or "", t["members"], t["agents"], "sim" if t["require_approval"] else "não",
+            f"${t['spent_month']:.2f}" + (f" / ${t['budget_usd_month']:.2f}" if t["budget_usd_month"] else "")]
+           for t in rows], ["slug", "nome", "seu papel", "membros", "agentes", "aprovação", "gasto no mês"])
+
+
+def cmd_teams_add(a):
+    r = api().post(f"/teams/{a.team}/members", {"email": a.email, "role": a.role})
+    print(f"{r['email']} agora é {r['role']} em {a.team}")
+
+
+def cmd_approvals_ls(a):
+    r = api().get("/approvals")
+    if out(r, a.json):
+        return
+    if not r["to_decide"]:
+        print("nada para você decidir")
+    for x in r["to_decide"]:
+        if x["kind"] == "promotion":
+            print(f"promotion #{x['id']:<5} {x['agent']} v{x['version']} — pedido por {x['requested_by']}"
+                  + (" (desatualizado)" if x["stale"] else ""))
+        else:
+            print(f"access    #{x['id']:<5} {x['user']} quer usar {x['agent']}: {x['reason']}")
+
+
+def cmd_approvals_decide(a):
+    kind = "promotions" if a.kind == "promotion" else "access-requests"
+    r = api().post(f"/{kind}/{a.id}/{a.decision}", {"note": a.note or ""} if a.kind == "promotion" else None)
+    print(f"{a.kind} #{a.id}: {r['status']}")
+
+
+def cmd_request_access(a):
+    r = api().post(f"/agents/{a.slug}/access-requests", {"reason": " ".join(a.reason or [])})
+    print(f"pedido #{r['id']} enviado ao time dono de {a.slug} ({r['status']})")
+
+
 # ------------------------------------------------------------------ parser
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="hangar", description="Agent Hangar CLI")
@@ -326,7 +386,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--token")
 
     ag = sub.add_parser("agents", help="listar/inspecionar agentes").add_subparsers(dest="sub", required=True)
-    add(ag, "ls", cmd_agents_ls, "lista agentes")
+    s = add(ag, "ls", cmd_agents_ls, "lista agentes (os seus e os do catálogo da empresa)")
+    s.add_argument("--mine", action="store_true", help="só os dos seus times")
     s = add(ag, "get", cmd_agents_get, "detalhe de um agente")
     s.add_argument("slug")
     s.add_argument("--spec", action="store_true", help="só a spec (YAML)")
@@ -373,6 +434,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("id")
     s.add_argument("--connection", help="conexão (protocolo openai) dos agentes de chat")
     s.add_argument("--harness-connection", help="conexão dos agentes com harness")
+    s.add_argument("--team", help="time que recebe os agentes (opcional se você só está em um)")
 
     s = add(sub, "connect", cmd_connect, "conecta um agente a uma ferramenta (MCP ou modelo), plug and play")
     s.add_argument("slug")
@@ -385,10 +447,31 @@ def build_parser() -> argparse.ArgumentParser:
     add(ks, "ls", cmd_keys_ls, "lista chaves")
     s = add(ks, "create", cmd_keys_create, "cria uma chave (o valor sai no stdout)")
     s.add_argument("name")
-    s.add_argument("--scope", default="invoke", choices=["invoke", "admin"])
+    s.add_argument("--scope", default="invoke", choices=["invoke", "user", "admin", "scim"],
+                   help="user = token pessoal (age como você: CLI, MCP)")
     s.add_argument("--agent", action="append", help="restringe a chave invoke a este agente (repetível)")
     s = add(ks, "revoke", cmd_keys_revoke, "revoga uma chave")
     s.add_argument("id", type=int)
+
+    add(sub, "whoami", cmd_whoami, "quem sou eu: papel na empresa e times")
+    tm = sub.add_parser("teams", help="times").add_subparsers(dest="sub", required=True)
+    add(tm, "ls", cmd_teams_ls, "lista os times")
+    s = add(tm, "add", cmd_teams_add, "adiciona (ou muda o papel de) alguém no time")
+    s.add_argument("team")
+    s.add_argument("email")
+    s.add_argument("--role", default="consumer", choices=["maintainer", "developer", "consumer"])
+    ap = sub.add_parser("approvals", help="aprovações de produção e pedidos de acesso").add_subparsers(dest="sub",
+                                                                                                     required=True)
+    add(ap, "ls", cmd_approvals_ls, "o que está aguardando você")
+    for decision in ("approve", "reject"):
+        s = add(ap, decision, cmd_approvals_decide, f"{decision} um pedido")
+        s.add_argument("kind", choices=["promotion", "access"])
+        s.add_argument("id", type=int)
+        s.add_argument("--note")
+        s.set_defaults(decision=decision)
+    s = add(sub, "request-access", cmd_request_access, "pede acesso a um agente de outro time")
+    s.add_argument("slug")
+    s.add_argument("reason", nargs="*")
     return p
 
 

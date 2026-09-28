@@ -151,6 +151,15 @@ curl http://localhost:8090/gw/doc-qa/v1/chat/completions \
 | ACP | `POST /gw/<slug>/acp/runs` |
 | MCP | `POST /gw/<slug>/mcp` (one tool named after the agent) |
 
+**Teams and SSO:**
+- People sign in with Google, Microsoft Entra ID, GitHub or any OAuth2 provider.
+- Every agent belongs to a team with maintainer, developer and consumer roles.
+- Production needs a second maintainer's approval.
+- Other teams find agents in the company catalog and request access.
+- SCIM keeps users and groups in sync with your directory.
+
+See [docs/access.md](docs/access.md).
+
 **Plug and play:** the agent's **Connect** tab (or `hangar connect <slug> <tool>`) gives a per-tool key and the
 config to paste. Every tool can use the agent as an **MCP tool** (Claude Code, Claude Desktop, Codex, OpenCode,
 Cursor, VS Code, LibreChat, Open WebUI); chat UIs can also use it as a **model** (LibreChat, Open WebUI, OpenCode,

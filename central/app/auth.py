@@ -1,9 +1,13 @@
-"""Autenticação e autorização.
+"""Autenticação: quem está chamando. (O que cada um pode fazer fica em services/access.py.)
 
-Três tipos de credencial, cada uma com um alcance mínimo:
-- ADMIN_TOKEN (bootstrap) e chaves de API com escopo "admin": administram tudo (/api, /mcp, /gw).
-- Chaves de API com escopo "invoke": só chamam agentes pelo gateway /gw (opcionalmente só alguns slugs).
-  É esta que vai para LibreChat, Slack, OpenCode… — nunca a de admin.
+Credenciais, cada uma com um alcance mínimo:
+- Sessão da UI (cookie HttpOnly `hangar_session`, token "ahs_…"): aberta pelo login OAuth2 (Google, Microsoft
+  Entra ID, GitHub…) — vale como o usuário, com os papéis dele. A de emergência (ADMIN_TOKEN) vale como admin.
+- ADMIN_TOKEN (bootstrap/emergência) e chaves de API com escopo "admin": administram tudo.
+- Chave "user" (token pessoal): age como o usuário dono dela — CLI, MCP da plataforma, API.
+- Chave "invoke": só chama agentes pelo gateway /gw (os da lista). É a que vai para LibreChat, Slack, OpenCode…
+  Se tem dono, morre quando ele perde o acesso ao agente.
+- Chave "scim": só o endpoint /scim/v2 (provisionamento pelo Entra ID, Okta…).
 - Token interno por agente (HMAC do slug): o container de um agente só consegue se identificar como ele
   mesmo, e a central só deixa chamar os sub_agents dele (e o dashboard, se a tool estiver na spec).
 """
@@ -12,32 +16,56 @@ import hmac
 import secrets
 import time
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import config
-from .models import ApiKey, now
+from .models import ApiKey, User, UserSession, now
 
 KEY_PREFIX = "ah_"
-SCOPES = ("admin", "invoke")
+SESSION_PREFIX = "ahs_"
+SCOPES = ("admin", "invoke", "user", "scim")
+SESSION_COOKIE = "hangar_session"
+CSRF_COOKIE = "hangar_csrf"
 
 
 @dataclass
 class Principal:
-    name: str
+    name: str  # vai para a auditoria: e-mail do usuário, "key:<nome>" ou "admin-token"
     scopes: set = field(default_factory=set)
     agents: list = field(default_factory=list)  # vazio = todos (para o escopo invoke)
     client: str | None = None  # chave de conexão de uma ferramenta: vira o canal padrão das métricas
+    user_id: int | None = None
+    org_role: str | None = None  # admin | auditor | member — só quando age como usuário
+    via: str = "key"  # key | session | admin-token
 
     @property
     def is_admin(self) -> bool:
-        return "admin" in self.scopes
+        return "admin" in self.scopes or self.org_role == "admin"
+
+    @property
+    def is_auditor(self) -> bool:
+        return self.is_admin or self.org_role == "auditor"
+
+    @property
+    def is_user(self) -> bool:
+        """Age como um usuário (sessão ou token pessoal): acessa a API conforme os papéis dele."""
+        return "user" in self.scopes and self.user_id is not None
+
+    @property
+    def can_use_api(self) -> bool:
+        return self.is_admin or self.is_user
 
     def can_invoke(self, slug: str) -> bool:
+        """Checagem sem banco das chaves invoke; usuários passam por access.can(..., "consume")."""
         if self.is_admin:
             return True
         return "invoke" in self.scopes and (not self.agents or slug in self.agents)
+
+
+ADMIN = Principal("admin-token", {"admin"}, via="admin-token")
 
 
 def hash_key(key: str) -> str:
@@ -45,17 +73,20 @@ def hash_key(key: str) -> str:
 
 
 def create_api_key(db: Session, name: str, scopes: list[str], agents: list[str] | None = None,
-                   actor: str = "admin", client: str | None = None, mode: str | None = None) -> tuple[ApiKey, str]:
+                   actor: str = "admin", client: str | None = None, mode: str | None = None,
+                   user_id: int | None = None) -> tuple[ApiKey, str]:
     """Devolve (registro, valor em texto) — o valor só existe aqui; no banco fica apenas o hash."""
     bad = [s for s in scopes if s not in SCOPES]
     if not scopes or bad:
         raise ValueError(f"scopes inválidos: {bad or scopes}. Opções: {list(SCOPES)}")
+    if "user" in scopes and not user_id:
+        raise ValueError("chave 'user' (token pessoal) precisa de um usuário dono")
     raw = KEY_PREFIX + secrets.token_urlsafe(32)
     row = ApiKey(name=name, prefix=raw[:11], key_hash=hash_key(raw), scopes=sorted(set(scopes)),
-                 agents=sorted(set(agents or [])), created_by=actor, client=client, mode=mode)
+                 agents=sorted(set(agents or [])), created_by=actor, client=client, mode=mode, user_id=user_id)
     db.add(row)
     db.commit()
-    _CACHE.clear()
+    clear_cache()
     return row, raw
 
 
@@ -65,44 +96,108 @@ def revoke_api_key(db: Session, key_id: int):
         raise ValueError(f"chave {key_id} não encontrada")
     row.revoked_at = now()
     db.commit()
-    _CACHE.clear()
+    clear_cache()
 
 
 def api_key_dict(k: ApiKey) -> dict:
     return {"id": k.id, "name": k.name, "prefix": k.prefix, "scopes": k.scopes, "agents": k.agents,
             "created_by": k.created_by, "created_at": k.created_at.isoformat() if k.created_at else None,
             "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None,
-            "revoked": k.revoked_at is not None, "client": k.client, "mode": k.mode}
+            "revoked": k.revoked_at is not None, "client": k.client, "mode": k.mode, "user_id": k.user_id}
 
 
-# Cache curto: evita um SELECT por request no gateway. Revogação limpa o cache.
+# ------------------------------------------------------------------ sessões da UI
+def create_session(db: Session, user: User | None = None, admin: bool = False, label: str = "") -> str:
+    raw = SESSION_PREFIX + secrets.token_urlsafe(32)
+    db.add(UserSession(token_hash=hash_key(raw), user_id=user.id if user else None, admin=admin,
+                       label=label[:200] or (user.email if user else "admin"),
+                       expires_at=now() + timedelta(hours=config.SESSION_TTL_HOURS)))
+    db.commit()
+    return raw
+
+
+def end_session(db: Session, raw: str):
+    row = db.scalar(select(UserSession).where(UserSession.token_hash == hash_key(raw or "")))
+    if row and row.revoked_at is None:
+        row.revoked_at = now()
+        db.commit()
+    clear_cache()
+
+
+def revoke_user_sessions(db: Session, user_id: int):
+    for s in db.scalars(select(UserSession).where(UserSession.user_id == user_id, UserSession.revoked_at.is_(None))):
+        s.revoked_at = now()
+    db.commit()
+    clear_cache()
+
+
+def _user_principal(u: User, via: str, name: str | None = None) -> Principal | None:
+    if not u or not u.active:
+        return None
+    return Principal(name or u.email, {"user"}, user_id=u.id, org_role=u.org_role, via=via)
+
+
+# Cache curto: evita um SELECT por request no gateway. Revogação/mudança de papel limpa o cache.
 _CACHE: dict[str, tuple[float, Principal | None]] = {}
 _TTL = 30.0
+
+
+def clear_cache():
+    _CACHE.clear()
+
+
+def _aware(dt):
+    from datetime import UTC
+    return dt if dt is None or dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 def authenticate(db: Session, token: str) -> Principal | None:
     if not token:
         return None
     if config.ADMIN_TOKEN and hmac.compare_digest(token, config.ADMIN_TOKEN):
-        return Principal("admin-token", {"admin"})
-    if not token.startswith(KEY_PREFIX):
+        return ADMIN
+    if not token.startswith((KEY_PREFIX, SESSION_PREFIX)):
         return None
     h = hash_key(token)
     hit = _CACHE.get(h)
     if hit and time.monotonic() - hit[0] < _TTL:
         return hit[1]
-    row = db.scalar(select(ApiKey).where(ApiKey.key_hash == h))
     principal = None
-    if row and row.revoked_at is None:
-        principal = Principal(f"key:{row.name}", set(row.scopes or []), list(row.agents or []), row.client)
-        row.last_used_at = now()
-        db.commit()
+    if token.startswith(SESSION_PREFIX):
+        s = db.scalar(select(UserSession).where(UserSession.token_hash == h))
+        if s and s.revoked_at is None and _aware(s.expires_at) > now():
+            if s.user_id:
+                principal = _user_principal(db.get(User, s.user_id), "session")
+            elif s.admin:
+                principal = Principal(f"sessão:{s.label}", {"admin"}, via="session")
+    else:
+        row = db.scalar(select(ApiKey).where(ApiKey.key_hash == h))
+        if row and row.revoked_at is None:
+            owner = db.get(User, row.user_id) if row.user_id else None
+            if row.user_id and (owner is None or not owner.active):
+                principal = None  # dono desligado: a chave morre junto
+            elif "user" in (row.scopes or []):
+                principal = _user_principal(owner, "key", f"{owner.email} (key:{row.name})")
+            else:
+                principal = Principal(f"key:{row.name}", set(row.scopes or []), list(row.agents or []), row.client,
+                                      user_id=row.user_id)
+            if principal is not None:
+                row.last_used_at = now()
+                db.commit()
     _CACHE[h] = (time.monotonic(), principal)
     return principal
 
 
 def token_from_headers(headers: dict) -> str:
     return headers.get("x-api-key") or headers.get("authorization", "").removeprefix("Bearer ").strip()
+
+
+def cookie(headers: dict, name: str) -> str:
+    for part in headers.get("cookie", "").split(";"):
+        k, _, v = part.strip().partition("=")
+        if k == name:
+            return v
+    return ""
 
 
 # ------------------------------------------------------------------ tokens internos (agente -> central)

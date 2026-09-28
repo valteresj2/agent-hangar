@@ -25,14 +25,14 @@ def find_usage(obj) -> dict:
 
 
 def record_usage(db: Session, agent_id: int, env: str, channel: str, protocol: str, latency_ms: int, ok: bool,
-                 payload=None, tokens_in=None, tokens_out=None, cost=None):
+                 payload=None, tokens_in=None, tokens_out=None, cost=None, user_id: int | None = None):
     u = find_usage(payload) if payload else {}
     db.add(UsageEvent(
         agent_id=agent_id, env=env, channel=(channel or "api")[:50], protocol=protocol,
         tokens_in=int(tokens_in if tokens_in is not None else u.get("prompt_tokens", 0) or 0),
         tokens_out=int(tokens_out if tokens_out is not None else u.get("completion_tokens", 0) or 0),
         cost_usd=float(cost if cost is not None else u.get("cost_usd", 0) or 0),
-        latency_ms=latency_ms, ok=ok))
+        latency_ms=latency_ms, ok=ok, user_id=user_id))
     db.commit()
 
 
@@ -66,16 +66,21 @@ def agent_usage(db: Session, agent_id: int, days=14):
     return {"series": _series(rows, days), "recent": [usage_row(r) for r in rows[:30]]}
 
 
-def overview(db: Session):
+def overview(db: Session, acc=None):
+    """acc: quem não é admin/auditor vê só os agentes cujo uso pode ver (os dos seus times)."""
     from .runtime import refresh_deployments
 
     refresh_deployments(db)
     agents = db.scalars(select(Agent)).all()
+    if acc is not None and not acc.p.is_auditor:
+        agents = [a for a in agents if acc.can("usage", a)]
+    ids = {a.id for a in agents}
     status = {}
     for a in agents:
         status[a.status] = status.get(a.status, 0) + 1
     since = now() - timedelta(days=14)
-    rows = db.scalars(select(UsageEvent).where(UsageEvent.created_at >= since, UsageEvent.channel != "test")).all()
+    rows = [r for r in db.scalars(select(UsageEvent).where(UsageEvent.created_at >= since,
+                                                           UsageEvent.channel != "test")).all() if r.agent_id in ids]
     day1 = now() - timedelta(days=1)
     r24 = [r for r in rows if r.created_at >= day1]
     by_agent, by_channel, by_protocol = {}, {}, {}
@@ -89,7 +94,7 @@ def overview(db: Session):
         x["cost_usd"] = round(x["cost_usd"] + (r.cost_usd or 0), 6)
         by_channel[r.channel] = by_channel.get(r.channel, 0) + 1
         by_protocol[r.protocol] = by_protocol.get(r.protocol, 0) + 1
-    tests = db.scalars(select(TestRun)).all()
+    tests = [t for t in db.scalars(select(TestRun)).all() if t.agent_id in ids]
     running = [d for a in agents for d in a.deployments if d.status == "running"]
     return {
         "agents_total": len(agents), "status": status,

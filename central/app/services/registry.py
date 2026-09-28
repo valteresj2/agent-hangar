@@ -3,14 +3,15 @@ from sqlalchemy.orm import Session
 
 from .. import deploy
 from .. import spec as specmod
-from ..models import Agent, AgentVersion, UsageEvent
+from ..models import Agent, AgentVersion, Organization, UsageEvent
 from .common import PlatformError, audit, find_agent, get_agent, slugify, spec_of
 
 META_KEYS = ("name", "objective", "final_output", "owner")
 
 
 def create_agent(db: Session, name: str, objective: str, final_output: str, kind="single", owner="",
-                 actor="admin", slug: str | None = None) -> Agent:
+                 actor="admin", slug: str | None = None, team_id: int | None = None,
+                 visibility: str | None = None) -> Agent:
     if not (name and objective and final_output):
         raise PlatformError("name, objective e final_output são obrigatórios")
     if slug:
@@ -22,12 +23,16 @@ def create_agent(db: Session, name: str, objective: str, final_output: str, kind
         slug = base
         while find_agent(db, slug):
             slug, i = f"{base}-{i}", i + 1
+    if visibility and visibility not in ("private", "org", "open"):
+        raise PlatformError("visibility deve ser private, org ou open")
+    org = db.get(Organization, 1)
     a = Agent(slug=slug, name=name, objective=objective, final_output=final_output, kind=kind or "single",
-              owner=owner or "", status="draft", current_version=1)
+              owner=owner or "", status="draft", current_version=1, team_id=team_id or 1,
+              visibility=visibility or (org.default_visibility if org else "org"))
     a.versions.append(AgentVersion(version=1, spec=specmod.default_spec(), created_by=actor))
     db.add(a)
     db.commit()
-    audit(db, actor, "agent.register", slug, f"{name} | objetivo: {objective}")
+    audit(db, actor, "agent.register", slug, f"{name} | time #{a.team_id} | objetivo: {objective}")
     return a
 
 
@@ -94,12 +99,17 @@ def delete_agent(db: Session, slug: str, actor="admin"):
     audit(db, actor, "agent.delete", slug)
 
 
-def apply_document(db: Session, doc: dict, actor="admin") -> list[dict]:
+def apply_document(db: Session, doc: dict, actor="admin", acc=None, trusted_catalog=False) -> list[dict]:
     """GitOps: aplica o estado desejado de um documento {skills, mcp_servers, agents}. Idempotente — só
     cria versão quando a spec muda. Agentes são aplicados na ordem do documento (membros antes do
-    orquestrador)."""
+    orquestrador). `acc` (services.access.Access) aplica as permissões de quem chama: catálogo só admin,
+    agente novo num time onde a pessoa é developer+ (campo `team`), agente existente exige poder editar."""
+    from .access import Forbidden
     from .catalog import upsert_mcp, upsert_skill
 
+    # templates vêm da imagem da central (curados): as skills/MCPs deles entram mesmo por quem não é admin
+    if acc is not None and not acc.p.is_admin and not trusted_catalog and (doc.get("skills") or doc.get("mcp_servers")):
+        raise Forbidden("Só admins registram skills e MCP servers no catálogo")
     out = []
     for s in doc.get("skills", []) or []:
         upsert_skill(db, s["name"], s.get("description", ""), s.get("content", ""), actor)
@@ -112,10 +122,16 @@ def apply_document(db: Session, doc: dict, actor="admin") -> list[dict]:
         a = find_agent(db, slug)
         action = "unchanged"
         if not a:
+            team_id = acc.team_for_new_agent(item.get("team")).id if acc is not None else None
+            if acc is None and item.get("team"):
+                from .access import find_team
+                team_id = find_team(db, item["team"]).id
             a = create_agent(db, item["name"], item["objective"], item["final_output"], owner=item.get("owner", ""),
-                             actor=actor, slug=slug)
+                             actor=actor, slug=slug, team_id=team_id, visibility=item.get("visibility"))
             action = "created"
         else:
+            if acc is not None:
+                acc.require("edit", a)
             for k in META_KEYS:
                 if item.get(k):
                     setattr(a, k, item[k])
