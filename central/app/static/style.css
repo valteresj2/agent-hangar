@@ -211,3 +211,5 @@ td code,.sub code{font-size:12px;color:var(--mute)}
 .one-line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .scroll>table{min-width:760px}
 td .pill+.pill,td .pill+div .pill{margin-top:4px}
+.msg-meta{margin-top:8px;font-size:12px;color:var(--mute)}
+.msg.err{border-color:var(--stop);color:var(--stop)}

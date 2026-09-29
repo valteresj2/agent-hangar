@@ -107,3 +107,14 @@ def test_ui_entry_points_redirect(client):
         r = client.get(path, follow_redirects=False)
         assert r.status_code == 307 and r.headers["location"].startswith("/ui/?v="), path
     assert client.get("/favicon.ico").status_code == 200
+
+
+def test_ui_key_handlers_do_not_swallow_typing():
+    """`el.onkeydown = e => e.key === 'Enter' && x()` devolve false para as outras teclas — e false cancela a
+    tecla: o campo para de aceitar digitação (bug do playground e do login por token)."""
+    import pathlib
+    import re
+    static = pathlib.Path(__file__).resolve().parents[1] / "central" / "app" / "static"
+    bad = [f"{f.name}: {m.group(0)}" for f in static.glob("*.js")
+           for m in re.finditer(r"\.onkey\w+\s*=\s*\w+\s*=>\s*[^{\s][^\n]*&&", f.read_text(encoding="utf-8"))]
+    assert not bad, bad

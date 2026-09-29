@@ -392,16 +392,23 @@ function playground(t, a) {
   t.innerHTML = `<div class="card"><div class="row between"><h2>Playground</h2><select id="penv" style="width:auto"><option>prod</option>${can(a, 'edit') ? '<option>stage</option>' : ''}</select></div>
     <div id="chat" class="chat"></div><div class="row"><input id="pmsg" placeholder="Mensagem para o agente…" style="flex:1"><button id="psend">Enviar</button></div></div>`;
   const add = (c, x) => { const d = document.createElement('div'); d.className = 'msg ' + c; d.textContent = x; $('#chat').append(d); d.scrollIntoView(); return d; };
+  let busy = false;
   const send = async () => {
-    const m = $('#pmsg').value.trim(); if (!m) return; $('#pmsg').value = ''; add('u', m);
-    const w = add('a', '…');
+    const m = $('#pmsg').value.trim(); if (!m || busy) return;
+    busy = true; $('#psend').disabled = true;
+    $('#pmsg').value = ''; add('u', m);
+    const w = add('a', 'Pensando…');
     try {
       const r = await api(`/agents/${a.slug}/chat`, { method: 'POST', body: { message: m, env: $('#penv').value } });
       const u = r.usage || {};
-      w.textContent = r.reply + `\n\n${r.latency_ms}ms · ${fmt(u.total_tokens || (u.prompt_tokens || 0) + (u.completion_tokens || 0))} tokens · ${usd(u.cost_usd || 0)}` + ((r.trace || []).length ? ` · ${r.trace.length} tool call(s)` : '');
-    } catch (e) { w.textContent = 'Erro: ' + e.message; }
+      const calls = (r.trace || []).length;
+      w.textContent = r.reply;
+      w.insertAdjacentHTML('beforeend', `<div class="msg-meta">${r.latency_ms} ms, ${fmt(u.total_tokens || (u.prompt_tokens || 0) + (u.completion_tokens || 0))} tokens, ${usd(u.cost_usd || 0)}${calls ? `, ${calls} ${calls > 1 ? 'ferramentas usadas' : 'ferramenta usada'}` : ''}</div>`);
+    } catch (e) { w.textContent = 'Erro: ' + e.message; w.classList.add('err'); }
+    finally { busy = false; $('#psend').disabled = false; $('#pmsg').focus(); }
   };
-  $('#psend').onclick = send; $('#pmsg').onkeydown = e => e.key === 'Enter' && send();
+  $('#psend').onclick = send;
+  $('#pmsg').onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); send(); } };
 }
 
 function playgroundHarness(t, a) {

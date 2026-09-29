@@ -68,7 +68,8 @@ async function showLogin() {
     if (!r.ok) { const d = await r.json().catch(() => ({})); toast(d.detail || 'Token inválido', true); return; }
     location.hash = next; location.reload();
   };
-  $('#lg-go').onclick = go; $('#lg-token').onkeydown = e => e.key === 'Enter' && go();
+  $('#lg-go').onclick = go;
+  $('#lg-token').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); go(); } };
   const pf = $('#lg-pw');
   if (pf) pf.onsubmit = async e => {
     e.preventDefault();
@@ -186,7 +187,7 @@ async function teamsPage(openForm) {
     toast(`Time “${t.name}” criado`);
     if (location.hash === '#/teams') teamsPage(); else location.hash = '#/teams';
   });
-  $('#tm-name').onkeydown = e => e.key === 'Enter' && $('#tm-go').click();
+  $('#tm-name').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('#tm-go').click(); } };
 }
 
 async function teamDetail(slug) {

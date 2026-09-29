@@ -5,6 +5,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-09-29
+
+### Fixed
+- Text fields that send with Enter (Playground, token login, new team name) blocked typing: only accented letters
+  got through. The key handler returned `false` for every other key, which cancels the keystroke. A test now
+  guards against this pattern.
+- Playground:
+  - the send button is disabled while the agent answers, and focus returns to the field;
+  - latency, tokens, cost and tools used appear under each answer;
+  - errors are highlighted.
+
 ## [0.3.0] — 2026-09-28
 
 ### Added
