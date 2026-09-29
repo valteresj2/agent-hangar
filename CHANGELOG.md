@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-29
+
 ### Added
 - **Agent schedules.** An agent in production runs by itself at the day and time the user asks for.
   - **Recurrence and time zone:** a cron expression or a one-off date and time, in the company's time zone
@@ -31,6 +33,13 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 - Deleting an agent that had schedules, access requests or promotion requests failed on Postgres.
 - Elements with the `hidden` attribute could still show when a component set `display`.
+
+### Upgrading from 0.3.x
+- **Migration 0006 runs on start.** It adds the schedules and run history, and the company time zone.
+- **Set the company time zone** used by default in schedules: `PATCH /api/org {"timezone": "America/Sao_Paulo"}`.
+  The default is UTC.
+- **The scheduler runs inside the central** (`SCHEDULER_ENABLED=1`). With more than one replica, each run is
+  claimed once.
 
 ## [0.3.1] — 2026-09-29
 
