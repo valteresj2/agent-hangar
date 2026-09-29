@@ -100,3 +100,10 @@ def test_ui_assets_are_versioned(client):
     from app.main import UI_VERSION
     html = client.get("/ui/").text
     assert f"app.js?v={UI_VERSION}" in html and "__V__" not in html
+
+
+def test_ui_entry_points_redirect(client):
+    for path in ("/", "/ui", "/login"):
+        r = client.get(path, follow_redirects=False)
+        assert r.status_code == 307 and r.headers["location"].startswith("/ui/?v="), path
+    assert client.get("/favicon.ico").status_code == 200

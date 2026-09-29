@@ -1,3 +1,8 @@
+/* Página antiga em cache carregando este arquivo novo (sem icons.js/org.js): recarrega na versão atual. */
+if (typeof icon !== 'function' || typeof boot !== 'function') {
+  location.replace('/ui/?v=' + Date.now() + location.hash);
+  throw new Error('UI desatualizada no cache do navegador — recarregando');
+}
 const $ = (s, r = document) => r.querySelector(s);
 const main = $('#main');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

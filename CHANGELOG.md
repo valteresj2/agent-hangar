@@ -58,6 +58,8 @@ All notable changes to this project are documented here. The format follows
   - **Accessibility:** visible keyboard focus, 44px touch targets, `prefers-reduced-motion`, and dark mode.
 
 ### Fixed
+- `http://…/ui` without the trailing slash returned 404; `/ui` and `/login` now redirect to the UI, and `/favicon.ico` exists.
+- A page left in the browser cache by an older version reloads itself at the current version instead of failing.
 - The UI is served with `Cache-Control: no-cache`, and its assets carry a content hash (`app.js?v=…`), so
   browsers never keep an old version after an upgrade.
 - Calls through an agent's MCP endpoint now record tokens and cost (the tool result carries `_meta.usage`).

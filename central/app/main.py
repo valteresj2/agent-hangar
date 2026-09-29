@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import auth, config, crypto, db
@@ -38,7 +38,7 @@ async def lifespan(app):
 app = FastAPI(title=config.APP_NAME, version=config.VERSION, lifespan=lifespan)
 
 _GW = re.compile(r"^/gw(?:-stage)?/([^/]+)(?:/|$)")
-OPEN_PREFIXES = ("/ui", "/api/health", "/internal", "/api/auth/")
+OPEN_PREFIXES = ("/ui", "/api/health", "/internal", "/api/auth/", "/login", "/favicon.ico")
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
 
@@ -114,8 +114,17 @@ _INDEX = open(os.path.join(STATIC, "index.html"), encoding="utf-8").read().repla
 
 
 @app.get("/")
+@app.get("/ui")  # sem a barra final: sem esta rota, o MCP montado em "/" respondia 404
+@app.get("/login")
 def root():
     return RedirectResponse(f"/ui/?v={UI_VERSION}")  # URL nova a cada versão: fura até um index.html em cache
+
+
+@app.get("/favicon.ico")
+def favicon():
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#F4B400" stroke-width="2.2" '
+           'stroke-linejoin="round"><path d="M2.5 20.5V11L12 3.5 21.5 11v9.5"/><path d="M6.5 20.5v-6h11v6"/></svg>')
+    return Response(svg, media_type="image/svg+xml", headers={"Cache-Control": "max-age=86400"})
 
 
 @app.get("/ui/")
