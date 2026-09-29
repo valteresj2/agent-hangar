@@ -56,6 +56,8 @@ what the caller can see. Admins see everything.
 | PATCH | `/api/agents/{slug}` | JSON Merge Patch on spec (and name/objective/final_output/owner) |
 | PUT | `/api/agents/{slug}/spec` | Replace the spec |
 | POST | `/api/agents/{slug}/rollback` | `{version}` → new version with that spec |
+| POST | `/api/agents/{slug}/edit` | Edit later: `{changes, test, promote, note}`. Creates a new version, runs the tests in stage (`test`) and, if they pass, promotes to production or asks for approval (`promote`). Returns what changed |
+| GET | `/api/agents/{slug}/diff?from_version=&to_version=` | What changed in the spec between two versions |
 | POST | `/api/agents/{slug}/test` | Deploy stage + run tests |
 | POST | `/api/agents/{slug}/deploy` | `{env: stage\|prod}`. Prod is gated by tests; without the right to promote it returns `status: approval_pending` and a request |
 | POST | `/api/agents/{slug}/ship` | Sub-agents → stage → tests → prod. The last step can be `approval_pending` |
@@ -104,7 +106,8 @@ The client acts with the key owner's roles. The tools are:
 - **Catalog:** `list_catalog`, `register_llm_connection`, `register_skill`, `register_mcp_server`.
 - **Templates:** `list_templates`, `apply_template`.
 - **Build:** `register_agent`, `design_agent` (merge patch plus `remove`), `rollback_agent`, `build_multi_agent`.
-- **Inspect:** `list_agents`, `get_agent`.
+- **Inspect:** `list_agents`, `get_agent`, `get_agent_spec` (spec, plus which version runs in prod and in stage).
+- **Edit later:** `edit_agent` (changes, then stage and tests, then publish when `promote=True`), `diff_agent_versions`, `update_agent_access`.
 - **Test and deploy:** `run_tests`, `deploy_stage`, `promote_to_production`, `ship_agent`, `stop_agent`.
 - **Use:** `chat_with_agent`, `run_harness_job` (`wait`), `get_job`, `cancel_job`, `create_consumer_key`,
   `connect_agent` (per-tool key + ready-to-paste config).

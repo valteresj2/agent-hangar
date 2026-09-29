@@ -170,6 +170,25 @@ def rollback(slug: str, body: RollbackBody, request: Request, db=Depends(db_dep)
                                         acc=acc(request, db)))
 
 
+class EditBody(BaseModel):
+    changes: dict = Field(default_factory=dict)  # merge patch da spec + name/objective/final_output/owner
+    test: bool = True
+    promote: bool = False
+    note: str = ""
+
+
+@router.post("/agents/{slug}/edit")
+def edit_agent(slug: str, body: EditBody, request: Request, db=Depends(db_dep)):
+    """Editar depois: nova versão -> stage + testes -> (promote) produção ou pedido de aprovação."""
+    return guard(lambda: org.edit_agent(db, acc(request, db), slug, body.changes, body.test, body.promote, body.note))
+
+
+@router.get("/agents/{slug}/diff")
+def diff_versions(slug: str, request: Request, from_version: int, to_version: int | None = None, db=Depends(db_dep)):
+    _agent(request, db, slug, "view_spec")
+    return guard(lambda: svc.registry.diff_versions(db, slug, from_version, to_version))
+
+
 @router.get("/agents/{slug}/logs")
 def logs(slug: str, request: Request, env: str = "prod", db=Depends(db_dep)):
     # logs podem ter conversas: só quem edita (ou auditor)

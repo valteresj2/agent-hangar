@@ -141,3 +141,33 @@ def apply_document(db: Session, doc: dict, actor="admin", acc=None, trusted_cata
             action = "updated"
         out.append({"kind": "agent", "slug": slug, "action": action, "version": a.current_version})
     return out
+
+
+def _short(v, n=300):
+    import json
+    s = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
+    return s if len(s) <= n else s[:n] + f"… (+{len(s) - n} caracteres)"
+
+
+def spec_diff(old, new, path: str = "") -> list[dict]:
+    """O que mudou entre duas specs, campo a campo (listas comparadas inteiras)."""
+    if isinstance(old, dict) and isinstance(new, dict):
+        out = []
+        for k in sorted(set(old) | set(new)):
+            p = f"{path}.{k}" if path else k
+            if k not in old:
+                out.append({"path": p, "change": "added", "to": _short(new[k])})
+            elif k not in new:
+                out.append({"path": p, "change": "removed", "from": _short(old[k])})
+            else:
+                out += spec_diff(old[k], new[k], p)
+        return out
+    return [] if old == new else [{"path": path, "change": "changed", "from": _short(old), "to": _short(new)}]
+
+
+def diff_versions(db: Session, slug: str, from_version: int, to_version: int | None = None) -> dict:
+    a = get_agent(db, slug)
+    to_version = to_version or a.current_version
+    old = specmod.normalize_legacy(spec_of(a, from_version))
+    new = specmod.normalize_legacy(spec_of(a, to_version))
+    return {"slug": a.slug, "from_version": from_version, "to_version": to_version, "changes": spec_diff(old, new)}

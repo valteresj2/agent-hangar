@@ -589,3 +589,81 @@ def approvals(db: Session, acc: Access) -> dict:
         mine_promo = [promotion_dict(db, r) for r in db.scalars(select(PromotionRequest).where(
             PromotionRequest.requested_user_id == acc.p.user_id).order_by(PromotionRequest.id.desc()).limit(50))]
     return {"to_decide": pending_for(db, acc), "my_access": mine_access, "my_promotions": mine_promo}
+
+
+# ------------------------------------------------------------------ editar depois: stage -> testes -> produção
+def where_running(a: Agent) -> dict:
+    from .runtime import active_deployment
+    prod, stage = active_deployment(a, "prod"), active_deployment(a, "stage")
+    return {"prod_version": prod.version if prod else None, "stage_version": stage.version if stage else None}
+
+
+def agent_spec(db: Session, acc: Access, slug: str, version: int | None = None) -> dict:
+    """Spec (atual ou de uma versão) + metadados + onde cada versão está rodando: o ponto de partida para editar."""
+    from .common import spec_of
+    from .runtime import latest_test, refresh_deployments
+
+    a = get_agent(db, slug)
+    acc.require("view_spec", a)
+    refresh_deployments(db, [a])
+    v = version or a.current_version
+    t = latest_test(a, v)
+    team = db.get(Team, a.team_id) if a.team_id else None
+    return {"slug": a.slug, "name": a.name, "objective": a.objective, "final_output": a.final_output,
+            "owner": a.owner, "team": team.slug if team else None, "visibility": a.visibility,
+            "current_version": a.current_version, "version": v, **where_running(a),
+            "test": {"status": t.status, "summary": t.summary} if t else None,
+            "versions": [x.version for x in a.versions], "spec": spec_of(a, v)}
+
+
+def edit_agent(db: Session, acc: Access, slug: str, patch: dict, test: bool = True, promote: bool = False,
+               note: str = "") -> dict:
+    """Edita (spec e/ou nome, objetivo, saída final, contato) como nova versão; a produção segue na versão
+    anterior. test=True: deploy em stage + testes. promote=True: se os testes passarem, publica (ou pede
+    aprovação, conforme o papel e o time)."""
+    import copy
+
+    from .common import spec_of
+    from .registry import META_KEYS, design_agent, spec_diff
+    from .runtime import latest_test
+    from .testing import run_tests
+
+    a = get_agent(db, slug)
+    acc.require("edit", a)
+    before = a.current_version
+    old_spec = copy.deepcopy(spec_of(a))
+    old_meta = {k: getattr(a, k) for k in META_KEYS}
+    if patch:
+        design_agent(db, slug, patch, acc.p.name)
+    changes = [{"path": k, "change": "changed", "from": old_meta[k], "to": getattr(a, k)}
+               for k in META_KEYS if getattr(a, k) != old_meta[k]]
+    changes += spec_diff(old_spec, spec_of(a))
+    out = {"slug": a.slug, "version_before": before, "version": a.current_version, "changes": changes,
+           **where_running(a)}
+    if not changes:
+        out["note"] = "nada mudou (os valores enviados já eram os atuais)"
+    if a.current_version != before and out["prod_version"]:
+        out["note"] = f"produção continua na v{out['prod_version']} até você promover a v{a.current_version}"
+    passed = bool((t := latest_test(a, a.current_version)) and t.status == "passed")
+    if test or (promote and not passed):
+        run = run_tests(db, slug, acc.p.name)
+        failed = [{"name": r.get("name"), "detail": r.get("detail", "")[:300]} for r in run.results if not r.get("passed")]
+        out["tests"] = {"status": run.status, "summary": run.summary, "failed": failed}
+        passed = run.status == "passed"
+        out.update(where_running(a))
+    if promote:
+        if passed:
+            out["production"] = promote_fn(db, acc, slug, note)
+            db.refresh(a)  # a lista de deployments mudou: prod_version passa a refletir a publicação
+            out.update(where_running(a))
+        else:
+            out["production"] = {"status": "not_promoted", "reason": "os testes não passaram"}
+    out["next"] = ("corrija com edit_agent e teste de novo" if (test or promote) and not passed
+                   else "publique com edit_agent(promote=True) ou promote_to_production" if not promote
+                   else "pronto")
+    if promote and out.get("production", {}).get("status") == "approval_pending":
+        out["next"] = "um mantenedor do time precisa aprovar em Aprovações (ou decide_approval)"
+    return out
+
+
+promote_fn = promote  # nome estável para edit_agent (promote é também o nome de um parâmetro)

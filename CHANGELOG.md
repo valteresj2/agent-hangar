@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Edit agents later through the MCP** (and the API):
+  - `get_agent_spec` shows the current spec and which version runs in production and in stage;
+  - `edit_agent` applies changes to the spec and to name, objective, final output and contact as a new
+    version, deploys it to stage and runs the tests. Production keeps the previous version. With
+    `promote=True` it publishes only if the tests pass, or asks for approval when the role or team requires it;
+  - `diff_agent_versions` shows what changed before publishing;
+  - `update_agent_access` changes visibility, owner team and exposed spec.
+- API: `POST /api/agents/{slug}/edit` and `GET /api/agents/{slug}/diff`.
+
 ## [0.3.1] — 2026-09-29
 
 ### Fixed

@@ -62,6 +62,13 @@ FLUXO
    mode): "mcp" = o agente vira ferramenta (todas); "model" = vira modelo no chat (LibreChat, Open WebUI,
    OpenCode, SDK OpenAI). Ela gera uma chave só daquela ferramenta e devolve a configuração pronta — NUNCA
    entregue o token de admin. Para agente com harness, run_harness_job mostra resultado/diff.
+9. EDITAR DEPOIS (esqueceu algo, quer ajustar um agente que já existe — em produção ou não):
+   get_agent_spec(slug) mostra a spec atual e qual versão está em produção/stage. Depois
+   edit_agent(slug, changes={...}, test=True) cria uma versão nova, sobe em STAGE e roda os testes — a produção
+   continua na versão anterior. Mostre ao usuário o que mudou (changes) e o resultado. Se passou e ele quiser
+   publicar: edit_agent(slug, promote=True) (ou promote_to_production). Com promote=True junto das mudanças, só
+   publica se os testes passarem. Para revisar antes: diff_agent_versions(slug, from_version=<prod>). Nunca
+   publique sem os testes aprovados; se reprovar, corrija com edit_agent e teste de novo.
 
 ACESSO: cada agente pertence a um TIME. Você age com os papéis do usuário dono da credencial (veja whoami):
 developer/maintainer criam e editam agentes do time (register_agent(team=...) quando a pessoa está em mais de um);
@@ -439,4 +446,56 @@ async def decide_approval(ctx: Context, kind: str, request_id: int, approve: boo
         if kind == "access":
             return svc.org.decide_access(db, acc, request_id, approve)
         raise svc.PlatformError("kind deve ser promotion ou access")
+    return await _run(ctx, go)
+
+
+@mcp.tool()
+async def get_agent_spec(ctx: Context, slug: str, version: int | None = None) -> dict:
+    """Spec atual (ou de uma versão) + nome, objetivo, saída final, contato, time, visibilidade e qual versão está
+    em produção e em stage. Use antes de editar um agente existente."""
+    return await _run(ctx, lambda db, acc: svc.org.agent_spec(db, acc, slug, version))
+
+
+@mcp.tool()
+async def edit_agent(ctx: Context, slug: str, changes: dict | None = None, instructions: str | None = None,
+                     name: str | None = None, objective: str | None = None, final_output: str | None = None,
+                     owner: str | None = None, remove: list[str] | None = None, test: bool = True,
+                     promote: bool = False, note: str = "") -> dict:
+    """Edita um agente que já existe e, na mesma chamada, testa em stage e (opcional) publica.
+
+    changes: JSON Merge Patch sobre a spec (formato de get_spec_schema) — ex.: {"tools": [...]},
+    {"llm": {"model": "x"}}, {"tests": [...]}; objetos mesclam, listas substituem, null apaga. Atalhos:
+    instructions, name, objective, final_output, owner. remove: campos da spec a apagar (ex.: ["harness"]).
+    test=True (padrão): cria a versão nova, faz deploy em STAGE e roda os testes — produção segue na versão
+    anterior. promote=True: se os testes passarem, publica em produção (ou cria o pedido de aprovação, se o seu
+    papel/time exigir). Sem mudanças e com promote=True, publica a versão atual se ela já tiver teste aprovado.
+    Devolve o que mudou (changes), o resultado dos testes e o estado de produção."""
+    patch = dict(changes or {})
+    for k, v in (("instructions", instructions), ("name", name), ("objective", objective),
+                 ("final_output", final_output), ("owner", owner)):
+        if v is not None:
+            patch[k] = v
+    for k in remove or []:
+        patch[k] = None
+    return await _run(ctx, lambda db, acc: svc.org.edit_agent(db, acc, slug, patch, test, promote, note))
+
+
+@mcp.tool()
+async def diff_agent_versions(ctx: Context, slug: str, from_version: int, to_version: int | None = None) -> dict:
+    """O que mudou na spec entre duas versões (to_version padrão = atual). Útil para revisar antes de publicar:
+    from_version = a versão que está em produção (get_agent_spec mostra qual é)."""
+    def go(db, acc):
+        _agent(db, acc, slug, "view_spec")
+        return svc.registry.diff_versions(db, slug, from_version, to_version)
+    return await _run(ctx, go)
+
+
+@mcp.tool()
+async def update_agent_access(ctx: Context, slug: str, visibility: str | None = None, expose_spec: bool | None = None,
+                              team: str | None = None) -> dict:
+    """(Mantenedor/admin) visibility: private | org | open; expose_spec: mostra instruções/spec (leitura) a quem é
+    de fora do time; team: transfere o agente para outro time (slug)."""
+    def go(db, acc):
+        a = svc.org.set_agent_access(db, acc, slug, visibility, expose_spec, team)
+        return {"slug": a.slug, "visibility": a.visibility, "expose_spec": a.expose_spec, "team_id": a.team_id}
     return await _run(ctx, go)
