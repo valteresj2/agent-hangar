@@ -3,7 +3,16 @@ from sqlalchemy.orm import Session
 
 from .. import deploy
 from .. import spec as specmod
-from ..models import Agent, AgentVersion, Organization, UsageEvent
+from ..models import (
+    AccessRequest,
+    Agent,
+    AgentVersion,
+    Organization,
+    PromotionRequest,
+    Schedule,
+    ScheduleRun,
+    UsageEvent,
+)
 from .common import PlatformError, audit, find_agent, get_agent, slugify, spec_of
 
 META_KEYS = ("name", "objective", "final_output", "owner")
@@ -94,6 +103,13 @@ def delete_agent(db: Session, slug: str, actor="admin"):
     for env in ("stage", "prod"):
         deploy.stop_agent(slug, env)
     db.query(UsageEvent).filter(UsageEvent.agent_id == a.id).delete()
+    # tudo o que aponta para o agente sai junto (no Postgres, as chaves estrangeiras barrariam a exclusão)
+    sids = [x.id for x in db.query(Schedule).filter(Schedule.agent_id == a.id)]
+    if sids:
+        db.query(ScheduleRun).filter(ScheduleRun.schedule_id.in_(sids)).delete(synchronize_session=False)
+        db.query(Schedule).filter(Schedule.id.in_(sids)).delete(synchronize_session=False)
+    db.query(AccessRequest).filter(AccessRequest.agent_id == a.id).delete()
+    db.query(PromotionRequest).filter(PromotionRequest.agent_id == a.id).delete()
     db.delete(a)
     db.commit()
     audit(db, actor, "agent.delete", slug)

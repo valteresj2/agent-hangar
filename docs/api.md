@@ -39,6 +39,30 @@ what the caller can see. Admins see everything.
 | PUT | `/api/sso/{provider}` | `{enabled, client_id, client_secret, settings}` (secret encrypted) |
 | POST / DELETE | `/api/sso/mappings`, `/api/sso/mappings/{id}` | Group → team `{provider, external_group, team, role}` |
 
+## Schedules (`/api`)
+
+A scheduled agent runs by itself in production at the chosen day and time. Creating, changing and deleting a
+schedule requires the right to edit the agent. Team members can see schedules and their runs.
+
+| Method | Path | Description |
+|---|---|---|
+| GET / POST | `/api/agents/{slug}/schedules` | List / create `{message, cron? \| run_at?, timezone?, name?, notify_url?}` |
+| GET | `/api/schedules` | Every schedule you can see |
+| PATCH / DELETE | `/api/schedules/{id}` | Change time, message or webhook; pause or resume with `enabled` / delete |
+| POST | `/api/schedules/{id}/run` | Run now and wait for the result |
+| GET | `/api/schedules/{id}/runs` | History: status, answer, tokens, cost, webhook delivery |
+
+- **`cron`:** five fields (minute, hour, day of month, month, day of week) in the schedule's time zone.
+  Examples: `0 9 * * 1-5` runs on weekdays at 09:00, and `0 8 5 * *` runs on the 5th at 08:00. Aliases such as
+  `@daily` work too.
+- **`run_at`:** a one-off run, for example `2026-10-05T09:00`.
+- **Time zone:** defaults to the company's, set with `PATCH /api/org {"timezone": "America/Sao_Paulo"}`.
+- **When it runs:** only while the agent is in production. A schedule created earlier waits, and takes effect
+  when the agent goes live.
+- **`notify_url`:** receives `{text, agent, schedule, status, output, …}`, a payload that works with Slack and
+  Teams incoming webhooks.
+- **Limits:** runs at least 5 minutes apart, and webhooks to the internal network are blocked.
+
 ## SCIM 2.0 (`/scim/v2`, scope `scim`)
 
 `Users`, `Groups`, `ServiceProviderConfig`, `ResourceTypes` and `Schemas`, with filters (`userName eq`,
@@ -103,6 +127,7 @@ The client acts with the key owner's roles. The tools are:
 
 - **Guidance:** `platform_guide`, `get_spec_schema`, `whoami`.
 - **Access:** `request_agent_access`, `list_approvals`, `decide_approval`.
+- **Schedules:** `schedule_agent`, `list_schedules`, `update_schedule`, `delete_schedule`, `run_schedule_now`, `schedule_runs`.
 - **Catalog:** `list_catalog`, `register_llm_connection`, `register_skill`, `register_mcp_server`.
 - **Templates:** `list_templates`, `apply_template`.
 - **Build:** `register_agent`, `design_agent` (merge patch plus `remove`), `rollback_agent`, `build_multi_agent`.

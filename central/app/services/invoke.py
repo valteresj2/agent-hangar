@@ -11,7 +11,9 @@ from .runtime import active_deployment, refresh_deployments
 from .usage import record_usage
 
 
-def chat(db: Session, slug: str, message: str, env="prod", channel="api", actor="admin") -> dict:
+def chat(db: Session, slug: str, message: str, env="prod", channel="api", actor="admin", timeout: float = 180,
+         session: str | None = None) -> dict:
+    """session: vira X-Session-Id no agente (workspace próprio da execução, ex.: agendamentos)."""
     from .jobs import run_harness_job
 
     a = get_agent(db, slug)
@@ -28,7 +30,8 @@ def chat(db: Session, slug: str, message: str, env="prod", channel="api", actor=
                 "latency_ms": int((time.time() - t0) * 1000)}
     t0, ok, data = time.time(), True, None
     try:
-        r = httpx.post(deploy.internal_url(slug, env) + "/v1/chat/completions", timeout=180,
+        headers = {"X-Channel": channel, **({"X-Session-Id": session} if session else {})}
+        r = httpx.post(deploy.internal_url(slug, env) + "/v1/chat/completions", timeout=timeout, headers=headers,
                        json={"messages": [{"role": "user", "content": message}]})
         r.raise_for_status()
         data = r.json()

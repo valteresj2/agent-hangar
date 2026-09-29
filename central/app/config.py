@@ -62,5 +62,13 @@ JOB_TIMEOUT_S = int(_env("JOB_TIMEOUT_S", "180"))
 JOB_MAX_TIMEOUT_S = int(_env("JOB_MAX_TIMEOUT_S", "900"))
 JOB_WORKERS = int(_env("JOB_WORKERS", "8"))
 
+# Agendamentos (execuções de agentes em produção por cron ou data única)
+SCHEDULER_ENABLED = _env("SCHEDULER_ENABLED", "1") == "1"
+SCHEDULER_TICK_S = int(_env("SCHEDULER_TICK_S", "20"))
+SCHEDULE_WORKERS = int(_env("SCHEDULE_WORKERS", "4"))
+SCHEDULE_RUN_TIMEOUT_S = int(_env("SCHEDULE_RUN_TIMEOUT_S", "900"))
+SCHEDULE_MIN_INTERVAL_MIN = int(_env("SCHEDULE_MIN_INTERVAL_MIN", "5"))
+SCHEDULE_ALLOW_PRIVATE_WEBHOOKS = _env("SCHEDULE_ALLOW_PRIVATE_WEBHOOKS", "0") == "1"
+
 TEMPLATES_DIR = _env("TEMPLATES_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                                   "templates"))

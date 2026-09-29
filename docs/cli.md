@@ -29,6 +29,7 @@ Credentials are read from `HANGAR_URL` / `HANGAR_TOKEN`, or from `~/.config/hang
 | `hangar teams ls` / `hangar teams add <team> <email> --role developer` | Teams (with spend) and members |
 | `hangar approvals ls` / `approve <kind> <id>` / `reject <kind> <id>` | Production (`promotion`) and access (`access`) approvals |
 | `hangar request-access <slug> <reason…>` | Ask a team to use its agent |
+| `hangar schedules ls [slug]` / `add <slug> <message…> --cron '0 9 * * 1-5'` (or `--at 2026-10-05T09:00`) / `run <id>` / `rm <id>` | Schedules: the agent runs by itself in production |
 
 ## Agents in CI
 

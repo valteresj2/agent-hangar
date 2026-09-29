@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from . import auth, config, crypto, db
 from . import services as svc
 from .mcp_tools import mcp
-from .routers import access, admin, gateway, internal, scim
+from .routers import access, admin, gateway, internal, schedules, scim
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("hangar")
@@ -31,8 +31,12 @@ async def lifespan(app):
         log.warning("ADMIN_TOKEN vazio ou padrão — defina um valor forte antes de expor a central")
     await run_in_threadpool(db.migrate)
     await run_in_threadpool(svc.recover_orphans)
-    async with mcp.session_manager.run():
-        yield
+    svc.schedules.start()
+    try:
+        async with mcp.session_manager.run():
+            yield
+    finally:
+        svc.schedules.stop()
 
 
 app = FastAPI(title=config.APP_NAME, version=config.VERSION, lifespan=lifespan)
@@ -102,6 +106,7 @@ app.add_middleware(AuthMiddleware)
 app.include_router(access.router)
 app.include_router(admin.router)
 app.include_router(scim.router)
+app.include_router(schedules.router)
 app.include_router(internal.router)
 app.include_router(gateway.router)
 

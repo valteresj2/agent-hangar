@@ -20,6 +20,7 @@
   --code:#0B1016;--code-ink:#CBD5E1}}
 
 *{box-sizing:border-box}
+[hidden]{display:none!important}  /* o atributo hidden sempre vence o display dos componentes */
 html{-webkit-text-size-adjust:100%}
 body{margin:0;font:15px/1.55 var(--f-ui);background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
 a{color:var(--info)}a:hover{color:var(--ink)}

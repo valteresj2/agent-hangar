@@ -16,6 +16,7 @@ os.environ.update({
     "INTERNAL_SECRET": "test-internal-secret",
     "TEMPLATES_DIR": os.path.join(ROOT, "templates"),
     "DEFAULT_MODEL": "mock/echo",
+    "SCHEDULER_ENABLED": "0",  # os testes chamam tick()/execute() direto
 })
 sys.path.insert(0, os.path.join(ROOT, "central"))
 

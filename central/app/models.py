@@ -193,6 +193,7 @@ class Organization(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     default_visibility: Mapped[str] = mapped_column(String(10), default="org")
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC")  # padrão dos agendamentos
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
@@ -315,3 +316,44 @@ class ScimGroup(Base):
     external_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     members: Mapped[list] = mapped_column(JSON, default=list)  # ids de usuários
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+
+# ------------------------------------------------------------------ agendamentos
+class Schedule(Base):
+    """Execução agendada de um agente em produção: recorrente (cron de 5 campos, no fuso `timezone`) ou única
+    (`run_at`). Enquanto o agente não está em produção, as execuções são puladas — o agendamento passa a valer
+    quando ele sobe."""
+    __tablename__ = "schedules"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id"), index=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    cron: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    message: Mapped[str] = mapped_column(Text)  # o que o agente recebe a cada disparo
+    notify_url: Mapped[str] = mapped_column(String(500), default="")  # webhook (Slack/Teams/HTTP) com o resultado
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str] = mapped_column(String(254), default="")
+    created_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_status: Mapped[str] = mapped_column(String(20), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ScheduleRun(Base):
+    __tablename__ = "schedule_runs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    schedule_id: Mapped[int] = mapped_column(ForeignKey("schedules.id"), index=True)
+    agent_id: Mapped[int] = mapped_column(Integer, index=True)
+    trigger: Mapped[str] = mapped_column(String(20), default="schedule")  # schedule | manual | late
+    status: Mapped[str] = mapped_column(String(20), default="running")  # running | passed | failed | skipped
+    version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    notify_status: Mapped[str] = mapped_column(String(200), default="")
+    tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

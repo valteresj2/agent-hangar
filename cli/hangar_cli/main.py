@@ -368,6 +368,36 @@ def cmd_request_access(a):
     print(f"pedido #{r['id']} enviado ao time dono de {a.slug} ({r['status']})")
 
 
+def cmd_schedules_ls(a):
+    rows = api().get(f"/agents/{a.slug}/schedules" if a.slug else "/schedules")
+    if out(rows, a.json):
+        return
+    table([[s["id"], s["agent"], s["when"], s["timezone"], s["next_run_local"] or "—", s["last_status"] or "—",
+            "sim" if s["enabled"] else "pausado"] for s in rows],
+          ["id", "agente", "quando", "fuso", "próximo", "último", "ativo"])
+
+
+def cmd_schedules_add(a):
+    body = {"message": " ".join(a.message), "cron": a.cron, "run_at": a.at, "timezone": a.tz, "name": a.name or "",
+            "notify_url": a.notify or ""}
+    s = api().post(f"/agents/{a.slug}/schedules", body)
+    if out(s, a.json):
+        return
+    print(f"agendamento #{s['id']}: {s['when']} ({s['timezone']}) — próximo: {s['next_run_local'] or '—'}")
+
+
+def cmd_schedules_rm(a):
+    api().delete(f"/schedules/{a.id}")
+    print(f"agendamento {a.id} removido")
+
+
+def cmd_schedules_run(a):
+    r = api().post(f"/schedules/{a.id}/run")
+    if out(r, a.json):
+        return
+    print(f"{r['status']}: {(r['output'] or r['error'])[:2000]}")
+
+
 # ------------------------------------------------------------------ parser
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="hangar", description="Agent Hangar CLI")
@@ -469,6 +499,21 @@ def build_parser() -> argparse.ArgumentParser:
         s.add_argument("id", type=int)
         s.add_argument("--note")
         s.set_defaults(decision=decision)
+    sc = sub.add_parser("schedules", help="agendamentos (o agente roda sozinho em produção)").add_subparsers(
+        dest="sub", required=True)
+    s = add(sc, "ls", cmd_schedules_ls, "lista agendamentos (de um agente ou todos)")
+    s.add_argument("slug", nargs="?")
+    s = add(sc, "add", cmd_schedules_add, "agenda: --cron '0 9 * * 1-5' ou --at 2026-10-05T09:00")
+    s.add_argument("slug")
+    s.add_argument("message", nargs="+", help="o que o agente recebe a cada disparo")
+    s.add_argument("--cron")
+    s.add_argument("--at", help="uma vez: data/hora ISO")
+    s.add_argument("--tz", help="fuso (padrão: o da empresa)")
+    s.add_argument("--name")
+    s.add_argument("--notify", help="webhook (Slack/Teams/HTTP) que recebe o resultado")
+    for name, fn, help_ in (("rm", cmd_schedules_rm, "remove"), ("run", cmd_schedules_run, "roda agora")):
+        s = add(sc, name, fn, help_)
+        s.add_argument("id", type=int)
     s = add(sub, "request-access", cmd_request_access, "pede acesso a um agente de outro time")
     s.add_argument("slug")
     s.add_argument("reason", nargs="*")

@@ -69,6 +69,16 @@ FLUXO
    publicar: edit_agent(slug, promote=True) (ou promote_to_production). Com promote=True junto das mudanças, só
    publica se os testes passarem. Para revisar antes: diff_agent_versions(slug, from_version=<prod>). Nunca
    publique sem os testes aprovados; se reprovar, corrija com edit_agent e teste de novo.
+10. AGENDAMENTO (o usuário quer que o agente rode sozinho: "toda segunda às 9h", "todo dia útil às 18h",
+   "dia 5 às 8h", "amanhã às 14h"): depois de criar e testar, chame schedule_agent(slug, message, cron=... ou
+   run_at=...). message = a tarefa exata que o agente recebe a cada disparo (escreva completa, como se o usuário
+   pedisse no chat). cron tem 5 campos no fuso da empresa (whoami mostra org.timezone): "0 9 * * 1" = segunda
+   9h; "0 18 * * 1-5" = dias úteis 18h; "0 8 5 * *" = dia 5 às 8h. Uma vez só: run_at="AAAA-MM-DDTHH:MM". Se o
+   usuário citar outro fuso, passe timezone (ex.: "America/Sao_Paulo"). O agendamento só dispara com o agente em
+   PRODUÇÃO — criado antes (ex.: aguardando aprovação), começa a valer quando ele subir. Pergunte se o resultado
+   deve ir para algum lugar: notify_url = webhook do Slack/Teams (senão fica no histórico, aba Agendamentos).
+   Confirme com o usuário o que foi agendado (o campo "when" e "next_run_local" da resposta). Para testar na
+   hora: run_schedule_now.
 
 ACESSO: cada agente pertence a um TIME. Você age com os papéis do usuário dono da credencial (veja whoami):
 developer/maintainer criam e editam agentes do time (register_agent(team=...) quando a pessoa está em mais de um);
@@ -499,3 +509,55 @@ async def update_agent_access(ctx: Context, slug: str, visibility: str | None = 
         a = svc.org.set_agent_access(db, acc, slug, visibility, expose_spec, team)
         return {"slug": a.slug, "visibility": a.visibility, "expose_spec": a.expose_spec, "team_id": a.team_id}
     return await _run(ctx, go)
+
+
+@mcp.tool()
+async def schedule_agent(ctx: Context, slug: str, message: str, cron: str | None = None, run_at: str | None = None,
+                         timezone: str | None = None, name: str = "", notify_url: str = "") -> dict:
+    """Agenda o agente para disparar sozinho em produção. message: a tarefa enviada a cada disparo.
+    cron (recorrente, 5 campos: minuto hora dia-do-mês mês dia-da-semana; ex.: "0 9 * * 1-5" = dias úteis 9h)
+    OU run_at (uma vez: "2026-10-05T09:00"). timezone: padrão = fuso da empresa. notify_url: webhook
+    (Slack/Teams/HTTP) que recebe o resultado. Só dispara com o agente em produção. Devolve "when" (em
+    português) e "next_run_local" para confirmar com o usuário."""
+    def go(db, acc):
+        sch = svc.schedules.create(db, acc, slug, message, cron, run_at, timezone, name, notify_url)
+        return svc.schedules.schedule_dict(db, sch)
+    return await _run(ctx, go)
+
+
+@mcp.tool()
+async def list_schedules(ctx: Context, slug: str | None = None) -> dict:
+    """Agendamentos (de um agente ou de todos os que você pode ver): quando, próximo disparo, último status."""
+    return await _run(ctx, lambda db, acc: {"schedules": svc.schedules.list_for(db, acc, slug)})
+
+
+@mcp.tool()
+async def update_schedule(ctx: Context, schedule_id: int, message: str | None = None, cron: str | None = None,
+                          run_at: str | None = None, timezone: str | None = None, name: str | None = None,
+                          notify_url: str | None = None, enabled: bool | None = None) -> dict:
+    """Altera um agendamento (horário, mensagem, webhook) ou pausa/retoma (enabled)."""
+    fields = {k: v for k, v in (("message", message), ("cron", cron), ("run_at", run_at), ("timezone", timezone),
+                                ("name", name), ("notify_url", notify_url), ("enabled", enabled)) if v is not None}
+    return await _run(ctx, lambda db, acc: svc.schedules.schedule_dict(
+        db, svc.schedules.update_schedule(db, acc, schedule_id, **fields)))
+
+
+@mcp.tool()
+async def delete_schedule(ctx: Context, schedule_id: int) -> dict:
+    """Remove um agendamento (e o histórico dele)."""
+    def go(db, acc):
+        svc.schedules.delete(db, acc, schedule_id)
+        return {"deleted": schedule_id}
+    return await _run(ctx, go)
+
+
+@mcp.tool()
+async def run_schedule_now(ctx: Context, schedule_id: int) -> dict:
+    """Dispara um agendamento agora (sem esperar o horário) e devolve o resultado — bom para testar."""
+    return await _run(ctx, lambda db, acc: svc.schedules.run_now(db, acc, schedule_id))
+
+
+@mcp.tool()
+async def schedule_runs(ctx: Context, schedule_id: int, limit: int = 5) -> dict:
+    """Últimas execuções de um agendamento: status, resposta do agente, tokens, custo e envio ao webhook."""
+    return await _run(ctx, lambda db, acc: {"runs": svc.schedules.runs(db, acc, schedule_id, min(limit, 50))})

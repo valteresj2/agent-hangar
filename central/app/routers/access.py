@@ -128,6 +128,7 @@ def me(request: Request, db=Depends(db_dep)):
 class OrgBody(BaseModel):
     name: str | None = None
     default_visibility: str | None = None
+    timezone: str | None = None  # fuso padrão dos agendamentos (ex.: America/Sao_Paulo)
 
 
 @router.get("/org")
@@ -137,7 +138,8 @@ def get_org(db=Depends(db_dep)):
 
 @router.patch("/org")
 def patch_org(body: OrgBody, request: Request, db=Depends(db_dep)):
-    return guard(lambda: org.update_org(db, acc(request, db), body.name, body.default_visibility))
+    return guard(lambda: org.update_org(db, acc(request, db), body.name, body.default_visibility,
+                                                    body.timezone))
 
 
 # ------------------------------------------------------------------ times e membros

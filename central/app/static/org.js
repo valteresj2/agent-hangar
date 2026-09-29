@@ -324,3 +324,80 @@ async function ssoPage() {
   });
   document.querySelectorAll('.sc-rev').forEach(b => b.onclick = e => confirm('Revogar o token SCIM? O diretório para de sincronizar.') && act(e.target, () => api('/keys/' + b.dataset.id, { method: 'DELETE' }).then(ssoPage), 'Token revogado'));
 }
+
+/* ---------- agente: aba Agendamentos ---------- */
+const SCH_STATUS = { passed: ['concluído', 'ok'], failed: ['falhou', 'bad'], skipped: ['pulado', 'warn'], running: ['rodando', 'info'] };
+const schPill = s => { if (!s) return '<span class="mute small">ainda não rodou</span>'; const [t, c] = SCH_STATUS[s] || [s, '']; return `<span class="pill ${c}">${esc(t)}</span>`; };
+const WEEKDAYS = [['1', 'segunda'], ['2', 'terça'], ['3', 'quarta'], ['4', 'quinta'], ['5', 'sexta'], ['6', 'sábado'], ['0', 'domingo']];
+
+async function agentSchedules(t, a) {
+  const list = await api(`/agents/${a.slug}/schedules`);
+  const edit = can(a, 'edit');
+  const tz = (ME.org && ME.org.timezone) || 'UTC';
+  t.innerHTML = `${a.prod ? '' : '<div class="card warn-card">O agente ainda não está em produção: os agendamentos ficam aguardando e começam a disparar quando ele subir.</div>'}
+  <div class="card mt"><h2>Agendamentos (${list.length})</h2>
+    ${list.length ? `<div class="scroll"><table><tr><th>Quando</th><th>Mensagem</th><th>Próximo disparo</th><th>Última execução</th><th></th></tr>
+      ${list.map(s => `<tr><td><b>${esc(s.name)}</b><div class="mute small">${esc(s.when)} (${esc(s.timezone)})${s.notify_url ? ' · webhook' : ''}</div></td>
+        <td class="small one-line" style="max-width:280px" title="${esc(s.message)}">${esc(s.message)}</td>
+        <td>${s.enabled ? (s.next_run_local ? esc(s.next_run_local) : '—') : '<span class="pill">pausado</span>'}</td>
+        <td>${schPill(s.last_status)}${s.last_run_at ? `<div class="mute small">${ago(s.last_run_at)} atrás</div>` : ''}</td>
+        <td class="row" style="flex-wrap:nowrap;justify-content:flex-end">
+          <button class="ghost sc-hist" data-id="${s.id}">Histórico</button>
+          ${edit ? `<button class="ghost sc-run" data-id="${s.id}">Rodar agora</button>
+          <button class="ghost sc-tog" data-id="${s.id}" data-on="${s.enabled ? 1 : 0}">${s.enabled ? 'Pausar' : 'Retomar'}</button>
+          <button class="danger sc-del" data-id="${s.id}">Excluir</button>` : ''}</td></tr>
+        <tr class="sc-runs" id="sc-runs-${s.id}" hidden><td colspan="5"></td></tr>`).join('')}</table></div>`
+      : '<div class="mute">Nenhum agendamento. O agente roda sozinho no dia e hora escolhidos, com a mensagem que você definir.</div>'}</div>
+  ${edit ? `<div class="card mt"><h2>Novo agendamento</h2>
+    <label>O que o agente deve fazer a cada disparo<textarea id="sc-msg" rows="3" placeholder="ex.: Gere o resumo de vendas da semana anterior com os 5 principais clientes"></textarea></label>
+    <div class="grid g4 mt">
+      <label>Frequência<select id="sc-freq"><option value="daily">Todo dia</option><option value="weekdays">Dias úteis (seg a sex)</option>
+        <option value="weekly">Toda semana</option><option value="monthly">Todo mês</option><option value="once">Uma vez</option><option value="cron">Cron personalizado</option></select></label>
+      <label id="sc-l-time">Hora<input id="sc-time" type="time" value="09:00"></label>
+      <label id="sc-l-dow" hidden>Dia da semana<select id="sc-dow">${WEEKDAYS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
+      <label id="sc-l-dom" hidden>Dia do mês<input id="sc-dom" type="number" min="1" max="28" value="1"></label>
+      <label id="sc-l-once" hidden>Data e hora<input id="sc-once" type="datetime-local"></label>
+      <label id="sc-l-cron" hidden>Cron (5 campos)<input id="sc-cron" placeholder="0 9 * * 1-5"></label>
+      <label>Fuso horário<input id="sc-tz" value="${esc(tz)}"></label></div>
+    <div class="grid g2 mt"><label>Nome (opcional)<input id="sc-name" placeholder="ex.: Resumo semanal"></label>
+      <label>Enviar o resultado para (webhook, opcional)<input id="sc-hook" placeholder="https://hooks.slack.com/services/…"></label></div>
+    <div class="row mt"><button id="sc-go">Criar agendamento</button><span class="mute small">Sem webhook, o resultado fica no histórico desta aba.</span></div></div>` : ''}`;
+
+  const freq = $('#sc-freq');
+  if (freq) {
+    const sync = () => {
+      const f = freq.value;
+      $('#sc-l-time').hidden = ['once', 'cron'].includes(f); $('#sc-l-dow').hidden = f !== 'weekly';
+      $('#sc-l-dom').hidden = f !== 'monthly'; $('#sc-l-once').hidden = f !== 'once'; $('#sc-l-cron').hidden = f !== 'cron';
+    };
+    freq.onchange = sync; sync();
+    $('#sc-go').onclick = e => act(e.target, async () => {
+      const f = freq.value, [hh, mm] = ($('#sc-time').value || '09:00').split(':').map(Number);
+      const body = { message: $('#sc-msg').value.trim(), timezone: $('#sc-tz').value.trim(), name: $('#sc-name').value.trim(), notify_url: $('#sc-hook').value.trim() };
+      if (!body.message) throw new Error('Descreva o que o agente deve fazer');
+      if (f === 'once') { if (!$('#sc-once').value) throw new Error('Escolha data e hora'); body.run_at = $('#sc-once').value; }
+      else body.cron = f === 'cron' ? $('#sc-cron').value.trim()
+        : `${mm} ${hh} ${f === 'monthly' ? Number($('#sc-dom').value || 1) : '*'} * ${f === 'weekdays' ? '1-5' : f === 'weekly' ? $('#sc-dow').value : '*'}`;
+      const s = await api(`/agents/${a.slug}/schedules`, { method: 'POST', body });
+      toast(`Agendado: ${s.when}${s.next_run_local ? ` — próximo em ${s.next_run_local}` : ''}`);
+      agentSchedules(t, a);
+    });
+  }
+  t.querySelectorAll('.sc-hist').forEach(b => b.onclick = async () => {
+    const row = $(`#sc-runs-${b.dataset.id}`);
+    if (!row.hidden) { row.hidden = true; return; }
+    const runs = await api(`/schedules/${b.dataset.id}/runs?limit=10`);
+    row.firstElementChild.innerHTML = runs.length ? runs.map(r => `<div class="card mt"><div class="row between"><div>${schPill(r.status)} <span class="mute small">${ago(r.started_at)} atrás${r.trigger !== 'schedule' ? ` (${r.trigger === 'manual' ? 'manual' : 'atrasado'})` : ''}${r.version ? `, v${r.version}` : ''}</span></div>
+      <span class="mute small">${fmt(r.tokens)} tokens, ${usd(r.cost_usd)}${r.notify_status ? `, webhook ${esc(r.notify_status)}` : ''}</span></div>
+      ${r.output ? `<pre>${esc(r.output)}</pre>` : ''}${r.error ? `<div class="bad-text small mt">${esc(r.error)}</div>` : ''}</div>`).join('') : '<div class="mute small">Nenhuma execução ainda.</div>';
+    row.hidden = false;
+  });
+  t.querySelectorAll('.sc-run').forEach(b => b.onclick = e => act(e.target, async () => {
+    const r = await api(`/schedules/${b.dataset.id}/run`, { method: 'POST' });
+    toast(r.status === 'passed' ? 'Execução concluída — veja o histórico' : `Execução: ${r.status}${r.error ? ` (${r.error})` : ''}`, r.status !== 'passed');
+    agentSchedules(t, a);
+  }));
+  t.querySelectorAll('.sc-tog').forEach(b => b.onclick = e => act(e.target, () => api(`/schedules/${b.dataset.id}`, { method: 'PATCH', body: { enabled: b.dataset.on !== '1' } }).then(() => agentSchedules(t, a))));
+  t.querySelectorAll('.sc-del').forEach(b => b.onclick = e => confirm('Excluir o agendamento e o histórico dele?') &&
+    act(e.target, () => api(`/schedules/${b.dataset.id}`, { method: 'DELETE' }).then(() => agentSchedules(t, a)), 'Agendamento excluído'));
+}

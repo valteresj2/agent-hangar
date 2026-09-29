@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Agent schedules.** An agent in production runs by itself at the day and time the user asks for.
+  - **Recurrence and time zone:** a cron expression or a one-off date and time, in the company's time zone
+    (`PATCH /api/org {"timezone": …}`) or the schedule's own.
+  - **MCP:** `schedule_agent`, `list_schedules`, `update_schedule`, `delete_schedule`, `run_schedule_now` and
+    `schedule_runs`. The platform guide tells the assistant to schedule when the request includes days and times.
+  - **Before production:** a schedule created before the agent goes live waits and starts once the agent is in
+    production.
+  - **Results:** a run history with the answer, tokens and cost, and an optional webhook (Slack, Teams or HTTP).
+  - **Where to find it:** a **Schedules** tab on each agent, *Upcoming scheduled runs* on the dashboard, the API
+    (`/api/agents/{slug}/schedules`, `/api/schedules/…`) and the `hangar schedules` CLI.
+  - **Safeguards:** only editors can schedule, runs are at least 5 minutes apart, the team budget is respected,
+    and webhooks to the internal network are blocked. The scheduler reserves each run with a conditional update,
+    so it is safe with several replicas. A run missed while the central was down runs once, marked as `late`.
 - **Edit agents later through the MCP** (and the API):
   - `get_agent_spec` shows the current spec and which version runs in production and in stage;
   - `edit_agent` applies changes to the spec and to name, objective, final output and contact as a new
@@ -14,6 +27,10 @@ All notable changes to this project are documented here. The format follows
   - `diff_agent_versions` shows what changed before publishing;
   - `update_agent_access` changes visibility, owner team and exposed spec.
 - API: `POST /api/agents/{slug}/edit` and `GET /api/agents/{slug}/diff`.
+
+### Fixed
+- Deleting an agent that had schedules, access requests or promotion requests failed on Postgres.
+- Elements with the `hidden` attribute could still show when a component set `display`.
 
 ## [0.3.1] — 2026-09-29
 

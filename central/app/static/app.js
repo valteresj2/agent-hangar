@@ -74,7 +74,8 @@ window.toast = toast;
 
 /* ---------- páginas ---------- */
 async function dashboard() {
-  const o = await api('/overview');
+  const [o, sched] = await Promise.all([api('/overview'), api('/schedules').catch(() => [])]);
+  const upcoming = sched.filter(s => s.enabled && s.next_run_at).sort((x, y) => x.next_run_at.localeCompare(y.next_run_at)).slice(0, 6);
   const st = o.status;
   main.innerHTML = `
   <h1>Painel</h1><div class="sub">${ME.is_admin || ME.is_auditor ? 'Tudo o que está no ar na empresa, e como está indo' : 'Os agentes dos seus times: o que está no ar e como está indo'}</div>
@@ -101,7 +102,9 @@ async function dashboard() {
     <div class="card"><h2>Pipeline de agentes</h2>
       ${['draft', 'test_failed', 'tested', 'stage', 'production'].map(k => `<div class="row between" style="margin-bottom:6px">${pill(k)}<b>${st[k] || 0}</b></div>`).join('')}
       <h3>Por canal</h3>${hlist(o.by_channel)}<h3>Por protocolo</h3>${hlist(o.by_protocol)}</div>
-  </div>`;
+  </div>
+  ${upcoming.length ? `<div class="card mt"><h2>Próximos disparos agendados</h2><table><tr><th>Agente</th><th>Quando</th><th>Próximo</th><th>Última execução</th></tr>
+    ${upcoming.map(x => `<tr class="click" onclick="location.hash='#/agents/${x.agent}/schedules'"><td><b>${esc(x.agent_name)}</b><div class="mute small">${esc(x.name)}</div></td><td>${esc(x.when)}</td><td>${esc(x.next_run_local || '—')}</td><td>${schPill(x.last_status)}</td></tr>`).join('')}</table></div>` : ''}`;
 }
 
 const ACCESS = { admin: ['admin', 'warn'], auditor: ['auditor', 'info'], maintainer: ['mantenedor', 'ok'], developer: ['developer', 'ok'],
@@ -202,9 +205,9 @@ function shipResult(steps) {
 
 async function agentDetail(slug, tab = 'overview') {
   const a = await api('/agents/' + slug);
-  const tabs = ['overview', 'connect', 'topology', 'spec', 'versions', 'tests', 'jobs', 'deployments', 'usage', 'playground', 'access'];
-  const names = { overview: 'Visão geral', connect: 'Conectar', topology: 'Multiagente', spec: 'Spec', versions: 'Versões', tests: 'Testes', jobs: 'Jobs', deployments: 'Deployments', usage: 'Uso', playground: 'Playground', access: 'Acesso' };
-  const need = { connect: 'consume', spec: 'view_spec', versions: 'view_spec', tests: 'view_spec', jobs: 'usage', deployments: 'view_spec', usage: 'usage', playground: 'consume', access: 'manage' };
+  const tabs = ['overview', 'connect', 'topology', 'spec', 'versions', 'tests', 'jobs', 'deployments', 'usage', 'playground', 'schedules', 'access'];
+  const names = { overview: 'Visão geral', connect: 'Conectar', topology: 'Multiagente', spec: 'Spec', versions: 'Versões', tests: 'Testes', jobs: 'Jobs', deployments: 'Deployments', usage: 'Uso', playground: 'Playground', schedules: 'Agendamentos', access: 'Acesso' };
+  const need = { connect: 'consume', spec: 'view_spec', versions: 'view_spec', tests: 'view_spec', jobs: 'usage', deployments: 'view_spec', usage: 'usage', playground: 'consume', schedules: 'usage', access: 'manage' };
   const shown = tabs.filter(t => (t !== 'topology' || a.kind === 'multi') && (t !== 'jobs' || a.harness) && (!need[t] || can(a, need[t])));
   const direct = can(a, 'promote');
   main.innerHTML = `
@@ -231,7 +234,7 @@ async function agentDetail(slug, tab = 'overview') {
   on('#b-req', () => requestAccessDialog(slug));
   const t = $('#tab');
   const key = shown.includes(tab) ? tab : 'overview';
-  ({ overview, connect: agentConnect, topology, spec: specEditor, versions, tests, jobs, deployments, usage, playground, access: agentAccess })[key](t, a);
+  ({ overview, connect: agentConnect, topology, spec: specEditor, versions, tests, jobs, deployments, usage, playground, schedules: agentSchedules, access: agentAccess })[key](t, a);
 }
 
 async function agentConnect(t, a) {
@@ -710,7 +713,7 @@ async function route() {
 window.addEventListener('hashchange', () => { if (location.hash.startsWith('#/login')) showLogin(); else route(); });
 boot();
 // auto-refresh só em páginas de leitura (nunca em formulários, editor de spec ou playground)
-const NO_REFRESH = ['new', 'playground', 'spec', 'access'];
+const NO_REFRESH = ['new', 'playground', 'spec', 'access', 'schedules'];
 setInterval(() => {
   const parts = location.hash.split('/');
   if (!ME || document.hidden || ['keys', 'templates', 'catalog', 'providers', 'connect', 'teams', 'users', 'sso', 'login'].includes(parts[1])) return;
