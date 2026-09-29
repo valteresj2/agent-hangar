@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-28
+
 ### Added
 - **Users, teams and roles.**
   - Company roles: admin, auditor and member.
@@ -64,6 +66,18 @@ All notable changes to this project are documented here. The format follows
   browsers never keep an old version after an upgrade.
 - Calls through an agent's MCP endpoint now record tokens and cost (the tool result carries `_meta.usage`).
 - MCP handshakes, `tools/list` and pings are no longer counted as requests.
+
+### Upgrading from 0.2.x
+- **Migrations run on start.** Migration 0004 adds the users, teams and access tables, and 0005 adds local
+  accounts. Existing agents move to the default **Plataforma** team with visibility `org`.
+- **The UI now opens on a login page.** The first time, use **Entrar com token** with your `ADMIN_TOKEN`. Then
+  create people in **Usuários** (SSO, or a local account with username and password) and teams in **Times**.
+  You can also set `BOOTSTRAP_ADMIN_EMAILS` to get admin on the first SSO login.
+- **Existing keys keep working.** Admin keys and invoke keys, such as the one in LibreChat, are unchanged.
+- **Personal tokens for builders.** People who build agents through the platform MCP should switch to a personal
+  token (scope `user`), so the client acts with their team roles.
+- **Re-ship chat agents** (`hangar ship <slug>`) to get the new runtime: MCP usage with tokens and Open WebUI
+  session headers.
 
 ## [0.2.1] — 2026-09-27
 
