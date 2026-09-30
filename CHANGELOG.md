@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-30
+
 ### Added
 - **Remote MCPs with OAuth** ([docs/remote-mcp.md](docs/remote-mcp.md)).
   - An admin connects once: discovery (RFC 9728/8414), dynamic client registration, and authorization code with
@@ -22,6 +24,14 @@ All notable changes to this project are documented here. The format follows
   - Safeguards: signed images; the LLM cannot add servers by itself (`dynamic-tools` disabled); servers run on
     their own network, without agents or the database; Docker is reached only through a restricted proxy.
   - API: `/api/mcp-gateway/catalog`, `/status` and `/servers/{name}`.
+
+### Upgrading from 0.4.x
+- **Migrations 0007 and 0008 run on start.** They add the Docker MCP catalog tables and remote MCPs.
+- **Rebuild or pull `central` and `agent-runtime`, then re-ship agents** that should use the new MCPs. The
+  runtime now filters gateway tools by `tool_prefix` and authenticates to the central's MCP proxy.
+- **Optional profiles:**
+  - `mcp-gateway` (Docker MCP catalog);
+  - `activepieces`. Run `scripts/setup.sh` or `setup.ps1` again to generate its secrets.
 
 ## [0.4.0] — 2026-09-29
 
