@@ -1,0 +1,3 @@
+# Falsos positivos já no histórico (valores fictícios de teste). Novos testes montam esses valores em tempo de
+# execução em vez de usar literais — ver tests/test_code_policy.py.
+278e93eda38649e580893dc409e94819bf740a9c:tests/test_code_policy.py:aws-access-token:89

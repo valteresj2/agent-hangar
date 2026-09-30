@@ -85,9 +85,13 @@ def test_sends_client_tools():
 
 
 # ------------------------------------------------------------------ runtime: máscara de segredos
-ENV_FILE = ("DATABASE_URL=postgresql://app:S3nh4F0rte@db:5432/app\nOPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz123456\n"
-            "AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP\npassword = \"hunter2hunter2\"\ntoken = get_token()\nDEBUG=true\n"
-            "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----\n")
+# valores FICTÍCIOS montados em tempo de execução: nenhum literal com formato de chave no repositório (o scanner de
+# segredos do CI — Gitleaks — reclamaria, com razão)
+_AWS = "AKIA" + "ABCDEFGHIJKLMNOP"
+_OPENAI = "sk-" + "proj-" + "abcdefghijklmnopqrstuvwxyz123456"
+_PEM = "-----BEGIN RSA " + "PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA " + "PRIVATE KEY-----\n"
+ENV_FILE = (f"DATABASE_URL=postgresql://app:S3nh4F0rte@db:5432/app\nOPENAI_API_KEY={_OPENAI}\n"
+            f"AWS_ACCESS_KEY_ID={_AWS}\npassword = \"hunter2hunter2\"\ntoken = get_token()\nDEBUG=true\n{_PEM}")
 
 
 def test_redact_masks_values_and_keeps_code(rt):  # noqa: F811
