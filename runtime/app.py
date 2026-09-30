@@ -86,6 +86,21 @@ def render_for_channel(text: str) -> str:
         return _CURRENCY.sub(r"\\$", text)
     return text
 TOOLS_TTL_S = 300  # a lista de tools dos MCPs externos é reconstruída de tempos em tempos
+# Ferramentas do CLIENTE (padrão OpenAI: o cliente manda `tools` e executa os `tool_calls` que voltam). É assim que o
+# chat do VS Code, Cline, Continue ou Roo usam o agente como modelo: os arquivos e o terminal ficam na máquina do dev
+# (com a aprovação dele) e o agente põe as instruções, skills, MCPs e memória. llm.client_tools=false desliga.
+CLIENT_TOOLS = LLM.get("client_tools", True) is not False
+CLIENT_TOOLS_PROMPT = (
+    "## Ferramentas do ambiente do usuário\n"
+    "O cliente (por exemplo, o VS Code) oferece ferramentas que agem no ambiente dele: ler e editar arquivos, buscar "
+    "no projeto, rodar comandos no terminal. Use-as para trabalhar no código de verdade em vez de só descrever o que "
+    "fazer. Leia antes de editar, faça mudanças pequenas e verificáveis e, antes de concluir, rode os testes ou o build "
+    "do projeto quando existirem. Nunca leia nem exponha segredos (.env, chaves, tokens).")
+# Rodadas que o servidor executou (tools do agente) antes de devolver tool_calls ao cliente: o cliente só conhece as
+# chamadas dele, então guardamos o resto aqui e reinserimos quando ele devolver os resultados (contexto completo).
+_HIDDEN: dict[str, tuple[float, list]] = {}
+HIDDEN_TTL_S = 3600
+HIDDEN_MAX = 2000
 
 
 # ---------------------------------------------------------------- tools
@@ -369,8 +384,16 @@ async def _ingest(tool: Tool, filename: str, du: tuple[str, str]) -> str | None:
     return name
 
 
-async def mock_llm(messages, tools):
+async def mock_llm(messages, tools, client_tools=None):
     last = next((text_of(m["content"]) for m in reversed(messages) if m["role"] == "user"), "")
+    if messages and messages[-1].get("role") == "tool":  # resultado de uma tool do cliente: ecoa
+        return f"[mock:{SLUG}] ferramenta do cliente respondeu: {text_of(messages[-1].get('content'))}"
+    names = {t["function"]["name"] for t in client_tools or []}
+    m = re.search(r"\b(?:chame|call)\s+([A-Za-z0-9_-]+)", last)
+    if m and m.group(1) in names:  # "chame hangar_ping nonce=abc" -> tool_call para o cliente
+        args = dict(re.findall(r"(\w+)=(\S+)", last[m.end():]))
+        return {"tool_calls": [{"id": f"call_{uuid.uuid4().hex[:10]}", "type": "function",
+                                "function": {"name": m.group(1), "arguments": json.dumps(args)}}]}
     subs = [t for t in tools if t.name.startswith("ask_")]
     if last.lower().startswith("calc:"):
         return f"[mock:{SLUG}] {_calc(last[5:].strip())}"
@@ -383,9 +406,57 @@ async def mock_llm(messages, tools):
 
 
 async def chat(messages: list[dict]) -> tuple[str, dict, list]:
-    text, usage, trace = await (_lite(messages) if MODE.get() == "lite" else _chat(messages))
-    usage["cost_usd"] = cost_usd(usage)
+    text, usage, trace, _calls = await chat_full(messages)
     return text, usage, trace
+
+
+async def chat_full(messages: list[dict], client_tools: list | None = None, tool_choice=None
+                    ) -> tuple[str, dict, list, list]:
+    """(texto, uso, trace, tool_calls para o CLIENTE executar — vazio quando a resposta é final)."""
+    if MODE.get() == "lite":
+        text, usage, trace = await _lite(messages)
+        calls: list = []
+    else:
+        text, usage, trace, calls = await _chat(messages, client_tools if CLIENT_TOOLS else None, tool_choice)
+    usage["cost_usd"] = cost_usd(usage)
+    return text, usage, trace, calls
+
+
+def _client_tools(raw) -> list[dict]:
+    """Só ferramentas do tipo function, com nome válido — o resto o modelo não saberia chamar."""
+    out = []
+    for t in raw or []:
+        f = t.get("function") if isinstance(t, dict) and t.get("type", "function") == "function" else None
+        if isinstance(f, dict) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", str(f.get("name", ""))):
+            out.append({"type": "function", "function": {
+                "name": f["name"], "description": f.get("description", ""),
+                "parameters": f.get("parameters") or {"type": "object", "properties": {}}}})
+    return out
+
+
+def _remember_hidden(calls: list, hidden: list):
+    now = time.monotonic()
+    for k in [k for k, (ts, _) in _HIDDEN.items() if now - ts > HIDDEN_TTL_S]:
+        _HIDDEN.pop(k, None)
+    if len(_HIDDEN) >= HIDDEN_MAX:
+        for k in sorted(_HIDDEN, key=lambda k: _HIDDEN[k][0])[: len(_HIDDEN) - HIDDEN_MAX + 1]:
+            _HIDDEN.pop(k, None)
+    if hidden:
+        _HIDDEN[calls[0]["id"]] = (now, hidden)
+
+
+def _restore_hidden(messages: list[dict]) -> list[dict]:
+    """Reinsere, antes de cada chamada do cliente que ele devolveu, as rodadas do servidor que a precederam."""
+    out = []
+    for m in messages:
+        ids = [c.get("id") for c in (m.get("tool_calls") or [])] if m.get("role") == "assistant" else []
+        for i in ids:
+            hit = _HIDDEN.get(i)
+            if hit:
+                out.extend(hit[1])
+                break
+        out.append(m)
+    return out
 
 
 async def _lite(messages: list[dict]) -> tuple[str, dict, list]:
@@ -419,27 +490,39 @@ async def _lite(messages: list[dict]) -> tuple[str, dict, list]:
     return "", usage, []
 
 
-async def _chat(messages: list[dict]) -> tuple[str, dict, list]:
+async def _chat(messages: list[dict], client_tools: list | None = None, tool_choice=None
+                ) -> tuple[str, dict, list, list]:
     tools = await get_tools()
-    messages = await prepare_attachments(messages, tools)
+    messages = await prepare_attachments(_restore_hidden(messages), tools)
     # instruções de sistema do cliente (ex.: o prompt de Artifacts do LibreChat) vêm depois das do agente
     client_sys = "\n\n".join(text_of(m["content"]) for m in messages if m["role"] == "system")
     sys_prompt = system_prompt() + (f"\n\n## Instruções do cliente\n{client_sys}" if client_sys.strip() else "")
-    msgs = [{"role": "system", "content": sys_prompt}] + [m for m in messages if m["role"] != "system"]
     llm_tools = [t for t in tools if not t.hidden]
+    server_names = {t.name for t in llm_tools}
+    # uma tool do cliente com o mesmo nome de uma do agente perde: a do agente é a que o spec prometeu
+    ctools = [t for t in _client_tools(client_tools) if t["function"]["name"] not in server_names]
+    client_names = {t["function"]["name"] for t in ctools}
+    if ctools:
+        sys_prompt += "\n\n" + CLIENT_TOOLS_PROMPT
+    msgs = [{"role": "system", "content": sys_prompt}] + [m for m in messages if m["role"] != "system"]
+    start = len(msgs)  # daqui em diante, o que o servidor produzir nesta chamada
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     trace: list = []
     if MODEL.startswith("mock"):
-        text = await mock_llm(msgs, tools)
+        out = await mock_llm(msgs, tools, ctools)
+        if isinstance(out, dict):
+            return "", {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}, trace, out["tool_calls"]
         n_in = sum(len(str(m["content"]).split()) for m in msgs)
-        n_out = len(text.split())
-        return text, {"prompt_tokens": n_in, "completion_tokens": n_out, "total_tokens": n_in + n_out}, trace
+        n_out = len(out.split())
+        return out, {"prompt_tokens": n_in, "completion_tokens": n_out, "total_tokens": n_in + n_out}, trace, []
     by_name = {t.name: t for t in tools}
     headers = {"Authorization": f"Bearer {LLM_API_KEY}"} if LLM_API_KEY else {}
     for _ in range(MAX_STEPS):
         payload = {"model": MODEL, "messages": msgs, "temperature": LLM.get("temperature", 0.2)}
-        if llm_tools:
-            payload["tools"] = [t.schema() for t in llm_tools]
+        if llm_tools or ctools:
+            payload["tools"] = [t.schema() for t in llm_tools] + ctools
+            if tool_choice is not None and ctools:
+                payload["tool_choice"] = tool_choice
         async with httpx.AsyncClient(timeout=LLM_TIMEOUT_S) as c:
             r = await c.post(f"{LLM_BASE_URL}/chat/completions", json=payload, headers=headers)
         if r.status_code >= 400:
@@ -450,25 +533,23 @@ async def _chat(messages: list[dict]) -> tuple[str, dict, list]:
         msg = data["choices"][0]["message"]
         calls = msg.get("tool_calls") or []
         if not calls:
-            return msg.get("content") or "", usage, trace
-        msgs.append(msg)
+            return msg.get("content") or "", usage, trace, []
+        mine = [c for c in calls if c["function"]["name"] in client_names]
+        calls = [c for c in calls if c["function"]["name"] not in client_names]
         step_images: list = []
         TOOL_IMAGES.set(step_images)
+        if mine:
+            # as do servidor desta rodada rodam aqui; as do cliente voltam para ele executar
+            if calls:
+                msgs.append({**msg, "content": msg.get("content") or "", "tool_calls": calls})
+                for call in calls:
+                    await _run_server_call(call, by_name, trace, msgs)
+            _remember_hidden(mine, msgs[start:])
+            trace.append({"client_tool_calls": [c["function"]["name"] for c in mine]})
+            return ("" if calls else msg.get("content") or ""), usage, trace, mine
+        msgs.append(msg)
         for call in calls:
-            name = call["function"]["name"]
-            args = {}
-            t_call = time.monotonic()
-            try:
-                args = json.loads(call["function"].get("arguments") or "{}")
-                progress(_describe(name, args))
-                out = await by_name[name].fn(args) if name in by_name else f"tool {name} inexistente"
-            except Exception as e:
-                out = f"erro: {e}"
-            failed = str(out).startswith(("erro", "ERRO DA FERRAMENTA", "tool "))
-            progress(f" {'✗' if failed else '✓'} {time.monotonic() - t_call:.1f}s\n")
-            trace.append({"tool": name, "args": {k: (str(v)[:200]) for k, v in args.items()},
-                          "result": str(out)[:300]})
-            msgs.append({"role": "tool", "tool_call_id": call["id"], "content": str(out)})
+            await _run_server_call(call, by_name, trace, msgs)
         if step_images and VISION:
             parts = [{"type": "text", "text": f"Imagens devolvidas pelas ferramentas nesta etapa ({len(step_images)}), "
                                               "para você conferir visualmente:"}]
@@ -482,11 +563,27 @@ async def _chat(messages: list[dict]) -> tuple[str, dict, list]:
         r = await c.post(f"{LLM_BASE_URL}/chat/completions", headers=headers,
                          json={"model": MODEL, "messages": msgs, "temperature": LLM.get("temperature", 0.2)})
     if r.status_code >= 400:
-        return "Limite de passos de ferramentas atingido.", usage, trace
+        return "Limite de passos de ferramentas atingido.", usage, trace, []
     data = r.json()
     for k in usage:
         usage[k] += (data.get("usage") or {}).get(k, 0)
-    return data["choices"][0]["message"].get("content") or "", usage, trace
+    return data["choices"][0]["message"].get("content") or "", usage, trace, []
+
+
+async def _run_server_call(call: dict, by_name: dict, trace: list, msgs: list):
+    name = call["function"]["name"]
+    args = {}
+    t_call = time.monotonic()
+    try:
+        args = json.loads(call["function"].get("arguments") or "{}")
+        progress(_describe(name, args))
+        out = await by_name[name].fn(args) if name in by_name else f"tool {name} inexistente"
+    except Exception as e:
+        out = f"erro: {e}"
+    failed = str(out).startswith(("erro", "ERRO DA FERRAMENTA", "tool "))
+    progress(f" {'✗' if failed else '✓'} {time.monotonic() - t_call:.1f}s\n")
+    trace.append({"tool": name, "args": {k: (str(v)[:200]) for k, v in args.items()}, "result": str(out)[:300]})
+    msgs.append({"role": "tool", "tool_call_id": call["id"], "content": str(out)})
 
 
 # ---------------------------------------------------------------- MCP (o agente como ferramenta)
@@ -564,7 +661,7 @@ async def chat_completions(req: Request):
         queue: asyncio.Queue = asyncio.Queue()
         show = PROGRESS_STREAM != "off" and req.headers.get("x-progress", "").lower() != "off"
         PROGRESS.set(queue if show else None)
-        task = asyncio.create_task(chat(body.get("messages", [])))
+        task = asyncio.create_task(chat_full(body.get("messages", []), body.get("tools"), body.get("tool_choice")))
 
         async def sse():
             yield chunk({"role": "assistant", "content": ""})
@@ -578,25 +675,31 @@ async def chat_completions(req: Request):
                 if not done:
                     yield ": keepalive\n\n"
             try:
-                text, usage, _trace = task.result()
+                text, usage, _trace, calls = task.result()
             except Exception as e:
                 yield chunk({"content": f"Erro no agente: {e}"}, "stop")
                 yield "data: [DONE]\n\n"
                 return
-            yield chunk({"content": render_for_channel(text)})
-            yield chunk({}, "stop", {"usage": usage})
+            if text or not calls:
+                yield chunk({"content": render_for_channel(text)})
+            if calls:  # a vez é do cliente: ele executa e devolve os resultados na próxima requisição
+                yield chunk({"tool_calls": [{"index": i, **c} for i, c in enumerate(calls)]})
+                yield chunk({}, "tool_calls", {"usage": usage})
+            else:
+                yield chunk({}, "stop", {"usage": usage})
             yield "data: [DONE]\n\n"
         return StreamingResponse(sse(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
     try:
-        text, usage, trace = await chat(body.get("messages", []))
+        text, usage, trace, calls = await chat_full(body.get("messages", []), body.get("tools"), body.get("tool_choice"))
     except Exception as e:
         return JSONResponse({"error": {"message": str(e), "type": "agent_error"}}, status_code=502)
-    text = render_for_channel(text)
+    message = {"role": "assistant", "content": render_for_channel(text) if text else (None if calls else "")}
+    if calls:
+        message["tool_calls"] = calls
     return {"id": cid, "object": "chat.completion",
             "created": created, "model": SLUG,
-            "choices": [{"index": 0, "finish_reason": "stop",
-                         "message": {"role": "assistant", "content": text}}],
+            "choices": [{"index": 0, "finish_reason": "tool_calls" if calls else "stop", "message": message}],
             "usage": usage, "x_trace": trace}
 
 

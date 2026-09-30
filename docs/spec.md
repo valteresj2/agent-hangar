@@ -10,6 +10,7 @@ llm:                      # chat agents only (mutually exclusive with harness.co
   temperature: 0.2
   max_steps: 6            # tool-calling rounds per message (1–40); data agents need 20–30
   vision: true            # false: attached images go only to the workspace (MCP), not to the LLM
+  client_tools: true      # false: ignore the `tools` a client sends (default: coding clients' file/terminal tools are used)
   stage: {model: cheap-model}         # optional per-environment overrides: connection / model / temperature
   prod: {connection: prod-gateway}
 harness:                  # harness agents only

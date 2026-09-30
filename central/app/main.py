@@ -51,7 +51,7 @@ async def lifespan(app):
 app = FastAPI(title=config.APP_NAME, version=config.VERSION, lifespan=lifespan)
 
 _GW = re.compile(r"^/gw(?:-stage)?/([^/]+)(?:/|$)")
-OPEN_PREFIXES = ("/ui", "/app", "/api/health", "/internal", "/api/auth/", "/login", "/favicon.ico")
+OPEN_PREFIXES = ("/ui", "/app", "/downloads/", "/api/health", "/internal", "/api/auth/", "/login", "/favicon.ico")
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
 
@@ -162,6 +162,20 @@ def portal_root():
 @app.get("/app/")
 def portal_index():
     return HTMLResponse(_PORTAL, headers={"Cache-Control": "no-cache"})
+
+
+DOWNLOADS = os.environ.get("DOWNLOADS_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "downloads"))
+
+
+@app.get("/downloads/agent-hangar-vscode.vsix")
+def vscode_extension():
+    """A extensão do VS Code, gerada no build da imagem (extensions/vscode). Instale com
+    `code --install-extension agent-hangar-vscode.vsix` ou pelo menu Extensions → Install from VSIX."""
+    from fastapi.responses import FileResponse
+    path = os.path.join(DOWNLOADS, "agent-hangar-vscode.vsix")
+    if not os.path.exists(path):
+        return JSONResponse({"error": "extensão não incluída nesta imagem — gere com extensions/vscode (npm run package)"}, 404)
+    return FileResponse(path, media_type="application/octet-stream", filename="agent-hangar-vscode.vsix")
 
 
 @app.get("/favicon.ico")

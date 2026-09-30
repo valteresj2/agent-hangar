@@ -51,6 +51,7 @@ model, and revoke either one alone with **Disconnect**.
 |---|---|---|
 | **MCP (tool)** | One tool named after the agent; its skills, MCPs and LLM run behind it | Every tool |
 | **Model** | The agent is a chat model (OpenAI-compatible, streaming, attachments) | LibreChat, Open WebUI, OpenCode, OpenAI SDKs |
+| **Model, as a coding agent** | The agent is the model, and the editor's own tools (read and edit files, terminal) run on the developer's machine | VS Code chat, Cline / Roo Code, Continue |
 
 | Tool | MCP | Model | Where the config goes |
 |---|:-:|:-:|---|
@@ -59,7 +60,9 @@ model, and revoke either one alone with **Disconnect**.
 | Codex CLI | ✓ | | `~/.codex/config.toml` |
 | OpenCode | ✓ | ✓ | `opencode.json` (`mcp` or `provider`) |
 | Cursor | ✓ | | `.cursor/mcp.json` |
-| VS Code (Copilot) | ✓ | | `.vscode/mcp.json` |
+| VS Code (Copilot) | ✓ | ✓ | `.vscode/mcp.json`, or *Manage models → OpenAI Compatible* for the coding agent |
+| Cline / Roo Code | | ✓ | *API Provider: OpenAI Compatible* (base URL, key, model id) |
+| Continue | | ✓ | `~/.continue/config.yaml` (`provider: openai`, `capabilities: [tool_use]`) |
 | LibreChat | ✓ | ✓ | `librechat.yaml` (`mcpServers` or `endpoints.custom`) |
 | Open WebUI | ✓ | ✓ | Admin → Settings → *External Tools* (MCP) or *Connections* (OpenAI API) |
 | OpenAI SDK / other | | ✓ | `base_url` + key |
@@ -85,6 +88,69 @@ Notes:
   runtime reads `X-OpenWebUI-Chat-Id`.
 - Claude Code asks once to approve servers added with `--scope project`; `--scope user` (the default in the
   snippet) does not.
+
+## VS Code extension: Agent Hangar
+
+This is the plug-and-play way to use agents in VS Code. The hangar builds the extension with the central image and
+serves it at `/downloads/agent-hangar-vscode.vsix`. The source is in [extensions/vscode](../extensions/vscode/).
+
+| | |
+|---|---|
+| **Your agents as chat models** | The chat agents you can use appear in VS Code's model picker (`lm.registerLanguageModelChatProvider`). In **Agent** mode the agent works on your project with VS Code's own tools (files, terminal) through the client-tools path below |
+| **Platform MCP** | Registered by the extension (`lm.registerMcpServerDefinitionProvider`) with your personal token, so the chat can create, edit, test and publish agents with your roles |
+| **Sign-in** | Through the portal, with PKCE: the extension opens `/app/#/vscode`, you confirm (you are already signed in with SSO or a local account), and VS Code comes back connected. No keys to copy |
+| **Test** | **Agent Hangar: Testar conexão** runs the same end-to-end check as the Connect tab |
+| **stage** | Set `agentHangar.environment` to `stage` to see the stage version of the agents you edit, and test them before publishing |
+
+**How sign-in works:**
+1. `POST /api/vscode/authorize` runs in the portal, with your session. It returns a signed, single-use code, valid
+   for 5 minutes and bound to the extension's PKCE challenge.
+2. The browser goes to `vscode://agent-hangar.agent-hangar/auth`.
+3. The extension exchanges code + verifier at `POST /api/auth/vscode/token` for a personal key: scope `user`, client
+   `vscode-ext`, listed under **Minhas chaves**.
+4. Signing out of the extension revokes the key on the server. Losing access revokes it too.
+
+**Install:**
+1. In the portal, go to **Conectar ferramentas** (or an agent's **Connect** tab) and use **Baixar extensão (.vsix)**.
+2. Run `code --install-extension agent-hangar-vscode.vsix`.
+3. Click **Abrir no VS Code** in the portal. You need VS Code 1.104 or later.
+
+## Coding agents in VS Code (client tools)
+
+A coding client sends its **own tools** with each request, in the OpenAI format (`tools`): read and edit files,
+search the project, run a terminal command. Examples are the VS Code chat, Cline, Roo Code and Continue. The agent
+works like this:
+- It offers the model the client's tools next to its own: MCPs, memory, sub-agents, skills.
+- When the model calls **one of the agent's tools**, the agent runs it on the server, as always.
+- When the model calls **one of the client's tools**, the agent returns it to the client (`tool_calls`, with
+  `finish_reason: "tool_calls"`, streaming or not). The editor runs it on the developer's machine, with the
+  developer's approval, and sends the result back. The loop goes on until the final answer.
+- If both kinds come in the same round, the server part runs first. Its context is kept and put back in place when
+  the client sends its results, so nothing is lost between requests.
+
+So the files and the terminal never leave the developer's machine, and the hangar adds the governed part:
+- instructions and company standards (skills);
+- MCPs and memory;
+- versioning with tests;
+- a per-tool key, usage and cost per person.
+
+When client tools are present, the agent also gets a short standing instruction: read before editing, make small
+verifiable changes, run the project's tests or build before finishing, and never read or expose secrets.
+
+**Connect:** in the agent's **Connect** tab, choose *VS Code → Como modelo*, *Cline / Roo Code* or *Continue*. You get a
+per-tool key and the values to paste: base URL `…/gw/<slug>/v1`, the key and the model id `<slug>`.
+
+**Test the connection:** the **Testar conexão** card in the same tab, `POST /api/agents/<slug>/connections/test`, or
+the platform MCP tool `test_agent_connection`, runs the exact path a coding client takes:
+1. It sends a client tool (`hangar_ping`) and checks, over the stream, that the agent calls it
+   (`tool_calls` + `finish_reason: tool_calls`).
+2. It returns the result the way the editor would, and checks that the agent uses it to answer.
+
+The test costs one short LLM call and works in stage (for whoever can edit the agent) or in prod.
+
+**Turning it off:** set `llm.client_tools: false` in an agent's spec. The agent then ignores the tools a client sends
+and answers only with its own. Harness agents don't take client tools, because they run in their own throwaway
+container.
 
 ## Consumers (a shipped agent)
 

@@ -398,6 +398,13 @@ def agent_connections(slug: str, request: Request, db=Depends(db_dep)):
     return svc.connect.connections(db, slug, owner=mine)
 
 
+@router.post("/agents/{slug}/connections/test")
+def connection_test(slug: str, body: EnvBody, request: Request, db=Depends(db_dep)):
+    """Teste de ponta a ponta do modo agente de código (ferramentas do cliente): prod exige poder usar; stage, editar."""
+    _agent(request, db, slug, "consume" if body.env == "prod" else "edit")
+    return guard(lambda: svc.connect.probe(db, slug, body.env))
+
+
 @router.get("/agents/{slug}/connections/snippet")
 def connection_snippet(slug: str, client: str, request: Request, mode: str = "mcp", db=Depends(db_dep)):
     """Prévia do trecho com <SUA_CHAVE> no lugar da chave (não cria nada)."""

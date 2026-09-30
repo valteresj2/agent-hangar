@@ -24,7 +24,7 @@ MCP. Then come her Início page, the agent, a Playground answer, the team memory
 connections and the company catalog."></p>
 <p align="center"><sub>The user portal, recorded on a local install · <a href="docs/assets/portal-tour.mp4">MP4 version</a></sub></p>
 
-> **Status: alpha (v0.7).** It works end to end and is covered by tests, but APIs may still change. Run it inside
+> **Status: alpha (v0.8).** It works end to end and is covered by tests, but APIs may still change. Run it inside
 > your network until you have read [docs/security.md](docs/security.md).
 
 ---
@@ -137,6 +137,11 @@ and publishes it only when you say so.
 - Chat agents run in hardened containers: read-only file system, all capabilities dropped, memory/CPU/PID limits.
 - Coding harnesses (Claude Code, Codex, Hermes, DeepSeek Harness) run in a **fresh container per call**, which
   returns the result and the `git diff`.
+
+**Coding agents in VS Code.** With the **Agent Hangar extension**, the agents you can use appear in VS Code's chat
+model picker. In Agent mode they read, edit and test your project with the editor's own tools, on your machine and
+with your approval, while the hangar supplies their instructions, skills, MCPs and memory. Sign-in is one click
+through the portal. Cline, Roo Code and Continue work too. See [docs/clients.md](docs/clients.md#vs-code-extension-agent-hangar).
 
 **Every protocol.** Each agent answers on `/v1/chat/completions` (OpenAI-compatible, with streaming), **A2A**
 (Agent Card + `message/send`), **ACP** and **MCP**. All of it sits behind one authenticated gateway with
@@ -272,7 +277,7 @@ hangar jobs run code-fixer "Add input validation to parse_date()" --follow
 
 ## Project status and roadmap
 
-v0.7 adds the user portal. Earlier releases added long-term memory (v0.6), the MCP catalog with OAuth MCPs and
+v0.8 adds coding agents in VS Code (client tools and the Agent Hangar extension). Earlier releases added the user portal (v0.7), long-term memory (v0.6), the MCP catalog with OAuth MCPs and
 Activepieces (v0.5), schedules and edit-after-ship (v0.4), and teams with SSO (v0.3). Next up: Kubernetes/Helm,
 OpenTelemetry + Langfuse traces, Slack/Teams adapters and egress allowlists for jobs. See
 [ROADMAP.md](ROADMAP.md), the [CHANGELOG](CHANGELOG.md) and the issues.

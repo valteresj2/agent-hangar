@@ -429,13 +429,26 @@ async def create_consumer_key(ctx: Context, name: str, agents: list[str]) -> dic
 async def connect_agent(ctx: Context, slug: str, client: str, mode: str = "mcp") -> dict:
     """Conecta um agente em produção a uma ferramenta, plug and play: gera uma chave só para essa ferramenta e esse
     agente e devolve a configuração pronta para colar. client: claude-code | claude-desktop | codex | opencode |
-    cursor | vscode | librechat | open-webui | openai-sdk | generic-mcp. mode: "mcp" (o agente vira uma ferramenta
-    do cliente — todas as plataformas) ou "model" (o agente vira um modelo no chat — librechat, open-webui,
-    opencode, openai-sdk). Mostre ao usuário o conteúdo e os passos; a chave aparece só nesta resposta."""
+    cursor | vscode | cline | continue | librechat | open-webui | openai-sdk | generic-mcp. mode: "mcp" (o agente
+    vira uma ferramenta do cliente — todas as plataformas) ou "model" (o agente vira um modelo no chat — librechat,
+    open-webui, opencode, openai-sdk; e, como AGENTE DE CÓDIGO que edita arquivos e usa o terminal do dev: vscode,
+    cline, continue). Mostre ao usuário o conteúdo e os passos; a chave aparece só nesta resposta. Depois, confira
+    com test_agent_connection."""
     def go(db, acc):
         _agent(db, acc, slug, "consume")
         return svc.connect.connect(db, slug, client, mode, acc.p.name,
                                    user_id=acc.p.user_id if acc.p.is_user else None)
+    return await _run(ctx, go)
+
+
+@mcp.tool()
+async def test_agent_connection(ctx: Context, slug: str, env: str = "prod") -> dict:
+    """Testa de ponta a ponta o modo agente de código (VS Code, Cline, Roo, Continue): manda uma ferramenta do
+    cliente (hangar_ping), confere que o agente a chama pelo stream e que usa o resultado para responder. Use depois
+    de connect_agent, ou para diagnosticar "o agente não edita meus arquivos". Mostre os passos ao usuário."""
+    def go(db, acc):
+        _agent(db, acc, slug, "consume" if env == "prod" else "edit")
+        return svc.connect.probe(db, slug, env)
     return await _run(ctx, go)
 
 

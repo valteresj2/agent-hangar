@@ -1,0 +1,9 @@
+# contexto do build da central (raiz): nada de artefatos locais
+.git
+**/node_modules
+**/__pycache__
+extensions/vscode/out
+extensions/vscode/*.vsix
+extensions/vscode/LICENSE
+scripts/demo/portal-tour/out
+scripts/demo/portal-tour/shots

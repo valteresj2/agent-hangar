@@ -32,6 +32,17 @@ class TokenLogin(BaseModel):
     token: str
 
 
+class VscodeAuthorize(BaseModel):
+    challenge: str
+    state: str
+    device: str = ""
+
+
+class VscodeToken(BaseModel):
+    code: str
+    verifier: str
+
+
 class PasswordLogin(BaseModel):
     username: str  # usuário ou e-mail
     password: str
@@ -122,6 +133,20 @@ def logout(request: Request, db=Depends(db_dep)):
 @router.get("/me")
 def me(request: Request, db=Depends(db_dep)):
     return org.me(db, acc(request, db))
+
+
+@router.post("/vscode/authorize")
+def vscode_authorize(body: VscodeAuthorize, request: Request, db=Depends(db_dep)):
+    """Portal (logado): confirma a conexão do VS Code e devolve o código de uso único para o redirect vscode://."""
+    from .. import services as svc
+    return guard(lambda: svc.vscode.authorize(acc(request, db), body.challenge, body.state, body.device))
+
+
+@router.post("/auth/vscode/token")
+def vscode_token(body: VscodeToken, db=Depends(db_dep)):
+    """Extensão: troca código + verifier (PKCE) pelo token pessoal. Aberta: o código assinado é a credencial."""
+    from .. import services as svc
+    return guard(lambda: svc.vscode.exchange(db, body.code, body.verifier))
 
 
 @router.get("/me/home")

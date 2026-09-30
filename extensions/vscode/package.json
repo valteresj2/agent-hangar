@@ -1,0 +1,56 @@
+{
+  "name": "agent-hangar",
+  "displayName": "Agent Hangar",
+  "description": "Os agentes de IA da sua empresa no chat do VS Code: como modelos (agente de código que edita e testa o seu projeto) e o MCP da plataforma para criar e editar agentes.",
+  "version": "0.8.0",
+  "publisher": "agent-hangar",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/valteresj2/agent-hangar" },
+  "engines": { "vscode": "^1.104.0" },
+  "categories": ["AI", "Chat"],
+  "keywords": ["agents", "mcp", "llm", "chat", "agent-hangar"],
+  "main": "./out/src/extension.js",
+  "activationEvents": ["onStartupFinished", "onUri"],
+  "contributes": {
+    "languageModelChatProviders": [
+      { "vendor": "agent-hangar", "displayName": "Agent Hangar" }
+    ],
+    "mcpServerDefinitionProviders": [
+      { "id": "agent-hangar.platform", "label": "Agent Hangar (plataforma)" }
+    ],
+    "commands": [
+      { "command": "agentHangar.signIn", "title": "Entrar pelo portal", "category": "Agent Hangar" },
+      { "command": "agentHangar.signInWithToken", "title": "Entrar com token pessoal", "category": "Agent Hangar" },
+      { "command": "agentHangar.signOut", "title": "Sair", "category": "Agent Hangar" },
+      { "command": "agentHangar.testConnection", "title": "Testar conexão com um agente", "category": "Agent Hangar" },
+      { "command": "agentHangar.refresh", "title": "Atualizar a lista de agentes", "category": "Agent Hangar" },
+      { "command": "agentHangar.openPortal", "title": "Abrir o portal", "category": "Agent Hangar" },
+      { "command": "agentHangar.menu", "title": "Menu", "category": "Agent Hangar" }
+    ],
+    "configuration": {
+      "title": "Agent Hangar",
+      "properties": {
+        "agentHangar.url": {
+          "type": "string", "default": "http://localhost:8090",
+          "description": "Endereço do Agent Hangar da empresa."
+        },
+        "agentHangar.environment": {
+          "type": "string", "enum": ["prod", "stage"], "default": "prod",
+          "enumDescriptions": ["Agentes em produção (quem pode usá-los)", "Versão em stage dos agentes que você edita (para testar antes de publicar)"],
+          "description": "Qual versão dos agentes aparece no seletor de modelos."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "tsc -p . && node --test out/test/core.test.js",
+    "package": "npm run build && cp ${LICENSE_PATH:-../../LICENSE} LICENSE && vsce package --no-dependencies -o agent-hangar-vscode.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "~1.104.0",
+    "@vscode/vsce": "^3.6.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -252,6 +252,12 @@ async function agentConnect(t, a) {
     <div class="mute small"><b>MCP</b>: o agente vira uma <i>ferramenta</i> que o LLM da ferramenta chama (todas as plataformas).
     <b>Modelo</b>: o agente vira um <i>modelo</i> no seletor do chat e conduz a conversa — recebe anexos e usa as próprias tools (LibreChat, Open WebUI, OpenCode, SDKs).
     Cada conexão gera uma chave só desta ferramenta e deste agente, <b>em seu nome</b>: revogue quando quiser, sem afetar as outras; o uso aparece por ferramenta. Se você perder o acesso ao agente, suas chaves são revogadas automaticamente.${can(a, 'manage') ? '' : ' Você vê só as suas conexões.'}</div></div>
+  ${vscodeCard(a)}
+  <div class="card mt"><div class="row between"><div><h2>Testar conexão — agente de código</h2>
+      <div class="mute small">Faz o caminho do chat do VS Code, Cline, Roo e Continue: manda uma ferramenta do cliente, confere que o agente a chama
+        (stream com <code>tool_calls</code>) e que usa o resultado para responder. Custa uma chamada curta ao LLM.</div></div>
+    <div class="row" style="flex-wrap:nowrap"><select id="cn-tenv" style="width:auto"><option value="prod">prod</option>${can(a, 'edit') ? '<option value="stage">stage</option>' : ''}</select>
+      <button id="cn-test" class="ghost">Testar</button></div></div><div id="cn-tres"></div></div>
   <div id="cn-list"></div>
   <div id="cn-out"></div>
   <div class="grid g3 mt">${clients.map(c => `<div class="card"><h2>${esc(c.label)}</h2><div class="mute small">${esc(c.note)}</div>
@@ -267,6 +273,11 @@ async function agentConnect(t, a) {
       act(e.target, async () => drawList(await api('/keys/' + b.dataset.id, { method: 'DELETE' }).then(() => api(`/agents/${a.slug}/connections`))), 'Desconectado'));
   };
   drawList(conns);
+  $('#cn-test').onclick = e => act(e.target, async () => {
+    const r = await api(`/agents/${a.slug}/connections/test`, { method: 'POST', body: { env: $('#cn-tenv').value } });
+    $('#cn-tres').innerHTML = `<div class="mt">${r.ok ? '<span class="pill ok">conexão funcionando</span>' : '<span class="pill bad">falhou</span>'}
+      <ul class="list mt">${r.steps.map(s => `<li><span>${s.ok ? '✓' : '✗'} ${esc(s.name)}<div class="mute small">${esc(s.detail)}</div></span><span class="mute small">${s.ms != null ? s.ms + ' ms' : ''}</span></li>`).join('')}</ul></div>`;
+  });
   t.querySelectorAll('.cn-go').forEach(b => b.onclick = e => act(e.target, async () => {
     const r = await api(`/agents/${a.slug}/connections`, { method: 'POST', body: { client: b.dataset.c, mode: b.dataset.m } });
     const label = clients.find(c => c.id === b.dataset.c).label;
@@ -603,6 +614,7 @@ async function connectPage() {
   const K = '<SUA_CHAVE>';
   const mcpName = 'agent-hangar';
   main.innerHTML = `<h1>Conectar clientes</h1><div class="sub">Conecte o MCP do hangar ao seu cliente e peça: “crie um agente que…”</div>
+  ${vscodeCard()}
   <div class="card hero"><b>Conectar um agente pronto a uma ferramenta?</b> Abra o agente em <a href="#/agents">Agentes</a> → aba <b>Conectar</b>: escolha a ferramenta (Claude Code, Codex, OpenCode, Cursor, VS Code, LibreChat, Open WebUI…) e o modo (MCP ou modelo) e receba a configuração pronta, com uma chave só daquela ferramenta. Os exemplos abaixo são genéricos.</div>
   <div class="card warn-card mt"><b>Qual chave usar?</b> Para <b>construir</b> agentes (MCP do hangar) use o seu <b>token pessoal</b> (escopo <code>user</code>, em <a href="#/keys">Chaves de API</a>): o cliente age como você, com os seus times e papéis.
     Para <b>consumir</b> um agente (LibreChat, Slack, OpenCode…) use a aba <b>Conectar</b> do agente ou uma chave <code>invoke</code> restrita a ele — nunca distribua o ADMIN_TOKEN.
@@ -736,7 +748,7 @@ async function route() {
     else if (r === 'teams' && a === 'new') await teamsPage(true);
     else if (r === 'teams' && a) await teamDetail(a);
     else await ({ '': USER_MODE ? homePage : dashboard, agents: agentsPage, templates: templatesPage, keys: keysPage, deployments: deploymentsPage, tests: testsPage, usage: usagePage, catalog: catalogPage, providers: providersPage, connect: connectPage, audit: auditPage,
-      approvals: approvalsPage, teams: teamsPage, users: usersPage, sso: ssoPage }[r] || dashboard)();
+      approvals: approvalsPage, teams: teamsPage, users: usersPage, sso: ssoPage, vscode: vscodeAuthorizePage }[r] || dashboard)();
   } catch (e) { if (!(e instanceof AuthError)) main.innerHTML = `<div class="card"><h2>Erro</h2>${esc(e.message)}</div>`; }
 }
 window.addEventListener('hashchange', () => { if (location.hash.startsWith('#/login')) showLogin(); else route(); });

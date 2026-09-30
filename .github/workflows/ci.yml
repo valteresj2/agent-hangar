@@ -27,8 +27,22 @@ jobs:
       - run: pytest
       - name: Check JS syntax
         run: |
-          node --check central/app/static/app.js
+          for f in central/app/static/*.js; do node --check "$f"; done
           node --check harness/entrypoint.js
+
+  vscode-extension:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extensions/vscode
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - run: LICENSE_PATH=../../LICENSE npm run package
 
   secrets:
     runs-on: ubuntu-latest

@@ -15,7 +15,7 @@ Claude um Assistente Comercial, que é criado, testado e publicado pelo MCP do H
 agente, o Playground, a memória do time, o resumo diário agendado, as conexões e o catálogo da empresa"></p>
 <p align="center"><sub>O portal do usuário, gravado numa instalação local · <a href="docs/assets/portal-tour.mp4">versão MP4</a></sub></p>
 
-> **Status: alpha (v0.7).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
+> **Status: alpha (v0.8).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
 > sua rede até ler [docs/security.md](docs/security.md).
 
 ## Exemplo: do pedido no Claude ao agente funcionando

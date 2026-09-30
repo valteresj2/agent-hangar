@@ -4,19 +4,24 @@ Dois modos, opcionais e independentes por ferramenta:
 - "mcp": o agente vira uma FERRAMENTA (1 tool MCP) do cliente (Claude Code/Desktop, Codex, OpenCode, Cursor, VS Code,
   LibreChat, Open WebUI…) — o LLM do cliente decide quando chamá-lo;
 - "model": o agente vira um MODELO no seletor do cliente de chat (LibreChat, Open WebUI, OpenCode, SDKs OpenAI) — ele
-  conduz a conversa, recebe anexos e usa as próprias tools.
+  conduz a conversa, recebe anexos e usa as próprias tools. Em clientes de código (chat do VS Code, Cline, Roo Code,
+  Continue) o cliente também manda as ferramentas DELE (ler/editar arquivos, terminal): o agente as chama e o cliente
+  executa na máquina do dev, com a aprovação dele (ver probe() para o teste de ponta a ponta).
 Cada conexão tem a sua chave (escopo invoke, só aquele agente, marcada com cliente/modo): revogável sozinha, e o
 uso aparece por ferramenta nas métricas mesmo quando o cliente não manda X-Channel.
 """
 import json
 import re
+import secrets
+import time
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import auth, config
+from .. import auth, config, deploy
 from ..models import ApiKey
-from .common import PlatformError, audit, get_agent
+from .common import PlatformError, audit, get_agent, spec_of
 
 MODES = ("mcp", "model")
 KEY_PLACEHOLDER = "<SUA_CHAVE>"
@@ -28,7 +33,11 @@ CLIENTS: dict[str, tuple[str, tuple[str, ...], str]] = {
     "codex": ("Codex CLI", ("mcp",), "CLI da OpenAI (~/.codex/config.toml)."),
     "opencode": ("OpenCode", ("mcp", "model"), "Como ferramenta (MCP) ou como modelo (provedor OpenAI-compatible)."),
     "cursor": ("Cursor", ("mcp",), "IDE: .cursor/mcp.json (no projeto) ou ~/.cursor/mcp.json (global)."),
-    "vscode": ("VS Code (Copilot)", ("mcp",), "Agent mode do Copilot: .vscode/mcp.json."),
+    "vscode": ("VS Code (Copilot)", ("model", "mcp"), "Como modelo no chat (agente de código: edita arquivos e usa o "
+                                                    "terminal do VS Code) ou como ferramenta MCP (.vscode/mcp.json)."),
+    "cline": ("Cline / Roo Code", ("model",), "Extensões de código do VS Code: o agente vira o modelo e edita o "
+                                              "projeto com as ferramentas da extensão."),
+    "continue": ("Continue", ("model",), "Extensão do VS Code/JetBrains (config.yaml), com uso de ferramentas."),
     "librechat": ("LibreChat", ("model", "mcp"), "Como modelo (recomendado: anexos, workspace por conversa, "
                                                  "progresso ao vivo) ou como ferramenta MCP."),
     "open-webui": ("Open WebUI", ("model", "mcp"), "Como modelo (conexão OpenAI) ou como ferramenta (MCP)."),
@@ -111,6 +120,30 @@ def snippet(client: str, mode: str, slug: str, agent_name: str, key: str = KEY_P
                            f"Tool: {name} (argumento: message)\n"}
 
     # ---------------------------------------------------------------- modo modelo
+    if client == "vscode":
+        return {"language": "text", "file": None,
+                "steps": ["Chat do VS Code → seletor de modelos → Gerenciar modelos → provedor OpenAI Compatible "
+                          "(disponível nas versões recentes do Copilot Chat).",
+                          "Informe a URL base, a chave e o id do modelo abaixo, com chamada de ferramentas ativada.",
+                          "Escolha o agente no seletor e use o modo Agent: ele lê e edita arquivos e roda comandos no "
+                          "terminal do VS Code, sempre com a sua aprovação.",
+                          "Sem essa opção no seu VS Code? Use Cline, Roo Code ou Continue (mesma URL e chave)."],
+                "content": f"URL base:  {v1}\nChave:     {key}\nModelo:    {slug}\nFerramentas: sim (tool calling)\n"}
+    if client == "cline":
+        return {"language": "text", "file": None,
+                "steps": ["Cline (ou Roo Code) → Settings → API Provider: OpenAI Compatible.",
+                          "Preencha Base URL, API Key e Model ID com os valores abaixo e salve.",
+                          "O agente passa a planejar e editar o projeto com as ferramentas da extensão (arquivos, "
+                          "terminal), que pedem a sua aprovação antes de agir."],
+                "content": f"Base URL:  {v1}\nAPI Key:   {key}\nModel ID:  {slug}\n"}
+    if client == "continue":
+        content = (f"models:\n  - name: {agent_name}\n    provider: openai\n    model: {slug}\n"
+                   f"    apiBase: {v1}\n    apiKey: {key}\n    roles: [chat, edit, apply]\n"
+                   f"    capabilities: [tool_use]\n    requestOptions:\n      headers:\n        X-Channel: continue\n")
+        return {"language": "yaml", "file": "~/.continue/config.yaml",
+                "steps": ["Mescle o bloco em models do config.yaml do Continue.",
+                          "Escolha o agente no seletor do Continue e use o modo Agent para editar o projeto."],
+                "content": content}
     if client == "librechat":
         content = (f'endpoints:\n  custom:\n    - name: "{agent_name}"\n      apiKey: "{key}"\n'
                    f'      baseURL: "{in_docker}/gw/{slug}/v1"\n'
@@ -178,3 +211,90 @@ def connections(db: Session, slug: str, owner: int | None = None) -> list[dict]:
         q = q.where(ApiKey.user_id == owner)
     rows = db.scalars(q)
     return [connection_dict(k) for k in rows if k.agents == [slug]]
+
+
+# ---------------------------------------------------------------- teste de conexão (ferramentas do cliente)
+PING = {"type": "function", "function": {
+    "name": "hangar_ping", "description": "Ferramenta de teste de conexão do Agent Hangar: devolve pong com o nonce.",
+    "parameters": {"type": "object", "properties": {"nonce": {"type": "string"}}, "required": ["nonce"]}}}
+HTTP = lambda: httpx.Client(timeout=httpx.Timeout(300, connect=10))  # noqa: E731  (os testes trocam)
+
+
+def _sse(resp: httpx.Response) -> dict:
+    """Junta um stream OpenAI (SSE): texto, tool_calls (por índice), finish_reason e usage."""
+    text, calls, finish, usage = "", {}, None, None
+    for line in resp.iter_lines():
+        if not line.startswith("data: ") or line == "data: [DONE]":
+            continue
+        ev = json.loads(line[6:])
+        usage = ev.get("usage") or usage
+        for ch in ev.get("choices") or []:
+            d = ch.get("delta") or {}
+            text += d.get("content") or ""
+            for tc in d.get("tool_calls") or []:
+                c = calls.setdefault(tc.get("index", 0), {"id": "", "type": "function",
+                                                          "function": {"name": "", "arguments": ""}})
+                c["id"] = tc.get("id") or c["id"]
+                f = tc.get("function") or {}
+                c["function"]["name"] += f.get("name") or ""
+                c["function"]["arguments"] += f.get("arguments") or ""
+            finish = ch.get("finish_reason") or finish
+    return {"content": text, "tool_calls": [calls[i] for i in sorted(calls)], "finish_reason": finish, "usage": usage}
+
+
+def probe(db: Session, slug: str, env: str = "prod") -> dict:
+    """Teste de ponta a ponta do modo "agente de código": manda uma ferramenta do cliente (hangar_ping), confere que o
+    agente a chama pelo stream (tool_calls + finish_reason=tool_calls), devolve o resultado como o cliente faria e
+    confere a resposta final. É o caminho do chat do VS Code, Cline, Roo e Continue."""
+    from .runtime import active_deployment, refresh_deployments
+
+    a = get_agent(db, slug)
+    if spec_of(a).get("harness"):
+        return {"ok": False, "env": env, "steps": [{"name": "tipo", "ok": False, "detail":
+                "agente com harness roda num container efêmero próprio e não recebe ferramentas do cliente; "
+                "use um agente de chat para o modo agente de código"}]}
+    refresh_deployments(db, [a])
+    if not active_deployment(a, env):
+        raise PlatformError(f"'{slug}' não está rodando em {env}")
+    if spec_of(a).get("llm", {}).get("client_tools") is False:
+        return {"ok": False, "env": env, "steps": [{"name": "configuração", "ok": False,
+                "detail": "a spec desliga as ferramentas do cliente (llm.client_tools=false)"}]}
+    nonce = secrets.token_hex(4)
+    url = f"{deploy.internal_url(slug, env)}/v1/chat/completions"
+    hdr = {"X-Channel": "connection-test", "X-Session-Id": f"connection-test-{nonce}", "X-Progress": "off"}
+    user = {"role": "user", "content": f"Teste de conexão: chame hangar_ping nonce={nonce} e depois responda com o "
+                                       "texto exato que a ferramenta devolver."}
+    steps, t0 = [], time.monotonic()
+    with HTTP() as http:
+        with http.stream("POST", url, headers=hdr, json={
+                "model": slug, "stream": True, "messages": [user], "tools": [PING],
+                "tool_choice": {"type": "function", "function": {"name": "hangar_ping"}}}) as r:
+            if r.status_code >= 400:
+                r.read()
+                raise PlatformError(f"o agente respondeu HTTP {r.status_code}: {r.text[:200]}")
+            first = _sse(r)
+        call = next((c for c in first["tool_calls"] if c["function"]["name"] == "hangar_ping"), None)
+        ok1 = bool(call) and first["finish_reason"] == "tool_calls" and nonce in call["function"]["arguments"]
+        steps.append({"name": "o agente chama a ferramenta do cliente", "ok": ok1,
+                      "ms": int((time.monotonic() - t0) * 1000),
+                      "detail": (f"tool_call hangar_ping({call['function']['arguments']}), finish_reason=tool_calls"
+                                 if ok1 else f"esperava tool_call hangar_ping com o nonce; veio "
+                                             f"{first['tool_calls'] or 'nenhuma'} / {first['finish_reason']} / "
+                                             f"{first['content'][:200]!r}")})
+        if not ok1:
+            return {"ok": False, "env": env, "steps": steps}
+        t1 = time.monotonic()
+        r2 = http.post(url, headers=hdr, json={"model": slug, "tools": [PING], "messages": [
+            user, {"role": "assistant", "content": first["content"] or None, "tool_calls": [call]},
+            {"role": "tool", "tool_call_id": call["id"], "content": f"pong {nonce}"}]})
+        if r2.status_code >= 400:
+            raise PlatformError(f"o agente respondeu HTTP {r2.status_code} ao resultado: {r2.text[:200]}")
+        final = r2.json()["choices"][0]
+        reply = final["message"].get("content") or ""
+        ok2 = final.get("finish_reason") == "stop" and bool(reply.strip())
+        steps.append({"name": "o agente usa o resultado e responde", "ok": ok2,
+                      "ms": int((time.monotonic() - t1) * 1000),
+                      "detail": ("resposta final recebida" + (" (com o pong)" if nonce in reply else ""))
+                      if ok2 else f"esperava uma resposta final; veio {final.get('finish_reason')}"})
+    audit(db, "connection-test", "agent.connection_test", slug, f"{env}: {'ok' if ok1 and ok2 else 'falhou'}")
+    return {"ok": ok1 and ok2, "env": env, "steps": steps, "reply": reply[:500]}

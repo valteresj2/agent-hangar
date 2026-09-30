@@ -74,6 +74,14 @@ schedule requires the right to edit the agent. Team members can see schedules an
 
 Agents reach the MCP at `/internal/mcp-remote/{name}` with their internal token. See [remote-mcp.md](remote-mcp.md).
 
+## VS Code extension
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/vscode/authorize` | Portal (signed-in user): `{challenge, state, device}` → a signed, single-use `code` (5 min) and the `vscode://` redirect |
+| POST | `/api/auth/vscode/token` | Extension (open route): `{code, verifier}` (PKCE) → personal key `{token, key_id, user}`, scope `user`, client `vscode-ext` |
+| GET | `/downloads/agent-hangar-vscode.vsix` | The extension package, built with the central image |
+
 ## User portal
 
 | Method | Path | Description |
@@ -133,6 +141,7 @@ Agents reach the memory at `/internal/memory/mcp` with their internal token and 
 | GET | `/api/agents/{slug}/connections` | Active tool connections of an agent |
 | GET | `/api/agents/{slug}/connections/snippet?client=&mode=` | Config preview with a placeholder key; creates nothing |
 | POST | `/api/agents/{slug}/connections` | `{client, mode}` → per-tool `invoke` key (returned once) + `{language, file, content, steps}` |
+| POST | `/api/agents/{slug}/connections/test` | `{env}` → end-to-end test of the coding-agent path (client tools over streaming): `{ok, steps[], reply}`. Prod needs `consume`, stage needs `edit` |
 | GET | `/api/tests`, `/api/deployments`, `/api/usage`, `/api/audit` | Recent records |
 
 ## Gateway (`/gw/<slug>`: invoke key for that agent, a user who can use it, or admin)

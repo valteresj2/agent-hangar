@@ -5,6 +5,38 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-30
+
+### Upgrading from 0.7.x
+- **No database migrations.**
+- **Rebuild or pull `central` and `agent-runtime`, then re-ship the agents** that should work as coding agents. The
+  runtime now handles client tools.
+- **The central image build needs Node** (a build stage that packages the VS Code extension). The published images
+  already include it.
+
+### Added
+- **Agents as coding agents in VS Code, Cline, Roo Code and Continue** (client tools,
+  [docs/clients.md](docs/clients.md#coding-agents-in-vs-code-client-tools)).
+  - The OpenAI-compatible endpoint takes the client's `tools` and returns `tool_calls` for the client to run: files
+    and the terminal stay on the developer's machine. The agent's own tools (MCPs, memory, sub-agents) still run on
+    the server.
+  - If both come in one round, the server part runs first and its context is put back when the client returns its
+    results.
+  - Works with and without streaming. `llm.client_tools: false` turns it off per agent.
+- **Testar conexão** in the Connect tab (`POST /api/agents/{slug}/connections/test`, and the MCP tool
+  `test_agent_connection`): an end-to-end check of the coding-agent path, over streaming, with a probe tool.
+- New Connect options in model mode: VS Code (coding agent), Cline / Roo Code and Continue.
+- **VS Code extension "Agent Hangar"** ([extensions/vscode](extensions/vscode/),
+  [docs](docs/clients.md#vs-code-extension-agent-hangar)).
+  - The agents you can use appear in the chat's model picker. In Agent mode they edit and test your project with
+    VS Code's tools.
+  - The extension also registers the platform MCP.
+  - One-click sign-in through the portal with PKCE (`/api/vscode/authorize`, `/api/auth/vscode/token`, single-use
+    code). Signing out revokes the key.
+  - A connection test command, and a `stage` setting to try agents before publishing.
+  - The central image builds and tests the `.vsix` and serves it at `/downloads/agent-hangar-vscode.vsix`. The portal
+    gets **Baixar extensão** and **Abrir no VS Code** buttons.
+
 ## [0.7.0] — 2026-09-30
 
 ### Upgrading from 0.6.x

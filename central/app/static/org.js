@@ -523,3 +523,41 @@ async function agentMemory(t, a, env = 'prod', q = '') {
   if (c) c.onclick = e => confirm(`Apagar toda a memória de ${env === 'prod' ? 'produção' : 'stage'} (grupo ${r.group})? Não dá para desfazer.`) &&
     act(e.target, () => api(`/agents/${a.slug}/memory?env=${env}`, { method: 'DELETE' }).then(() => agentMemory(t, a, env)), 'Memória apagada');
 }
+
+/* ---------- extensão Agent Hangar do VS Code: card de download e autorização do login (PKCE) ---------- */
+function vscodeCard(a) {
+  const base = location.origin;
+  const deep = `vscode://agent-hangar.agent-hangar/signin?url=${encodeURIComponent(base)}`;
+  return `<div class="card mt"><div class="row between" style="align-items:flex-start"><div><h2>VS Code — extensão Agent Hangar</h2>
+    <div class="mute small">${a ? `Com a extensão, <b>${esc(a.name)}</b> e os outros agentes que você pode usar aparecem no seletor de modelos do chat do VS Code.`
+      : 'Com a extensão, os agentes que você pode usar aparecem no seletor de modelos do chat do VS Code.'}
+      No modo <b>Agent</b>, o agente lê e edita o seu projeto e roda os testes no terminal, com a sua aprovação. A extensão também traz o MCP da plataforma
+      (criar e editar agentes sem sair do editor). O login é pelo portal: nada de copiar chave.</div>
+    <ol class="small mt"><li>Baixe e instale a extensão (<code>code --install-extension agent-hangar-vscode.vsix</code> ou Extensions → … → Install from VSIX).</li>
+      <li>Clique em <b>Abrir no VS Code</b>, confirme aqui no portal e pronto.</li></ol></div>
+    <div class="row" style="flex-wrap:nowrap"><a href="/downloads/agent-hangar-vscode.vsix"><button class="ghost">Baixar extensão (.vsix)</button></a>
+      <a href="${esc(deep)}"><button>Abrir no VS Code</button></a></div></div></div>`;
+}
+
+async function vscodeAuthorizePage() {
+  const q = new URLSearchParams(location.hash.split('?')[1] || '');
+  const challenge = q.get('challenge') || '', state = q.get('state') || '', device = q.get('device') || 'VS Code';
+  const who = ME.user ? (ME.user.name || ME.user.email) : null;
+  main.innerHTML = `<div class="card" style="max-width:640px;margin:40px auto"><h2>Conectar o VS Code</h2>
+    ${!challenge || !state ? '<div class="bad-text">Pedido incompleto. Comece pelo VS Code: comando <b>Agent Hangar: Entrar pelo portal</b>.</div>'
+      : !who ? '<div class="bad-text">Esta sessão não tem um usuário (sessão de emergência). Entre com a sua conta para conectar o VS Code.</div>'
+      : `<p><b>${esc(device)}</b> quer usar o Agent Hangar como <b>${esc(who)}</b>.</p>
+      <ul class="small"><li>Os agentes que você pode usar aparecem no chat do VS Code; o MCP da plataforma age com os seus times e papéis.</li>
+        <li>É criada uma chave pessoal (em <a href="#/keys">Minhas chaves</a>), revogada quando você sair da extensão ou perder o acesso.</li></ul>
+      <div class="row mt"><button id="vs-ok">Autorizar e voltar ao VS Code</button><a href="#/"><button class="ghost">Cancelar</button></a></div>
+      <div id="vs-done" class="mt"></div>`}</div>`;
+  const ok = $('#vs-ok');
+  if (!ok) return;
+  ok.onclick = e => act(e.target, async () => {
+    const r = await api('/vscode/authorize', { method: 'POST', body: { challenge, state, device } });
+    const url = `${r.redirect}?${new URLSearchParams({ code: r.code, state: r.state })}`;
+    history.replaceState(null, '', location.pathname + '#/');  // o código não fica no histórico do navegador
+    location.href = url;
+    $('#vs-done').innerHTML = `<div class="pill ok">Autorizado</div> <span class="small">Se o VS Code não abriu, <a href="${esc(url)}">clique aqui</a>. Pode fechar esta aba.</span>`;
+  });
+}

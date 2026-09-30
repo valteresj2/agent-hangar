@@ -32,6 +32,9 @@ class LlmSpec(_Strict):
                                   description="Rodadas máximas de chamadas de tool por mensagem (padrão 6)")
     vision: bool | None = Field(default=None,
                                 description="false: imagens anexadas não vão ao LLM, só ao workspace (padrão true)")
+    client_tools: bool | None = Field(
+        default=None, description="false: ignora as `tools` enviadas pelo cliente (padrão true: o chat do VS Code, "
+                                  "Cline, Continue… executam arquivos e terminal localmente e o agente as usa)")
     stage: LlmEnvOverride | None = None
     prod: LlmEnvOverride | None = None
 

@@ -10,6 +10,7 @@ from . import (  # noqa: F401  (svc.access.Access, svc.connect.snippet, svc.org.
                       registry,
                       remote_mcp,
                       schedules,
+                      vscode,
 )
 from .catalog import (  # noqa: F401
                       HARNESS_PROTOCOL,
