@@ -74,6 +74,12 @@ schedule requires the right to edit the agent. Team members can see schedules an
 
 Agents reach the MCP at `/internal/mcp-remote/{name}` with their internal token. See [remote-mcp.md](remote-mcp.md).
 
+## User portal
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/me/home` | The portal's Início page: `attention`, `agents`, `counts`, `to_decide`, `my_requests`, `teams` (budget), `my_usage` (30 days), `schedules`, `keys`, `memory`, `catalog_news`. Filtered by the caller's permissions |
+
 ## Agent memory
 
 | Method | Path | Description |

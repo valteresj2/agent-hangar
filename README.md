@@ -2,39 +2,87 @@
 
 # ⌂ Agent Hangar
 
-**The self-hosted control plane for AI agents.**
-Build agents by chatting from Claude, ChatGPT, Codex or OpenCode · test them in stage · ship each one to an
-isolated container · use them anywhere via **OpenAI-compatible, A2A, ACP and MCP**.
+**The self-hosted control plane for your company's AI agents.**
+
+Ask Claude, ChatGPT, Codex or OpenCode for an agent. The hangar builds it, tests it in stage and ships it to its
+own container. Then everyone uses it from a portal, a chat UI or any tool, over **OpenAI-compatible, A2A, ACP and
+MCP**.
 
 [![CI](https://github.com/valteresj2/agent-hangar/actions/workflows/ci.yml/badge.svg)](https://github.com/valteresj2/agent-hangar/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/valteresj2/agent-hangar)](https://github.com/valteresj2/agent-hangar/releases)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
-[Quickstart](#quickstart) · [Why](#why) · [How it works](#how-it-works) · [Templates](#templates) · [Docs](docs/) · [Roadmap](ROADMAP.md) · [Português](README.pt-BR.md)
+[Example](#from-a-request-in-claude-to-a-working-agent) · [Quickstart](#quickstart) · [Features](#features) ·
+[How it works](#how-it-works) · [Docs](#documentation) · [Roadmap](ROADMAP.md) · [Português](README.pt-BR.md)
 
 </div>
 
-<p align="center"><img src="docs/assets/demo.gif" width="860"
-alt="LibreChat powered by the Data Studio agent: attach a spreadsheet, a PDF and a photo; watch the tools run; get
-findings, a dashboard and a deck"></p>
+<p align="center"><img src="docs/assets/portal-tour.gif" width="900"
+alt="User portal tour: Ana asks Claude for a Sales Assistant. Claude builds, tests and ships it through the Hangar
+MCP. Then come her Início page, the agent, a Playground answer, the team memory, the scheduled daily summary,
+connections and the company catalog."></p>
+<p align="center"><sub>The user portal, recorded on a local install · <a href="docs/assets/portal-tour.mp4">MP4 version</a></sub></p>
 
-> **Status: alpha (v0.2).** It works end-to-end and is covered by tests, but APIs may still change. Run it
-> inside your network, not on the open internet, until you have read [docs/security.md](docs/security.md).
+> **Status: alpha (v0.7).** It works end to end and is covered by tests, but APIs may still change. Run it inside
+> your network until you have read [docs/security.md](docs/security.md).
 
 ---
 
-## What it does
+## From a request in Claude to a working agent
 
-You connect Agent Hangar's MCP server to the AI client you already use and say:
+A real run on a local install. Ana is a regular user: she maintains the *Comercial* (sales) team and is **not** an
+admin. She connected Claude to the hangar's MCP server with her personal token.
 
-> *"Create an agent that answers questions about our travel policy, test it and put it in production."*
+**1. She asks.**
 
-Your client calls the hangar's tools and does the rest: it registers the agent (name, objective, expected output),
-writes its instructions, skills, tools and test cases, deploys it to a **stage** container, runs the tests,
-records the result and, only if they pass, promotes it to **production**. From then on the agent is a
-service with four standard endpoints. Plug it into LibreChat, Open WebUI, OpenCode, Claude Desktop, a Slack bot,
-another agent (A2A), or any OpenAI SDK. Each agent is also its **own MCP server**, so its skills and tools keep
-working inside other AI tools.
+> *"Sou a Ana, do time Comercial. Crie no Agent Hangar um agente chamado “Assistente Comercial” para o nosso time
+> acompanhar clientes (…). Use a conexão openrouter-deepseek, dê memória compartilhada com o time, inclua testes,
+> publique em produção e agende para todo dia útil às 8h um resumo dos clientes com os próximos passos."*
+>
+> (It translates to: create a sales assistant that tracks clients, give it team memory, add tests, publish it, and
+> schedule a daily summary with next steps for weekdays at 8am.)
+
+**2. Claude builds it through the hangar's MCP tools.** The hangar's instructions tell the model which steps to
+take and in what order. Ana's permissions apply to every call.
+
+| Step | MCP tool | What happened |
+|---|---|---|
+| Who am I? | `whoami` | Ana Souza, maintainer of *Comercial* |
+| What can I reuse? | `list_catalog` | The `openrouter-deepseek` LLM connection |
+| Register | `register_agent` | `assistente-comercial`, owned by *Comercial* |
+| Design | `design_agent` | Instructions, LLM, `memory: {scope: team}` and 3 LLM-as-judge tests (v2) |
+| Test and ship | `ship_agent` | Stage, then **9/9 checks passed**, then production (43 s) |
+| Schedule | `schedule_agent` | "Daily client summary", weekdays at 08:00 (America/Sao_Paulo) |
+
+<p align="center"><img src="docs/assets/portal/claude.png" width="820" alt="The conversation in Claude: the
+request, the six MCP tool calls and Claude's summary"></p>
+
+**3. The team uses it.** Ana records the day's news: ACME upgraded to Enterprise; Beta Transportes is on a Starter
+trial until 15/10 and its CFO asked for a Pro proposal; Gama Foods renews on 10/11 and complained about support.
+The agent writes each item to the **team memory**, a temporal knowledge graph where changed facts keep their
+history.
+
+| Her Início page in the portal | Team memory, with dated facts |
+|---|---|
+| ![Início](docs/assets/portal/inicio.png) | ![Memory](docs/assets/portal/memoria.png) |
+
+**4. The result.** In a new conversation, *"Which clients need contact this week, and why?"* is answered from
+memory. At 8am on weekdays, the scheduled run sends the summary on its own:
+
+> **1. Beta Transportes: most urgent.** Starter trial ends on **15/10/2026**; the CFO Rafael Lima asked for a Pro
+> proposal. **Next step:** contact **Rafael Lima (CFO) this week, before 15/10**, to present the Pro proposal and
+> convert the trial.
+> **2. Gama Foods.** Pro since March/2026, **renews on 10/11/2026**; complained about support response times.
+> **Next step:** reach out within two weeks to fix the support issue before the renewal (…)
+
+| The Playground answer | The scheduled daily summary (the final result) |
+|---|---|
+| ![Playground](docs/assets/portal/playground.png) | ![Daily summary](docs/assets/portal/resumo-agendado.png) |
+
+The run was recorded with Claude as the MCP client, with Ana's personal token. The agent's own model is
+DeepSeek via OpenRouter. The scripts that reproduce it are in
+[scripts/demo/portal-tour](scripts/demo/portal-tour/).
 
 ## Quickstart
 
@@ -42,102 +90,141 @@ Requirements: Docker (Desktop or Engine) with Compose v2.
 
 ```bash
 git clone https://github.com/valteresj2/agent-hangar && cd agent-hangar
-./scripts/setup.sh              # Windows: powershell -File scripts/setup.ps1  → generates .env with random secrets
+./scripts/setup.sh              # Windows: powershell -File scripts/setup.ps1 (writes .env with random secrets)
 docker compose up -d --build    # hangar + Postgres + agent runtime + mock harness
 ```
 
-Open **http://localhost:8090** and paste the `ADMIN_TOKEN` from `.env`. Go to **Templates → Document Q&A →
-Apply + ship**. It runs in mock mode without any API key, so you can watch the whole flow. Then add a provider
-under **Providers** (LiteLLM, OpenRouter, OpenAI, Anthropic, DeepSeek, Gemini, Ollama…) and point the agent at it.
-
-Connect your AI client to the hangar (use an **admin** API key from *API keys*):
+1. Open **http://localhost:8090** and sign in with the `ADMIN_TOKEN` from `.env`.
+2. Add an LLM under **Provedores de LLM**: LiteLLM, OpenRouter, OpenAI, Anthropic, DeepSeek, Gemini, Ollama…
+3. Invite people. They sign in with Google, Microsoft Entra ID, GitHub, any OAuth2 provider, or a local account,
+   and land in **their portal**.
+4. Connect your AI client to the hangar. Admins use an admin key; everyone else uses their personal token from
+   **Minhas chaves**:
 
 ```bash
 claude mcp add --transport http agent-hangar http://localhost:8090/mcp --header "Authorization: Bearer <key>"
 ```
 
-Then just ask for an agent. More clients (Claude Desktop, Codex, OpenCode, ChatGPT) are covered in
-[docs/clients.md](docs/clients.md).
+Then just ask for an agent. Other clients (Claude Desktop, Codex, OpenCode, ChatGPT, Cursor, VS Code) are covered
+in [docs/clients.md](docs/clients.md). To try the flow without any key, apply **Templates → Document Q&A** in mock
+mode.
 
-> Coding harnesses (Claude Code, Codex, DeepSeek Harness, Hermes) are big images, so they are opt-in:
-> `docker compose --profile harness build` (and `--profile hermes`).
+### Two web apps
 
-## Why
+| | Who | What |
+|---|---|---|
+| **`/app/`**, the user portal | Everyone who is not a platform admin | **Início** (what needs attention, your agents, requests, budget, usage, schedules, connections, memory, what's new), your agents with Playground, Connect, Schedules and Memory, the company catalog, approvals, keys and teams |
+| **`/ui/`**, the admin console | Platform admins only | Everything: LLM providers, the MCP catalog, deployments and tests across the company, audit, users, SSO/SCIM |
 
-- **Agents are built where people already work.** No new builder UI to learn: the hangar is an MCP server, so
-  Claude, ChatGPT, Codex or OpenCode *are* the builder. The hangar's instructions tell the model how to choose
-  between a chat agent, a coding harness or a multi-agent team based on the objective.
-- **Nothing reaches production untested.** Every change creates an immutable version. Promotion to prod is
-  blocked unless that exact version passed its stage tests: protocol smoke tests, `expect_contains`/`regex`, and
-  **LLM-as-judge** rubrics. Rollback is one click (or `hangar rollback`).
-- **One container per agent, one container per job.** Chat agents run in hardened containers (read-only FS,
-  all capabilities dropped, memory/CPU/PID limits). Coding harnesses run in a **fresh ephemeral container per
-  call** that is destroyed afterwards, with the result and the `git diff` returned.
-- **Speak every protocol.** Each agent answers on OpenAI-compatible `/v1/chat/completions`, **A2A**
-  (`message/send` + Agent Card), **ACP** and **MCP**, all behind one authenticated gateway with per-channel metrics.
-- **Bring your own LLM gateway.** The hangar never hosts a model. Agents call your LiteLLM / OpenRouter /
-  provider through *connections* (URL + model + virtual key, encrypted at rest), with per-environment overrides and
-  cost tracking in US$.
-- **Governed like software.** Scoped API keys (admin vs. invoke-only-these-agents), per-agent internal tokens,
-  audit log, GitOps (`hangar apply -f agents.yaml`), JSON Schema for the spec.
+Everyone signs in on the same page and lands in the right app. Every API call still checks permissions. See
+[docs/access.md](docs/access.md#where-each-person-lands).
+
+## Features
+
+**Build where people already work.** The hangar is an MCP server, so Claude, ChatGPT, Codex or OpenCode *are* the
+builder. They choose between a chat agent, a coding harness or a multi-agent team from the objective. You can also
+start from a template or the UI, and edit a live agent later: `edit_agent` makes a new version, tests it in stage
+and publishes it only when you say so.
+
+**Nothing reaches production untested.**
+- Every change creates an immutable version.
+- Promotion is blocked unless that exact version passed its stage tests: protocol smoke tests,
+  `expect_contains`/`regex` and **LLM-as-judge** rubrics.
+- Teams can require a second maintainer's approval (four eyes).
+- Rollback is one call.
+
+**One container per agent, one per job.**
+- Chat agents run in hardened containers: read-only file system, all capabilities dropped, memory/CPU/PID limits.
+- Coding harnesses (Claude Code, Codex, Hermes, DeepSeek Harness) run in a **fresh container per call**, which
+  returns the result and the `git diff`.
+
+**Every protocol.** Each agent answers on `/v1/chat/completions` (OpenAI-compatible, with streaming), **A2A**
+(Agent Card + `message/send`), **ACP** and **MCP**. All of it sits behind one authenticated gateway with
+per-channel metrics. The **Connect** tab gives a revocable key per tool and the config to paste.
+
+**Tools for agents.**
+- **230+ prebuilt MCP servers** from Docker's official catalog, each in an isolated container
+  ([docs/mcp-catalog.md](docs/mcp-catalog.md)).
+- **Remote MCPs with OAuth,** such as Activepieces with 280+ business apps, Notion or Linear. They are connected
+  once, and the tokens are kept and refreshed by the hangar ([docs/remote-mcp.md](docs/remote-mcp.md)).
+- **Data Studio:** Python and DuckDB analysis that produces dashboards and decks.
+
+**Long-term memory.** Add `memory: {scope: agent | team | org}` and the agent remembers customers, decisions and
+preferences across conversations ([docs/memory.md](docs/memory.md)).
+- The memory is a **temporal knowledge graph** (Graphiti on Neo4j Community or FalkorDB). A fact that changes is
+  kept as history, not overwritten.
+- The hangar decides which memory each agent reads and writes, and stage never pollutes production.
+- Embeddings are computed locally.
+
+**Schedules.** Agents run on their own, on a cron or at a date and time. Results go to history and, optionally, to
+a Slack or Teams webhook.
+
+**Teams and governance.**
+- Sign-in with Google, Microsoft Entra ID, GitHub or OAuth2, plus local accounts, and SCIM provisioning.
+- Maintainer, developer and consumer roles; a company catalog with access requests; monthly budgets per team, with
+  an optional hard stop.
+- Scoped API keys, an audit log, GitOps (`hangar apply -f agents.yaml`) and a JSON Schema for the spec.
+
+**Bring your own LLM gateway.** The hangar never hosts a model. Agents call your LiteLLM, OpenRouter or provider
+through *connections*: URL, model and key, encrypted at rest. Connections can differ per environment and track cost
+in US$.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  subgraph Clients
-    C1[Claude / ChatGPT / Codex / OpenCode]:::c
-    C2[LibreChat · Open WebUI · Slack bot · SDKs]:::c
+  subgraph People
+    B[Claude · ChatGPT · Codex · OpenCode]:::c
+    U[User portal /app · admin console /ui]:::c
+    T[LibreChat · Open WebUI · Slack · SDKs]:::c
   end
-  C1 -- "MCP /mcp (admin key)" --> H
-  C2 -- "/gw/&lt;slug&gt; OpenAI · A2A · ACP · MCP (invoke key)" --> H
+  B -- "MCP /mcp (personal or admin key)" --> H
+  U -- "session (SSO or local)" --> H
+  T -- "/gw/&lt;slug&gt; OpenAI · A2A · ACP · MCP" --> H
   subgraph Hangar[Agent Hangar]
-    H[API + gateway + registry<br/>versions · tests · audit · usage/cost]
+    H[API · gateway · registry<br/>versions · tests · approvals · audit · usage/cost · schedules]
     DB[(Postgres)]
-    P[docker-socket-proxy]
+    M[memory service<br/>Graphiti]
+    G[(Neo4j / FalkorDB)]
     H --- DB
-    H --> P
+    H -- "groups chosen by the hangar" --> M --- G
   end
+  H --> P[docker-socket-proxy]
   P --> A1[agent container<br/>stage / prod]
-  P --> A2[agent container]
   P --> J[ephemeral job container<br/>claude-code · codex · hermes · dsh]
-  A1 -- "A2A via /internal/gw<br/>(per-agent token)" --> H
-  A1 & A2 & J --> L[(Your LLM gateway / provider)]
+  A1 -- "memory, sub-agents, OAuth MCPs<br/>via /internal (per-agent token)" --> H
+  A1 & J --> L[(Your LLM gateway / provider)]
   classDef c fill:#eef2ff,stroke:#4f46e5
 ```
 
 | Concept | In one line |
 |---|---|
-| **Agent** | Name + objective + expected output + a versioned **spec** (instructions, skills, MCPs, tools, sub-agents, tests) |
+| **Agent** | Name + objective + expected output + a versioned **spec** (instructions, skills, MCPs, tools, sub-agents, memory, tests) |
 | **Chat agent** | An LLM loop with tools, always on, in its own container |
-| **Harness agent** | Delegates each task to Claude Code / Codex / Hermes / DeepSeek Harness in a throwaway container |
-| **Multi-agent** | A chat agent with `sub_agents`: it delegates over A2A through the hangar (which checks it is allowed) |
-| **Connection** | External LLM endpoint + default model + key (encrypted) + optional price, protocol `openai`/`anthropic`/`deepseek` |
-| **Stage → prod** | `ship` = deploy stage → run tests → record → promote only if green |
-
-Details: [concepts](docs/concepts.md) · [spec reference](docs/spec.md) · [harnesses](docs/harnesses.md) ·
-[API](docs/api.md) · [CLI](docs/cli.md) · [security](docs/security.md).
+| **Harness agent** | Hands each task to Claude Code / Codex / Hermes / DeepSeek Harness in a throwaway container |
+| **Multi-agent** | A chat agent with `sub_agents`: it delegates over A2A through the hangar, which checks it is allowed |
+| **Connection** | An external LLM endpoint + default model + key (encrypted) + optional price |
+| **Stage → prod** | `ship` = deploy to stage → run tests → record → promote only if green (and approved, if the team requires it) |
 
 ## Templates
 
 | Template | Type | What it shows |
 |---|---|---|
-| `doc-qa` | chat | Grounded Q&A over a document with citations and refusal to invent |
+| `doc-qa` | chat | Grounded Q&A over a document, with citations and refusal to invent |
 | `platform-dashboard` | chat + builtin tool | An ops agent that reads the hangar's own live metrics |
-| `ticket-triage` | chat | Structured JSON classification + first reply, regex + judge tests |
+| `ticket-triage` | chat | Structured JSON classification + first reply, with regex and judge tests |
 | `sql-analyst` | chat (+ your DB MCP) | Read-only SQL generation with safety rules |
-| `code-fixer` | harness (Codex) | Fix code in an ephemeral container, returns a diff |
-| `data-studio` | chat + Data Studio MCP | Python/DuckDB analyst: reads spreadsheets, PDFs and images, edits data, builds dashboards and PPTX/HTML decks. Powers LibreChat out of the box |
+| `code-fixer` | harness (Codex) | Fixes code in an ephemeral container and returns a diff |
+| `data-studio` | chat + Data Studio MCP | Python/DuckDB analyst: spreadsheets, PDFs and images in; dashboards and PPTX/HTML decks out |
 | `research-team` | multi-agent | Orchestrator + researcher + critic + writer over A2A |
 
-`hangar templates apply doc-qa --connection my-litellm` or **Templates** in the UI. Templates are plain YAML in
-[`templates/`](templates/), and they are the easiest way to contribute.
+Apply one with `hangar templates apply doc-qa --connection my-litellm`, or from **Templates** in the UI. Templates
+are plain YAML in [`templates/`](templates/), and they are the easiest way to contribute.
 
 ## Use a shipped agent
 
 ```bash
-# create a key that can only call this agent
-hangar keys create librechat --scope invoke --agent doc-qa
+hangar keys create librechat --scope invoke --agent doc-qa     # a key that can only call this agent
 
 curl http://localhost:8090/gw/doc-qa/v1/chat/completions \
   -H "Authorization: Bearer ah_..." -H "Content-Type: application/json" \
@@ -151,79 +238,49 @@ curl http://localhost:8090/gw/doc-qa/v1/chat/completions \
 | ACP | `POST /gw/<slug>/acp/runs` |
 | MCP | `POST /gw/<slug>/mcp` (one tool named after the agent) |
 
-**Teams and SSO:**
-- People sign in with Google, Microsoft Entra ID, GitHub or any OAuth2 provider.
-- Every agent belongs to a team with maintainer, developer and consumer roles.
-- Production needs a second maintainer's approval.
-- Other teams find agents in the company catalog and request access.
-- SCIM keeps users and groups in sync with your directory.
+Use `/gw-stage/<slug>/…` for the stage version. Send `X-Channel: slack` (or any name) for per-channel metrics.
 
-See [docs/access.md](docs/access.md).
+### Data Studio + LibreChat
 
-**230+ prebuilt MCP servers:** turn on servers from Docker's official MCP catalog (search, web fetch,
-Wikipedia, GitHub, Postgres, Notion…). Each runs in an isolated container, and agents use them as
-`docker:<name>`. See [docs/mcp-catalog.md](docs/mcp-catalog.md).
+An agent as the **engine behind a chat UI**. [LibreChat](https://librechat.ai) talks to the `data-studio` agent
+through the gateway, and each conversation gets its own workspace and Python kernel in the
+[Data Studio MCP server](mcp-servers/data-studio/). See [integrations/librechat](integrations/librechat/).
 
-**Remote MCPs with OAuth and Activepieces:** connect OAuth-protected MCP servers (Activepieces with 280+ business
-apps, Notion, Linear…) once. Agents use them through the central, which keeps and refreshes the tokens. See
-[docs/remote-mcp.md](docs/remote-mcp.md).
-
-**Long-term memory:** give an agent `memory: {scope: agent | team | org}`, and it remembers customers, decisions and
-preferences across conversations. The memory is a temporal knowledge graph (Graphiti on Neo4j Community or
-FalkorDB): changed facts are kept as history, not overwritten. The central decides which memory each agent
-reads and writes, and stage never pollutes production. See [docs/memory.md](docs/memory.md).
-
-**Plug and play:** the agent's **Connect** tab (or `hangar connect <slug> <tool>`) gives a per-tool key and the
-config to paste. Every tool can use the agent as an **MCP tool** (Claude Code, Claude Desktop, Codex, OpenCode,
-Cursor, VS Code, LibreChat, Open WebUI); chat UIs can also use it as a **model** (LibreChat, Open WebUI, OpenCode,
-OpenAI SDKs). Each connection is optional and can be revoked alone. See [docs/clients.md](docs/clients.md).
-
-Use `/gw-stage/<slug>/…` to talk to the stage version. Send `X-Channel: slack` (or any name) to get per-channel metrics.
-
-## Data Studio + LibreChat
-
-A complete example of an agent as the **engine behind a chat UI**. [LibreChat](https://librechat.ai) talks to the
-`data-studio` agent through the OpenAI-compatible gateway. Each conversation gets its own workspace and Python kernel
-in the [Data Studio MCP server](mcp-servers/data-studio/):
-- Attached spreadsheets, PDFs and images are saved there automatically.
-- The agent answers with verified numbers and links to generated **dashboards (HTML)**, **presentations (PPTX with
-  native charts + HTML)**, **edited spreadsheets** and **reports (DOCX)**.
-
-```bash
-docker compose --profile data-studio up -d --build
-hangar templates apply data-studio --connection <conn> && hangar ship data-studio
-cd integrations/librechat && ./setup.sh && docker compose up -d     # http://localhost:3090
-```
-
-See [integrations/librechat](integrations/librechat/) for how the pieces connect and why this is the recommended
-integration.
-
-| Answer in LibreChat (tools stream live into a collapsible "Thoughts" block) | Generated dashboard | Generated deck (PPTX + HTML) |
+| Answer in LibreChat | Generated dashboard | Generated deck (PPTX + HTML) |
 |---|---|---|
 | ![answer](docs/assets/librechat-answer.png) | ![dashboard](docs/assets/dashboard.png) | ![slides](docs/assets/slides.png) |
-
-`python scripts/demo/record_demo.py` regenerates the GIF and these screenshots (Playwright).
 
 ## CLI and GitOps
 
 ```bash
 pip install ./cli
-hangar login http://localhost:8090 --token <admin key>
+hangar login http://localhost:8090 --token <key>
 hangar apply -f examples/agents.yaml --ship
 hangar jobs run code-fixer "Add input validation to parse_date()" --follow
 ```
 
-See [docs/cli.md](docs/cli.md).
+## Documentation
+
+| | |
+|---|---|
+| [Concepts](docs/concepts.md) · [Spec reference](docs/spec.md) · [Templates](docs/templates.md) | What an agent is and how to describe one |
+| [Clients](docs/clients.md) | Connecting Claude, ChatGPT, Codex, OpenCode, Cursor, VS Code, LibreChat, Open WebUI |
+| [Access, teams, SSO and the portal](docs/access.md) | Roles, approvals, budgets, OAuth2/SCIM, where each person lands |
+| [Memory](docs/memory.md) · [MCP catalog](docs/mcp-catalog.md) · [Remote MCPs + Activepieces](docs/remote-mcp.md) | What agents can know and use |
+| [Harnesses](docs/harnesses.md) | Claude Code, Codex, Hermes and DeepSeek Harness as agents |
+| [API](docs/api.md) · [CLI](docs/cli.md) · [Security](docs/security.md) | Reference and hardening |
 
 ## Project status and roadmap
 
-v0.1 is the first public cut. Next up: Kubernetes/Helm, OpenTelemetry + Langfuse traces, Slack/Teams adapters,
-OIDC/RBAC, egress allowlists for jobs, human approval, budgets. See [ROADMAP.md](ROADMAP.md) and the issues.
+v0.7 adds the user portal. Earlier releases added long-term memory (v0.6), the MCP catalog with OAuth MCPs and
+Activepieces (v0.5), schedules and edit-after-ship (v0.4), and teams with SSO (v0.3). Next up: Kubernetes/Helm,
+OpenTelemetry + Langfuse traces, Slack/Teams adapters and egress allowlists for jobs. See
+[ROADMAP.md](ROADMAP.md), the [CHANGELOG](CHANGELOG.md) and the issues.
 
 ## Contributing
 
 Issues and PRs are welcome. Templates, harness adapters and docs are great first contributions. Read
-[CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
+[CONTRIBUTING.md](CONTRIBUTING.md). Report security issues through [SECURITY.md](SECURITY.md).
 
 ## License
 

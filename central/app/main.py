@@ -6,7 +6,7 @@ import os
 import re
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -51,7 +51,7 @@ async def lifespan(app):
 app = FastAPI(title=config.APP_NAME, version=config.VERSION, lifespan=lifespan)
 
 _GW = re.compile(r"^/gw(?:-stage)?/([^/]+)(?:/|$)")
-OPEN_PREFIXES = ("/ui", "/api/health", "/internal", "/api/auth/", "/login", "/favicon.ico")
+OPEN_PREFIXES = ("/ui", "/app", "/api/health", "/internal", "/api/auth/", "/login", "/favicon.ico")
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
 
@@ -127,13 +127,41 @@ STATIC = os.path.join(os.path.dirname(__file__), "static")
 UI_VERSION = hashlib.sha256(b"".join(open(os.path.join(STATIC, f), "rb").read()
                                      for f in sorted(os.listdir(STATIC)))).hexdigest()[:12]
 _INDEX = open(os.path.join(STATIC, "index.html"), encoding="utf-8").read().replace("__V__", UI_VERSION)
+# portal do usuário (/app): mesma base de código da UI, com a página Início e só o que o dia a dia de quem não
+# é admin precisa. O console /ui é só de admins.
+_PORTAL = open(os.path.join(STATIC, "portal.html"), encoding="utf-8").read().replace("__V__", UI_VERSION)
+
+
+def _ui_user(request: Request):
+    """Quem abriu a página (pelo cookie de sessão), ou None. Só decide o redirecionamento: os dados continuam
+    protegidos pela API, que confere a permissão de cada chamada."""
+    token = request.cookies.get(auth.SESSION_COOKIE)
+    if not token:
+        return None
+    with db.SessionLocal() as s:
+        return auth.authenticate(s, token)
+
+
+def _home(request: Request) -> str:
+    p = _ui_user(request)
+    return f"/app/?v={UI_VERSION}" if p is not None and not p.is_admin else f"/ui/?v={UI_VERSION}"
 
 
 @app.get("/")
 @app.get("/ui")  # sem a barra final: sem esta rota, o MCP montado em "/" respondia 404
 @app.get("/login")
-def root():
-    return RedirectResponse(f"/ui/?v={UI_VERSION}")  # URL nova a cada versão: fura até um index.html em cache
+def root(request: Request):
+    return RedirectResponse(_home(request))  # URL nova a cada versão: fura até um index.html em cache
+
+
+@app.get("/app")
+def portal_root():
+    return RedirectResponse(f"/app/?v={UI_VERSION}")
+
+
+@app.get("/app/")
+def portal_index():
+    return HTMLResponse(_PORTAL, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/favicon.ico")
@@ -145,7 +173,12 @@ def favicon():
 
 @app.get("/ui/")
 @app.get("/ui/index.html")
-def ui_index():
+def ui_index(request: Request):
+    """Console de administração: só admins. Logado sem ser admin -> portal do usuário (o fragmento #/… da URL
+    é mantido pelo navegador no redirecionamento). Sem sessão, mostra o login (que leva cada um ao seu lugar)."""
+    p = _ui_user(request)
+    if p is not None and not p.is_admin:
+        return RedirectResponse(f"/app/?v={UI_VERSION}", 303)
     return HTMLResponse(_INDEX, headers={"Cache-Control": "no-cache"})
 
 

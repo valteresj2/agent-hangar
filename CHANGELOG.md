@@ -5,6 +5,35 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-09-30
+
+### Upgrading from 0.6.x
+- **No database migrations.** Rebuild or pull `central` (and `mcp-memory`, if you use memory).
+- **Non-admins now land in `/app/`.** Bookmarks to `/ui/` still work: the page redirects them.
+
+### Added
+- **User portal (`/app/`) with an Início page** ([docs/access.md](docs/access.md#where-each-person-lands)). One
+  screen for everyone who is not an admin:
+  - what needs attention (failed tests, a production agent down, failed schedules, recent errors, budgets at
+    80%+, requests to decide);
+  - your agents, your requests, team budgets and your own usage, upcoming schedules;
+  - your connections (keys, with revoke), agent memory, and what's new in the catalog.
+  - Backed by `GET /api/me/home`.
+
+### Changed
+- **The `/ui/` console is admin-only.** Signed-in non-admins are redirected to the portal.
+- The UI's stale-cache reload now runs at most once, so a script error can no longer cause a reload loop.
+- **Agent replies render as markdown** (bold, lists, headings) in the Playground and in schedule history. The text
+  is escaped first, so no HTML from the model reaches the page.
+- **README rewritten.** It has a portal tour (GIF and MP4) and a real end-to-end example: a user asks Claude for an
+  agent, it is built, tested, shipped and scheduled through the MCP, and the team uses it.
+
+### Fixed
+- **Memory: facts with a future end date count as current.** "On trial until 15/10" still holds today. Graphiti
+  marks such facts as expired at ingestion, and they were shown as replaced.
+- **Memory: `recall` returns today's date.** The agent can then tell whether a validity window has passed; without
+  it, the model guessed.
+
 ## [0.6.0] — 2026-09-30
 
 ### Upgrading from 0.5.x

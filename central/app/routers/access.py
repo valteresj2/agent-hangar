@@ -124,6 +124,13 @@ def me(request: Request, db=Depends(db_dep)):
     return org.me(db, acc(request, db))
 
 
+@router.get("/me/home")
+def me_home(request: Request, db=Depends(db_dep)):
+    """Página Início do portal do usuário (/app): atenção, agentes, pedidos, uso, agendamentos, conexões."""
+    from .. import services as svc
+    return guard(lambda: svc.home.home(db, acc(request, db)))
+
+
 # ------------------------------------------------------------------ empresa
 class OrgBody(BaseModel):
     name: str | None = None

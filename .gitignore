@@ -36,3 +36,11 @@ examples/data-studio/.invoke_key
 
 # Activepieces local: conta de admin criada no teste (não versionar)
 integrations/activepieces/.admin-credentials
+
+# demo do portal: tokens e saídas geradas
+scripts/demo/portal-tour/ana_token.txt
+scripts/demo/portal-tour/ana_session.txt
+scripts/demo/portal-tour/transcript.jsonl
+scripts/demo/portal-tour/chats.jsonl
+scripts/demo/portal-tour/shots/
+scripts/demo/portal-tour/out/

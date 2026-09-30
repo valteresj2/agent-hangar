@@ -73,6 +73,40 @@ agents.
 - **Over 100%:** it turns red, and an audit event is recorded (`budget.exceeded`).
 - **Block calls when exceeded:** with this on, the gateway answers `429` until the next month.
 
+## Where each person lands
+
+| Address | For | What it has |
+|---|---|---|
+| `/app/`, the user portal | Everyone who is not a platform admin | The **Início** page and the day-to-day menus |
+| `/ui/`, the admin console | Platform admins only | Everything, including LLM providers, SSO/SCIM, deployments and tests across the company |
+
+The **Início** page is one screen with, in this order:
+1. **Needs attention:** failed tests, a production agent whose container is down, failed schedules, errors in
+   the last 24 h, team budgets at 80% or more, requests waiting for your decision, and your rejected requests.
+2. **Your agents,** with shortcuts to test, connect and edit.
+3. **Requests:** what waits for you and what you asked for.
+4. **Budget and usage:** each team's month against its budget, and your own last 30 days.
+5. **Upcoming schedules.**
+6. **Your connections:** active keys, last use, and a flag for keys unused in 60+ days. You can revoke them there.
+7. **Agent memory:** which of your agents remember, with a link to see or delete what was kept.
+8. **What's new** in the company catalog.
+
+**Other menus in the portal:**
+- *Meus agentes*, *Catálogo da empresa*, *Pedidos e aprovações*, *Conectar ferramentas*, *Minhas chaves*,
+  *Uso e custo* and *Meus times*.
+- Developers and maintainers also get *Novo agente*, *Templates* and *Skills e MCPs*.
+- Auditors also get *Auditoria* and *Usuários*.
+
+**How `/ui/` is kept admin-only:**
+- A signed-in non-admin who opens `/ui/` is redirected to `/app/`, by the server and again by the page.
+- The login page is shared, and each person ends up in their own place after signing in.
+- The redirect is a convenience, not the protection: every API call still checks permissions.
+
+Admins can open the portal from **Portal do usuário** in the console. The portal has no link back to the console,
+so non-admins never see it; admins return at `/ui/`.
+
+The data comes from `GET /api/me/home`, already filtered by the caller's permissions.
+
 ## Signing in
 
 The UI opens on a login page. The buttons are the configured providers, plus **Sign in with token**:

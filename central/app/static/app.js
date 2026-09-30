@@ -1,7 +1,12 @@
 /* Página antiga em cache carregando este arquivo novo (sem icons.js/org.js): recarrega na versão atual. */
-if (typeof icon !== 'function' || typeof boot !== 'function') {
-  location.replace('/ui/?v=' + Date.now() + location.hash);
-  throw new Error('UI desatualizada no cache do navegador — recarregando');
+const USER_MODE = window.HANGAR_MODE === 'user';  // portal do usuário (/app) x console de admin (/ui)
+if (typeof icon !== 'function' || typeof boot !== 'function' || (USER_MODE && typeof homePage !== 'function')) {
+  // recarrega uma vez só: se o problema não for cache (ex.: erro num script), não entra em loop
+  let again = false;
+  try { again = Date.now() - Number(sessionStorage.getItem('hangar_reload') || 0) < 15000; sessionStorage.setItem('hangar_reload', String(Date.now())); } catch (e) { again = true; }
+  if (!again) location.replace((USER_MODE ? '/app/' : '/ui/') + '?v=' + Date.now() + location.hash);
+  else document.getElementById('main').textContent = 'Não foi possível carregar a interface. Recarregue a página (Ctrl+F5); se persistir, avise o admin.';
+  throw new Error('UI desatualizada no cache do navegador');
 }
 const $ = (s, r = document) => r.querySelector(s);
 const main = $('#main');
@@ -390,6 +395,26 @@ function usage(t, a) {
   ${u.recent.map(r => `<tr><td>${ago(r.at)}</td><td>${r.env}</td><td>${esc(r.channel)}</td><td>${r.protocol}</td><td>${fmt(r.tokens)}</td><td>${usd(r.cost_usd)}</td><td>${r.latency_ms}ms</td><td>${r.ok ? `${icon('check', 'ok-ic')}` : `${icon('x', 'bad-ic')}`}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">Sem uso registrado</td></tr>'}</table></div>`;
 }
 
+/* Markdown mínimo e seguro para respostas de agente: escapa tudo antes e só então aplica negrito, itálico,
+   código, títulos, listas e separadores. Nada de HTML vindo do modelo chega ao DOM. */
+function mdLite(text) {
+  const inline = s => s.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>');
+  const out = []; let list = null;
+  const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  for (const raw of esc(text).split('\n')) {
+    const line = raw.trimEnd();
+    let m;
+    if ((m = line.match(/^\s*[-*•]\s+(.*)/))) { if (list !== 'ul') { close(); out.push('<ul>'); list = 'ul'; } out.push(`<li>${inline(m[1])}</li>`); continue; }
+    if ((m = line.match(/^\s*\d+[.)]\s+(.*)/))) { if (list !== 'ol') { close(); out.push('<ol>'); list = 'ol'; } out.push(`<li>${inline(m[1])}</li>`); continue; }
+    close();
+    if ((m = line.match(/^#{1,4}\s+(.*)/))) out.push(`<div class="md-h">${inline(m[1])}</div>`);
+    else if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) out.push('<hr>');
+    else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+  }
+  close();
+  return out.join('');
+}
+
 function playground(t, a) {
   if (a.harness) return playgroundHarness(t, a);
   t.innerHTML = `<div class="card"><div class="row between"><h2>Playground</h2><select id="penv" style="width:auto"><option>prod</option>${can(a, 'edit') ? '<option>stage</option>' : ''}</select></div>
@@ -405,7 +430,7 @@ function playground(t, a) {
       const r = await api(`/agents/${a.slug}/chat`, { method: 'POST', body: { message: m, env: $('#penv').value } });
       const u = r.usage || {};
       const calls = (r.trace || []).length;
-      w.textContent = r.reply;
+      w.innerHTML = mdLite(r.reply); w.classList.add('md');
       w.insertAdjacentHTML('beforeend', `<div class="msg-meta">${r.latency_ms} ms, ${fmt(u.total_tokens || (u.prompt_tokens || 0) + (u.completion_tokens || 0))} tokens, ${usd(u.cost_usd || 0)}${calls ? `, ${calls} ${calls > 1 ? 'ferramentas usadas' : 'ferramenta usada'}` : ''}</div>`);
     } catch (e) { w.textContent = 'Erro: ' + e.message; w.classList.add('err'); }
     finally { busy = false; $('#psend').disabled = false; $('#pmsg').focus(); }
@@ -701,14 +726,16 @@ async function auditPage() {
 async function route() {
   const [, r = '', a, b] = location.hash.split('?')[0].split('/');  // #/catalog?remote_ok=x -> catalog
   if (r === 'login' || !ME) return;
-  document.querySelectorAll('nav a').forEach(x => x.classList.toggle('on', x.dataset.r === r));
+  const navKey = r === 'agents' && ['catalog', 'new'].includes(a) ? `agents/${a}` : r;
+  const links = [...document.querySelectorAll('nav a')], key = links.some(x => x.dataset.r === navKey) ? navKey : r;
+  links.forEach(x => x.classList.toggle('on', x.dataset.r === key));
   try {
     if (r === 'agents' && a === 'new') await newAgentPage();
     else if (r === 'agents' && a === 'catalog') await agentsPage('catalog');
     else if (r === 'agents' && a) await agentDetail(a, b);
     else if (r === 'teams' && a === 'new') await teamsPage(true);
     else if (r === 'teams' && a) await teamDetail(a);
-    else await ({ '': dashboard, agents: agentsPage, templates: templatesPage, keys: keysPage, deployments: deploymentsPage, tests: testsPage, usage: usagePage, catalog: catalogPage, providers: providersPage, connect: connectPage, audit: auditPage,
+    else await ({ '': USER_MODE ? homePage : dashboard, agents: agentsPage, templates: templatesPage, keys: keysPage, deployments: deploymentsPage, tests: testsPage, usage: usagePage, catalog: catalogPage, providers: providersPage, connect: connectPage, audit: auditPage,
       approvals: approvalsPage, teams: teamsPage, users: usersPage, sso: ssoPage }[r] || dashboard)();
   } catch (e) { if (!(e instanceof AuthError)) main.innerHTML = `<div class="card"><h2>Erro</h2>${esc(e.message)}</div>`; }
 }

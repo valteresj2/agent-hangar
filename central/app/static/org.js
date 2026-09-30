@@ -14,6 +14,8 @@ async function boot() {
   if (location.hash.startsWith('#/login')) return showLogin();
   try { ME = await api('/me'); }
   catch (e) { if (!(e instanceof AuthError)) main.innerHTML = `<div class="card"><h2>Erro</h2>${esc(e.message)}</div>`; return; }
+  // o console /ui é só de admins: os demais usam o portal /app (o servidor também redireciona)
+  if (window.HANGAR_MODE !== 'user' && !ME.is_admin) { location.replace('/app/?v=' + Date.now() + location.hash); return; }
   document.body.classList.remove('login-mode');
   $('#login').hidden = true;
   renderSide();
@@ -389,7 +391,7 @@ async function agentSchedules(t, a) {
     const runs = await api(`/schedules/${b.dataset.id}/runs?limit=10`);
     row.firstElementChild.innerHTML = runs.length ? runs.map(r => `<div class="card mt"><div class="row between"><div>${schPill(r.status)} <span class="mute small">${ago(r.started_at)} atrás${r.trigger !== 'schedule' ? ` (${r.trigger === 'manual' ? 'manual' : 'atrasado'})` : ''}${r.version ? `, v${r.version}` : ''}</span></div>
       <span class="mute small">${fmt(r.tokens)} tokens, ${usd(r.cost_usd)}${r.notify_status ? `, webhook ${esc(r.notify_status)}` : ''}</span></div>
-      ${r.output ? `<pre>${esc(r.output)}</pre>` : ''}${r.error ? `<div class="bad-text small mt">${esc(r.error)}</div>` : ''}</div>`).join('') : '<div class="mute small">Nenhuma execução ainda.</div>';
+      ${r.output ? `<div class="msg a md run-out">${mdLite(r.output)}</div>` : ''}${r.error ? `<div class="bad-text small mt">${esc(r.error)}</div>` : ''}</div>`).join('') : '<div class="mute small">Nenhuma execução ainda.</div>';
     row.hidden = false;
   });
   t.querySelectorAll('.sc-run').forEach(b => b.onclick = e => act(e.target, async () => {
@@ -510,7 +512,7 @@ async function agentMemory(t, a, env = 'prod', q = '') {
     <div class="row mt"><input id="mem-q" placeholder="Buscar na memória (ex.: plano da ACME)" value="${esc(q)}" style="flex:1"><button id="mem-go" class="ghost">Buscar</button></div>
     ${facts.length ? `<div class="scroll mt"><table><tr><th>Fato</th><th>Vale desde</th><th>Situação</th></tr>
       ${facts.map(f => `<tr><td>${esc(f.fact)}</td><td class="small">${memDate(f.valid_at)}</td>
-        <td>${f.current ? '<span class="pill ok">atual</span>' : `<span class="pill">substituído</span><div class="mute small">em ${memDate(f.invalid_at)}</div>`}</td></tr>`).join('')}</table></div>`
+        <td>${f.current ? `<span class="pill ok">atual</span>${f.invalid_at ? `<div class="mute small">até ${memDate(f.invalid_at)}</div>` : ''}` : `<span class="pill">substituído</span><div class="mute small">em ${memDate(f.invalid_at)}</div>`}</td></tr>`).join('')}</table></div>`
       : `<div class="mute mt">${q ? 'Nada encontrado.' : 'Nenhum fato ainda. O agente grava com memory__remember durante as conversas.'}</div>`}</div>`;
   $('#mem-env').value = env;
   $('#mem-env').onchange = () => agentMemory(t, a, $('#mem-env').value, $('#mem-q').value.trim());

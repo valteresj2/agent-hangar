@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  body{margin:0;background:#F5F4EF;font:15px/1.55 "IBM Plex Sans",system-ui,sans-serif;color:#1F1E1B}
+  .top{height:52px;display:flex;align-items:center;gap:10px;padding:0 28px;border-bottom:1px solid #E3E1D8;background:#FAF9F5;font-weight:600}
+  .top small{font-weight:400;color:#6B6860}
+  .mcp{margin-left:auto;font:500 12px "IBM Plex Mono",monospace;color:#2B5BA8;background:#E3ECF8;padding:3px 9px;border-radius:99px}
+  .wrap{max-width:900px;margin:0 auto;padding:26px 24px}
+  .user{background:#EAE7DD;border-radius:14px;padding:12px 16px;margin-left:120px;margin-bottom:18px}
+  .who{font:600 12px "IBM Plex Sans";color:#6B6860;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
+  .tool{display:flex;align-items:center;gap:10px;font:13px "IBM Plex Mono",monospace;background:#fff;border:1px solid #E3E1D8;border-radius:10px;padding:7px 12px;margin:6px 0}
+  .tool b{color:#1F1E1B}.tool span{color:#6B6860;font-family:"IBM Plex Sans"}
+  .ok{margin-left:auto;color:#1E7F46;font-weight:600;font-family:"IBM Plex Sans"}
+  .reply{margin-top:16px;background:#fff;border:1px solid #E3E1D8;border-radius:14px;padding:14px 18px}
+  .reply ul{margin:6px 0;padding-left:20px}.reply li{margin:3px 0}
+  code{font:13px "IBM Plex Mono",monospace;background:#F0EEE6;padding:1px 5px;border-radius:4px}
+</style></head><body>
+<div class="top">Claude <small>· Ana Souza (time Comercial)</small><span class="mcp">MCP · agent-hangar</span></div>
+<div class="wrap">
+  <div class="user"><div class="who">Ana</div>Sou a Ana, do time Comercial. Crie no Agent Hangar um agente chamado “Assistente Comercial” para o nosso time
+    acompanhar clientes: ele responde sobre o histórico de cada cliente, registra fatos novos (plano, contatos, decisões,
+    próximos passos) e sugere o próximo contato. Use a conexão <code>openrouter-deepseek</code>, dê memória compartilhada com o
+    time, inclua testes, publique em produção e agende para todo dia útil às 8h um resumo dos clientes com os próximos passos.</div>
+  <div class="who">Claude</div>
+  <div class="tool"><b>whoami</b><span>Ana Souza · mantenedora do time Comercial</span><span class="ok">✓</span></div>
+  <div class="tool"><b>list_catalog</b><span>conexão openrouter-deepseek disponível</span><span class="ok">✓</span></div>
+  <div class="tool"><b>register_agent</b><span>assistente-comercial · time comercial</span><span class="ok">✓</span></div>
+  <div class="tool"><b>design_agent</b><span>instruções · LLM · memory: team · 3 testes (LLM-as-judge) → v2</span><span class="ok">✓</span></div>
+  <div class="tool"><b>ship_agent</b><span>stage → testes 9/9 aprovados → produção</span><span class="ok">43 s ✓</span></div>
+  <div class="tool"><b>schedule_agent</b><span>“Resumo diário de clientes” · seg a sex 08:00 (America/Sao_Paulo)</span><span class="ok">✓</span></div>
+  <div class="reply">Pronto! O <b>Assistente Comercial</b> está em produção no time Comercial.
+    <ul>
+      <li><b>Tipo:</b> agente de chat (DeepSeek via <code>openrouter-deepseek</code>), com <b>memória compartilhada com o time</b>.</li>
+      <li><b>Testes:</b> 9/9 verificações aprovadas em stage — apresentação, registro de fatos e “não inventar cliente”.</li>
+      <li><b>Endpoint:</b> <code>/gw/assistente-comercial</code> (OpenAI, A2A, ACP e MCP). Conecte na aba <i>Conectar</i>.</li>
+      <li><b>Agendamento:</b> resumo dos clientes de segunda a sexta às 08:00 — o próximo sai em 01/10/2026.</li>
+    </ul>
+    Escolhi um agente de chat porque o objetivo é responder e registrar informações, sem executar código.</div>
+</div></body></html>

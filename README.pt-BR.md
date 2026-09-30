@@ -10,8 +10,48 @@ isolado e use em qualquer lugar via **OpenAI-compatible, A2A, ACP e MCP**.
 
 </div>
 
-> **Status: alpha (v0.1).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
+<p align="center"><img src="docs/assets/portal-tour.gif" width="900" alt="Tour do portal do usuário: a Ana pede ao
+Claude um Assistente Comercial, que é criado, testado e publicado pelo MCP do Hangar; depois, a página Início, o
+agente, o Playground, a memória do time, o resumo diário agendado, as conexões e o catálogo da empresa"></p>
+<p align="center"><sub>O portal do usuário, gravado numa instalação local · <a href="docs/assets/portal-tour.mp4">versão MP4</a></sub></p>
+
+> **Status: alpha (v0.7).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
 > sua rede até ler [docs/security.md](docs/security.md).
+
+## Exemplo: do pedido no Claude ao agente funcionando
+
+Uma execução real, numa instalação local. A Ana é mantenedora do time Comercial e **não** é admin. Ela conectou o
+Claude ao MCP do Hangar com o token pessoal dela e pediu:
+
+> *"Crie no Agent Hangar um agente chamado “Assistente Comercial” para o nosso time acompanhar clientes (…). Use a
+> conexão openrouter-deepseek, dê memória compartilhada com o time, inclua testes, publique em produção e agende
+> para todo dia útil às 8h um resumo dos clientes com os próximos passos."*
+
+**O Claude construiu o agente pelas ferramentas do MCP.**
+1. `whoami` e `list_catalog`.
+2. `register_agent`.
+3. `design_agent`, com instruções, LLM, `memory: {scope: team}` e 3 testes com LLM como juiz.
+4. `ship_agent`: stage, **9/9 verificações aprovadas** e produção, em 43 s.
+5. `schedule_agent`: de segunda a sexta às 08:00.
+
+**O time usou o agente.**
+- A Ana registrou as novidades dos clientes, e o agente gravou cada uma na **memória do time**.
+- Numa conversa nova, o agente respondeu quem precisa de contato na semana.
+- O **resumo diário agendado** é o resultado final: a Beta Transportes é a mais urgente (o teste acaba em 15/10 e
+  o CFO pediu proposta do Pro), seguida da Gama Foods (renovação em 10/11 e reclamação do suporte).
+
+| Pedido no Claude | Início da Ana | Resumo diário agendado |
+|---|---|---|
+| ![Claude](docs/assets/portal/claude.png) | ![Início](docs/assets/portal/inicio.png) | ![Resumo](docs/assets/portal/resumo-agendado.png) |
+
+Os detalhes estão no [README em inglês](README.md#from-a-request-in-claude-to-a-working-agent). Os scripts que
+reproduzem a demo estão em [scripts/demo/portal-tour](scripts/demo/portal-tour/).
+
+**Dois apps web:**
+- **`/app/`** é o portal do usuário, para quem não é admin. Tem a página Início, os seus agentes, o catálogo, os
+  pedidos, as chaves e os times.
+- **`/ui/`** é o console de administração, só para admins.
+- O login é o mesmo, e cada pessoa cai no lugar certo.
 
 ## O que faz
 

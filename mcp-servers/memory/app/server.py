@@ -216,8 +216,12 @@ def _groups(ctx: Context) -> tuple[list[str], str, str]:
 
 def _fact(e, group: str) -> dict:
     iso = lambda d: d.isoformat() if d else None  # noqa: E731
+    now = datetime.now(UTC)
+    ends = e.invalid_at if e.invalid_at is None or e.invalid_at.tzinfo else e.invalid_at.replace(tzinfo=UTC)
+    # "em teste até 15/10" ainda vale hoje: com data de fim, vale até ela (o Graphiti marca expired_at mesmo quando a
+    # data é futura; quando um fato novo contradiz o antigo, a data de fim vira a data da mudança). Sem data: expired_at.
     return {"id": e.uuid, "fact": e.fact, "valid_at": iso(e.valid_at), "invalid_at": iso(e.invalid_at),
-            "created_at": iso(e.created_at), "current": e.invalid_at is None and e.expired_at is None,
+            "created_at": iso(e.created_at), "current": ends > now if ends else e.expired_at is None,
             "group": group}
 
 
@@ -253,13 +257,16 @@ async def _search(g, query: str, groups: list[str], limit: int) -> dict:
 async def recall(query: str, ctx: Context, limit: int = 10, include_history: bool = False) -> dict:
     """Busca na memória de longo prazo (semântica + palavras-chave + grafo): fatos datados, entidades com o
     resumo do que se sabe delas e os trechos originais. Por padrão só os fatos atuais; include_history=true traz
-    também os substituídos, com as datas de validade."""
+    também os substituídos, com as datas de validade. `today` é a data de hoje (compare com valid_at/invalid_at);
+    `current` já diz se o fato vale hoje."""
     read, _, _ = _groups(ctx)
     g = await graphiti()
     found = await _search(g, query, read, max(1, min(limit, 30)))
     if not include_history:
         found["facts"] = [f for f in found["facts"] if f["current"]]
-    return {**found, "facts": found["facts"][:limit], "pending_writes": S.queue.qsize() if S.queue else 0}
+    # a data de hoje vai junto: sem ela o LLM lê "válido até 15/10" e não sabe se isso já passou
+    return {"today": datetime.now(UTC).date().isoformat(), **found, "facts": found["facts"][:limit],
+            "pending_writes": S.queue.qsize() if S.queue else 0}
 
 
 @mcp.tool()
