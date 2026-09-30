@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from . import auth, config, crypto, db
 from . import services as svc
 from .mcp_tools import mcp
-from .routers import access, admin, gateway, internal, schedules, scim
+from .routers import access, admin, gateway, internal, remote_mcp, schedules, scim
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("hangar")
@@ -116,6 +116,7 @@ app.include_router(access.router)
 app.include_router(admin.router)
 app.include_router(scim.router)
 app.include_router(schedules.router)
+app.include_router(remote_mcp.router)
 app.include_router(internal.router)
 app.include_router(gateway.router)
 

@@ -440,3 +440,41 @@ async function gatewayCatalog(box, q = '') {
   box.querySelectorAll('.gw-off').forEach(b => b.onclick = e => confirm(`Desativar ${b.dataset.n}? Agentes que o usam perdem essas ferramentas.`) &&
     act(e.target, () => api('/mcp-gateway/servers/' + encodeURIComponent(b.dataset.n), { method: 'DELETE' }).then(reload), 'Desativado'));
 }
+
+/* ---------- MCPs remotos com OAuth (Activepieces, Notion, Linear…) ---------- */
+const RM_STATUS = { connected: ['conectado', 'ok'], pending: ['aguardando autorização', 'warn'], error: ['erro — reconecte', 'bad'] };
+async function remoteMcps(box) {
+  const q = new URLSearchParams(location.hash.split('?')[1] || '');
+  if (q.get('remote_ok')) toast(`MCP remoto "${q.get('remote_ok')}" conectado — use-o nos agentes pelo nome`);
+  if (q.get('remote_error')) toast(`Falha ao conectar: ${q.get('remote_error')}`, true);
+  if (q.get('remote_ok') || q.get('remote_error')) history.replaceState(null, '', '#/catalog');
+  const list = await api('/remote-mcps').catch(() => []);
+  box.innerHTML = `<div class="card"><h2>MCPs remotos com OAuth (${list.length})</h2>
+    <div class="mute small">Servidores MCP que exigem login (Activepieces, Notion, Linear, Atlassian…). Você autoriza uma vez; a central guarda os tokens criptografados,
+      renova sozinha e entrega o MCP aos agentes por um proxy interno — o agente nunca vê a credencial. Use o <b>nome</b> no <code>mcps</code> do agente.</div>
+    ${list.length ? `<table class="mt"><tr><th>MCP</th><th>Status</th><th>Token</th><th></th></tr>${list.map(r => `<tr>
+      <td><b>${esc(r.name)}</b><div class="mute small">${esc(r.url)}</div>${r.last_error ? `<div class="bad-text small">${esc(r.last_error)}</div>` : ''}</td>
+      <td>${(([t, c]) => `<span class="pill ${c}">${t}</span>`)(RM_STATUS[r.status] || [r.status, ''])}<div class="mute small">${r.connected_by ? 'por ' + esc(r.connected_by) : ''}</div></td>
+      <td class="mute small">${r.expires_at ? 'renova sozinho' + (r.has_refresh_token ? '' : ' (sem refresh!)') : '—'}</td>
+      <td class="row" style="flex-wrap:nowrap;justify-content:flex-end"><button class="ghost rm-test" data-n="${esc(r.name)}">Testar</button>
+        <button class="ghost rm-re" data-n="${esc(r.name)}" data-u="${esc(r.url)}" data-b="${esc(r.browser_base)}">Reconectar</button>
+        <button class="danger rm-del" data-n="${esc(r.name)}">Remover</button></td></tr>`).join('')}</table>` : ''}
+    <details class="mt" ${list.length ? '' : 'open'}><summary>+ Conectar MCP remoto</summary>
+      <div class="grid g2 mt"><label>Nome (vira o nome no catálogo)<input id="rm-name" placeholder="ex.: activepieces"></label>
+        <label>URL do MCP<input id="rm-url" placeholder="https://servidor/mcp"></label></div>
+      <div class="grid g2 mt"><label>Descrição (opcional)<input id="rm-desc" placeholder="o que os agentes ganham com ele"></label>
+        <label>Origem pública para o navegador (opcional)<input id="rm-browser" placeholder="ex.: http://localhost:8098 — quando a central usa um endereço interno"></label></div>
+      <div class="row mt"><button id="rm-go">Conectar (abre a tela de autorização)</button></div></details></div>`;
+  const connect = async (body, btn) => act(btn, async () => {
+    const r = await api('/remote-mcps', { method: 'POST', body });
+    location.href = r.authorize_url;  // autoriza no provedor; ele volta para /api/remote-mcps/callback
+  });
+  $('#rm-go').onclick = e => connect({ name: $('#rm-name').value.trim(), url: $('#rm-url').value.trim(), description: $('#rm-desc').value, browser_base: $('#rm-browser').value.trim() }, e.target);
+  box.querySelectorAll('.rm-re').forEach(b => b.onclick = e => connect({ name: b.dataset.n, url: b.dataset.u, browser_base: b.dataset.b }, e.target));
+  box.querySelectorAll('.rm-test').forEach(b => b.onclick = e => act(e.target, async () => {
+    const r = await api(`/remote-mcps/${encodeURIComponent(b.dataset.n)}/test`, { method: 'POST' });
+    toast(`${r.name}: ${r.count} ferramentas (${r.tools.slice(0, 5).join(', ')}${r.count > 5 ? '…' : ''})`);
+  }));
+  box.querySelectorAll('.rm-del').forEach(b => b.onclick = e => confirm(`Remover o MCP remoto ${b.dataset.n}? Os tokens são revogados e os agentes perdem essas ferramentas.`) &&
+    act(e.target, () => api(`/remote-mcps/${encodeURIComponent(b.dataset.n)}`, { method: 'DELETE' }).then(() => remoteMcps(box)), 'Removido'));
+}

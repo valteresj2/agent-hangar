@@ -372,3 +372,24 @@ class GatewayServer(Base):
     secrets: Mapped[str] = mapped_column(Text, default="")  # "enc:v1:…" de um JSON {nome_do_segredo: valor}
     enabled_by: Mapped[str] = mapped_column(String(254), default="")
     enabled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class RemoteMcp(Base):
+    """MCP remoto protegido por OAuth (Activepieces, Notion, Linear…): a central faz o OAuth uma vez (DCR + PKCE),
+    guarda os tokens criptografados, renova sozinha e expõe o MCP aos agentes por um proxy interno — o agente nunca
+    vê a credencial."""
+    __tablename__ = "remote_mcps"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)  # também o nome no catálogo de MCPs
+    url: Mapped[str] = mapped_column(String(500))  # endpoint MCP (como a central o alcança)
+    browser_base: Mapped[str] = mapped_column(String(300), default="")  # origem pública da tela de autorização
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | connected | error
+    oauth: Mapped[dict] = mapped_column(JSON, default=dict)  # endpoints descobertos, resource, scope, client_id
+    client_secret: Mapped[str] = mapped_column(Text, default="")  # enc
+    access_token: Mapped[str] = mapped_column(Text, default="")  # enc
+    refresh_token: Mapped[str] = mapped_column(Text, default="")  # enc
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    connected_by: Mapped[str] = mapped_column(String(254), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)

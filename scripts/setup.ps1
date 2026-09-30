@@ -4,6 +4,7 @@ Set-Location (Join-Path $PSScriptRoot '..')
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 
 function New-Hex { $b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); ($b | ForEach-Object { $_.ToString('x2') }) -join '' }
+function New-Hex16 { $b = New-Object byte[] 16; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); ($b | ForEach-Object { $_.ToString('x2') }) -join '' }
 function New-Fernet { $b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b).Replace('+', '-').Replace('/', '_') }
 
 $lines = [Collections.Generic.List[string]](Get-Content .env)
@@ -19,6 +20,10 @@ Set-IfEmpty 'ADMIN_TOKEN' (New-Hex)
 Set-IfEmpty 'HANGAR_SECRET_KEY' (New-Fernet)
 Set-IfEmpty 'INTERNAL_SECRET' (New-Hex)
 Set-IfEmpty 'POSTGRES_PASSWORD' (New-Hex)
+# Activepieces (docker compose --profile activepieces): so usados se voce ligar o profile
+Set-IfEmpty 'ACTIVEPIECES_ENCRYPTION_KEY' (New-Hex16)
+Set-IfEmpty 'ACTIVEPIECES_JWT_SECRET' (New-Hex)
+Set-IfEmpty 'ACTIVEPIECES_POSTGRES_PASSWORD' (New-Hex)
 [IO.File]::WriteAllLines((Resolve-Path .env), $lines)
 Write-Host ''
 Write-Host 'Pronto. Suba com:  docker compose up -d --build'

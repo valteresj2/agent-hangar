@@ -260,7 +260,70 @@ services:
     networks: [mcp_gateway_docker_api]
     restart: unless-stopped
 
+  # Activepieces (MIT) — 280+ integrações de negócio (Gmail, Sheets, Slack, HubSpot…) expostas por MCP com OAuth:
+  #   docker compose --profile activepieces up -d
+  # Depois: crie a conta em http://localhost:8098, conecte os apps lá, e no Hangar vá em Catálogo -> "MCPs remotos
+  # com OAuth" -> nome "activepieces", URL http://activepieces/mcp, origem pública http://localhost:8098.
+  activepieces:
+    profiles: [activepieces]
+    image: ghcr.io/activepieces/activepieces:${ACTIVEPIECES_VERSION:-0.92.0}
+    depends_on: [activepieces-postgres, activepieces-redis]
+    environment:
+      AP_ENGINE_EXECUTABLE_PATH: dist/packages/engine/main.js
+      AP_ENCRYPTION_KEY: ${ACTIVEPIECES_ENCRYPTION_KEY:-}
+      AP_JWT_SECRET: ${ACTIVEPIECES_JWT_SECRET:-}
+      AP_ENVIRONMENT: prod
+      AP_FRONTEND_URL: ${ACTIVEPIECES_PUBLIC_URL:-http://localhost:8098}
+      AP_POSTGRES_DATABASE: activepieces
+      AP_POSTGRES_HOST: activepieces-postgres
+      AP_POSTGRES_PORT: "5432"
+      AP_POSTGRES_USERNAME: activepieces
+      AP_POSTGRES_PASSWORD: ${ACTIVEPIECES_POSTGRES_PASSWORD:-}
+      AP_REDIS_HOST: activepieces-redis
+      AP_REDIS_PORT: "6379"
+      AP_EXECUTION_MODE: UNSANDBOXED
+      AP_TELEMETRY_ENABLED: "false"
+      AP_FLOW_TIMEOUT_SECONDS: "600"
+    # agents_net: a central (e só ela, com o token OAuth) fala com o /mcp; saída para a internet (APIs dos apps)
+    networks: [agents_net, activepieces_db]
+    restart: unless-stopped
+
+  # porta pública do Activepieces: repassa o host com a porta (X-Forwarded-Host) — sem isso os redirecionamentos do
+  # OAuth vão para http://localhost/... (porta perdida). Ver integrations/activepieces/edge.conf.
+  activepieces-edge:
+    profiles: [activepieces]
+    image: nginx:1.27-alpine
+    depends_on: [activepieces]
+    volumes:
+      - ./integrations/activepieces/edge.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "127.0.0.1:${ACTIVEPIECES_PORT:-8098}:80"   # UI do Activepieces (login, conexões, consentimento do OAuth)
+    networks: [agents_net]
+    restart: unless-stopped
+
+  activepieces-postgres:
+    profiles: [activepieces]
+    image: pgvector/pgvector:0.8.0-pg14
+    environment:
+      POSTGRES_DB: activepieces
+      POSTGRES_USER: activepieces
+      POSTGRES_PASSWORD: ${ACTIVEPIECES_POSTGRES_PASSWORD:-}
+    volumes:
+      - activepieces_pg:/var/lib/postgresql/data
+    networks: [activepieces_db]
+    restart: unless-stopped
+
+  activepieces-redis:
+    profiles: [activepieces]
+    image: redis:7.0.7
+    volumes:
+      - activepieces_redis:/data
+    networks: [activepieces_db]
+    restart: unless-stopped
+
 volumes:
+  activepieces_pg:
+  activepieces_redis:
   mcp_gateway:
     name: hangar_mcp_gateway
   mcp_gateway_sock:
@@ -286,4 +349,6 @@ networks:
   mcp_servers_net:
     name: hangar_mcp_servers   # gateway + servidores MCP do catálogo Docker: saída para a internet, sem agentes nem banco
   mcp_gateway_docker_api:
+    internal: true
+  activepieces_db:
     internal: true

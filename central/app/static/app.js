@@ -495,8 +495,8 @@ async function catalogPage() {
     <details class="mt"><summary>Adicionar skill</summary><input id="sk-name" placeholder="nome" class="mt"><input id="sk-desc" placeholder="descrição" class="mt"><textarea id="sk-content" placeholder="conteúdo (markdown)" rows="4" class="mt"></textarea><button id="sk-add" class="mt">Salvar skill</button></details></div>
   <div class="card"><h2>MCP servers (${c.mcp_servers.length})</h2>${c.mcp_servers.map(m => `<div class="mt"><b>${esc(m.name)}</b>${m.tool_prefix ? ' <span class="chip">catálogo Docker</span>' : ''}<div>${copyable(m.url)}</div><div class="mute small">${esc(m.description)}</div></div>`).join('') || '<div class="mute">Nenhum</div>'}
     <details class="mt"><summary>Adicionar MCP server</summary><input id="mc-name" placeholder="nome" class="mt"><input id="mc-url" placeholder="url (Streamable HTTP)" class="mt"><input id="mc-desc" placeholder="descrição" class="mt"><button id="mc-add" class="mt">Salvar MCP</button></details></div></div>
-  ${ME.is_admin ? '<div id="gw-card" class="mt"></div>' : ''}`;
-  if (ME.is_admin) gatewayCatalog($('#gw-card'));
+  ${ME.is_admin ? '<div id="rm-card" class="mt"></div><div id="gw-card" class="mt"></div>' : ''}`;
+  if (ME.is_admin) { remoteMcps($('#rm-card')); gatewayCatalog($('#gw-card')); }
   $('#lc-add').onclick = e => act(e.target, () => api('/catalog/llm', { method: 'POST', body: {
     name: $('#lc-name').value.trim(), base_url: $('#lc-url').value.trim(),
     model_name: $('#lc-model').value.trim(), api_key: $('#lc-key').value, description: $('#lc-desc').value,
@@ -699,7 +699,7 @@ async function auditPage() {
 
 /* ---------- roteamento ---------- */
 async function route() {
-  const [, r = '', a, b] = location.hash.split('/');
+  const [, r = '', a, b] = location.hash.split('?')[0].split('/');  // #/catalog?remote_ok=x -> catalog
   if (r === 'login' || !ME) return;
   document.querySelectorAll('nav a').forEach(x => x.classList.toggle('on', x.dataset.r === r));
   try {

@@ -139,8 +139,10 @@ async def _dashboard_call(args):
     return r.text[:6000]
 
 
-def _mcp_headers() -> dict:
+def _mcp_headers(url: str = "") -> dict:
     h = {"X-Agent-Slug": SLUG}
+    if url.startswith(INTERNAL_BASE_URL):  # proxy da central para MCP remoto com OAuth: prova quem é o agente
+        h.update(INTERNAL_HEADERS)
     if SESSION.get():
         h["X-Session-Id"] = SESSION.get()
     return h
@@ -149,7 +151,7 @@ def _mcp_headers() -> dict:
 async def _mcp_call(url, tool, args):
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
-    async with streamablehttp_client(url, headers=_mcp_headers(), timeout=900, sse_read_timeout=900) as (r, w, _):
+    async with streamablehttp_client(url, headers=_mcp_headers(url), timeout=900, sse_read_timeout=900) as (r, w, _):
         async with ClientSession(r, w) as s:
             await s.initialize()
             res = await s.call_tool(tool, args)
@@ -170,7 +172,7 @@ async def _mcp_call(url, tool, args):
 async def _mcp_list(url):
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
-    async with streamablehttp_client(url, headers=_mcp_headers()) as (r, w, _):
+    async with streamablehttp_client(url, headers=_mcp_headers(url)) as (r, w, _):
         async with ClientSession(r, w) as s:
             await s.initialize()
             return (await s.list_tools()).tools

@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Remote MCPs with OAuth** ([docs/remote-mcp.md](docs/remote-mcp.md)).
+  - An admin connects once: discovery (RFC 9728/8414), dynamic client registration, and authorization code with
+    PKCE.
+  - Tokens are stored encrypted and refreshed automatically.
+  - Agents use the MCP through the central's internal proxy (`/internal/mcp-remote/<name>`). Only agents that
+    list the MCP in their spec get through, and the provider token never reaches them.
+- **Activepieces** (compose profile `activepieces`): 280+ business integrations through its MCP (`ap_run_action`,
+  tables, flows). Tested end to end.
 - **Docker MCP catalog** (compose profile `mcp-gateway`, [docs/mcp-catalog.md](docs/mcp-catalog.md)): 230+
   prebuilt MCP servers from Docker's official catalog, served by the open-source Docker MCP Gateway (MIT).
   - Admins search and enable servers in **Catálogo → Catálogo Docker MCP**. Credentials are stored encrypted.

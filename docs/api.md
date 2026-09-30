@@ -63,6 +63,17 @@ schedule requires the right to edit the agent. Team members can see schedules an
   Teams incoming webhooks.
 - **Limits:** runs at least 5 minutes apart, and webhooks to the internal network are blocked.
 
+## Remote MCPs with OAuth (`/api/remote-mcps`, admin)
+
+| Method | Path | Description |
+|---|---|---|
+| GET / POST | `/api/remote-mcps` | List / start a connection `{name, url, description?, browser_base?}` → `{authorize_url}` |
+| GET | `/api/remote-mcps/callback` | OAuth redirect target (stores the tokens, creates the catalog MCP) |
+| POST | `/api/remote-mcps/{name}/test` | List the tools with the stored token |
+| DELETE | `/api/remote-mcps/{name}` | Revoke and remove |
+
+Agents reach the MCP at `/internal/mcp-remote/{name}` with their internal token. See [remote-mcp.md](remote-mcp.md).
+
 ## SCIM 2.0 (`/scim/v2`, scope `scim`)
 
 `Users`, `Groups`, `ServiceProviderConfig`, `ResourceTypes` and `Schemas`, with filters (`userName eq`,

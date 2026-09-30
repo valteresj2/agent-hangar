@@ -164,6 +164,10 @@ See [docs/access.md](docs/access.md).
 Wikipedia, GitHub, Postgres, Notion…). Each runs in an isolated container, and agents use them as
 `docker:<name>`. See [docs/mcp-catalog.md](docs/mcp-catalog.md).
 
+**Remote MCPs with OAuth and Activepieces:** connect OAuth-protected MCP servers (Activepieces with 280+ business
+apps, Notion, Linear…) once. Agents use them through the central, which keeps and refreshes the tokens. See
+[docs/remote-mcp.md](docs/remote-mcp.md).
+
 **Plug and play:** the agent's **Connect** tab (or `hangar connect <slug> <tool>`) gives a per-tool key and the
 config to paste. Every tool can use the agent as an **MCP tool** (Claude Code, Claude Desktop, Codex, OpenCode,
 Cursor, VS Code, LibreChat, Open WebUI); chat UIs can also use it as a **model** (LibreChat, Open WebUI, OpenCode,

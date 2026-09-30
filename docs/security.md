@@ -36,6 +36,14 @@ Summary; the full model is in [access.md](access.md).
 - **Deactivation takes effect immediately.** Deactivating a user (UI or SCIM) ends their sessions and revokes
   all their keys at once. Losing a team role or a grant revokes the invoke keys that no longer apply.
 
+## Remote MCPs with OAuth
+
+- **Storage:** provider tokens (access and refresh) are stored encrypted with Fernet.
+- **Where they are used:** only inside the central, which proxies agent calls at `/internal/mcp-remote/<name>`.
+  The proxy requires the agent's per-agent internal token, and that MCP in the agent's spec.
+- **Connecting:** consent happens once, as an admin, with PKCE and a signed state cookie. Removing the MCP revokes
+  the refresh token at the provider (best effort).
+
 ## Docker MCP catalog
 
 The optional gateway (profile `mcp-gateway`):

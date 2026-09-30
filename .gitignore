@@ -33,3 +33,6 @@ Thumbs.db
 graphify-out/
 docs/MELHORIAS.md
 examples/data-studio/.invoke_key
+
+# Activepieces local: conta de admin criada no teste (não versionar)
+integrations/activepieces/.admin-credentials

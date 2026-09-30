@@ -6,6 +6,7 @@ from . import (  # noqa: F401  (svc.access.Access, svc.connect.snippet, svc.org.
                       mcp_gateway,
                       org,
                       registry,
+                      remote_mcp,
                       schedules,
 )
 from .catalog import (  # noqa: F401
