@@ -29,6 +29,7 @@ jobs:
         run: |
           for f in central/app/static/*.js; do node --check "$f"; done
           node --check harness/entrypoint.js
+          node --check harness/eval_runner.js
 
   vscode-extension:
     runs-on: ubuntu-latest

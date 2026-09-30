@@ -41,11 +41,12 @@ def _month_start() -> datetime:
 # ------------------------------------------------------------------ empresa
 def org_dict(db: Session) -> dict:
     o = db.get(Organization, 1)
-    return {"id": o.id, "name": o.name, "default_visibility": o.default_visibility, "timezone": o.timezone}
+    return {"id": o.id, "name": o.name, "default_visibility": o.default_visibility, "timezone": o.timezone,
+            "code_policy": o.code_policy or "any"}
 
 
 def update_org(db: Session, acc: Access, name: str | None, default_visibility: str | None,
-               timezone: str | None = None) -> dict:
+               timezone: str | None = None, code_policy: str | None = None) -> dict:
     if not acc.p.is_admin:
         raise Forbidden("Só admins alteram a empresa")
     o = db.get(Organization, 1)
@@ -62,8 +63,12 @@ def update_org(db: Session, acc: Access, name: str | None, default_visibility: s
         except CronError as e:
             raise PlatformError(str(e)) from None
         o.timezone = timezone
+    if code_policy:
+        if code_policy not in ("any", "approved"):
+            raise PlatformError("code_policy: 'any' (qualquer conexão) ou 'approved' (só conexões aprovadas para código)")
+        o.code_policy = code_policy
     db.commit()
-    audit(db, acc.p.name, "org.update", o.name, f"visibilidade padrão={o.default_visibility}")
+    audit(db, acc.p.name, "org.update", o.name, f"visibilidade padrão={o.default_visibility}, código={o.code_policy}")
     return org_dict(db)
 
 

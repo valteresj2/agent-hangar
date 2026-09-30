@@ -65,6 +65,19 @@ The optional memory service (profile `memory`) is reachable only by the central,
 
 See [memory.md](memory.md).
 
+## Coding agents (client tools)
+
+In coding mode (VS Code, Cline, Continue, code evaluations), the developer's files and terminal output go to the
+agent's LLM:
+- **Where things run.** The editor runs the tools on the developer's machine, with the developer's approval. The
+  hangar never gets access to that machine.
+- **Which LLMs.** With `code_policy: approved`, only LLM connections approved for code can receive it. The gateway
+  enforces this live, with no redeploy.
+- **Secrets.** The runtime masks obvious secrets in client tool results and user text before the LLM call.
+- **Code evaluations** run in throwaway sandboxes with the same isolation as harness jobs.
+
+See [clients.md](clients.md#coding-agents-in-vs-code-client-tools).
+
 ## Networks
 
 | Network | Members | Why |

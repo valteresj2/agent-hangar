@@ -32,6 +32,9 @@ class LlmSpec(_Strict):
                                   description="Rodadas máximas de chamadas de tool por mensagem (padrão 6)")
     vision: bool | None = Field(default=None,
                                 description="false: imagens anexadas não vão ao LLM, só ao workspace (padrão true)")
+    redact_secrets: bool | None = Field(
+        default=None, description="false: não mascara segredos (chaves, tokens) nas saídas das ferramentas do cliente "
+                                  "antes de irem ao LLM (padrão true)")
     client_tools: bool | None = Field(
         default=None, description="false: ignora as `tools` enviadas pelo cliente (padrão true: o chat do VS Code, "
                                   "Cline, Continue… executam arquivos e terminal localmente e o agente as usa)")
@@ -93,9 +96,32 @@ class MemorySpec(_Strict):
     write: bool = Field(default=True, description="false: só consulta (não grava fatos novos)")
 
 
+class Workspace(_Strict):
+    """Avaliação de código: o agente recebe este mini-projeto num sandbox efêmero, trabalha nele com ferramentas de
+    arquivo e terminal (como no VS Code) e o caso só passa se `check` sair com 0 e nada em `protected` mudar."""
+    files: dict[str, str] = Field(description="caminho relativo -> conteúdo")
+    check: str = Field(description="comando de verificação, na raiz do projeto (ex.: python3 -m unittest)")
+    protected: list[str] = Field(default_factory=list, description="arquivos que o agente não pode alterar (ex.: testes)")
+    max_rounds: int = Field(default=30, ge=1, le=60)
+
+    @field_validator("files")
+    @classmethod
+    def _safe_paths(cls, v):
+        if not v:
+            raise ValueError("workspace.files não pode ser vazio")
+        if sum(len(c) for c in v.values()) > 200_000:
+            raise ValueError("workspace.files passa de 200 KB")
+        for p in v:
+            parts = p.replace("\\", "/").split("/")
+            if p.startswith(("/", "~")) or ".." in parts or not p.strip():
+                raise ValueError(f"caminho inválido em workspace.files: {p!r} (use caminhos relativos)")
+        return v
+
+
 class TestCase(_Strict):
     name: str = ""
     input: str
+    workspace: Workspace | None = None
     expect_contains: str | None = None
     expect_regex: str | None = None
     judge: str | None = Field(default=None, description="Rubrica avaliada por um LLM (LLM-as-judge)")

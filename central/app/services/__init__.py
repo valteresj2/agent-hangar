@@ -2,6 +2,7 @@
 from ..models import Agent  # noqa: F401  (svc.Agent é usado pelo MCP)
 from . import (  # noqa: F401  (svc.access.Access, svc.connect.snippet, svc.org.ship…)
                       access,
+                      code_eval,
                       connect,
                       home,
                       mcp_gateway,
@@ -15,12 +16,14 @@ from . import (  # noqa: F401  (svc.access.Access, svc.connect.snippet, svc.org.
 from .catalog import (  # noqa: F401
                       HARNESS_PROTOCOL,
                       PROTOCOLS,
+                      code_allowed,
                       cost_usd,
                       delete_llm_connection,
                       get_connection,
                       llm_connection_dict,
                       resolve_harness,
                       resolve_llm,
+                      set_code_approval,
                       upsert_llm_connection,
                       upsert_mcp,
                       upsert_skill,

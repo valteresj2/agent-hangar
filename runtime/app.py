@@ -99,6 +99,52 @@ CLIENT_TOOLS_PROMPT = (
 # Rodadas que o servidor executou (tools do agente) antes de devolver tool_calls ao cliente: o cliente só conhece as
 # chamadas dele, então guardamos o resto aqui e reinserimos quando ele devolver os resultados (contexto completo).
 _HIDDEN: dict[str, tuple[float, list]] = {}
+# Segredos que um editor pode mandar sem querer (um .env lido, a saída de um `env`, uma chave colada): mascarados antes
+# de irem ao LLM no modo agente de código. llm.redact_secrets=false desliga.
+REDACT = LLM.get("redact_secrets", True) is not False
+MASK = "[SEGREDO REMOVIDO PELO AGENT HANGAR]"
+_SECRET_PATTERNS = [
+    re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----"),
+    re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),                       # AWS access key id
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{40,}\b"),
+    re.compile(r"\bsk-(?:ant-|proj-|or-v1-)?[A-Za-z0-9_-]{20,}"),          # OpenAI, Anthropic, OpenRouter
+    re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"),                        # Slack
+    re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),                            # Google API key
+    re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),  # JWT
+    re.compile(r"\bah(?:s)?_[A-Za-z0-9_-]{20,}"),                          # chaves e sessões do próprio Hangar
+]
+# atribuições estilo .env (NOME_EM_MAIÚSCULAS=valor), literais em código (password = "...") e senha em URL de banco;
+# só o valor é trocado, e nada que já foi mascarado acima
+_SECRET_ASSIGN = [
+    re.compile(r"(?m)^(\s*(?:export\s+)?[A-Z][A-Z0-9_]*(?:SECRET|PASSWORD|PASSWD|TOKEN|API_?KEY|PRIVATE_KEY)[A-Z0-9_]*\s*=\s*)(?!\[SEGREDO)(\S{6,})"),
+    re.compile(r"(?i)(\b\w*(?:secret|password|passwd|api_?key|access_?token)\w*\s*[:=]\s*[\"'])(?!\[SEGREDO)([^\"'\s]{8,})([\"'])"),
+    re.compile(r"(?i)(\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp)://[^:\s/]+:)([^@\s]+)(@)"),
+]
+
+
+def redact(text: str) -> tuple[str, int]:
+    n = 0
+    for pat in _SECRET_PATTERNS:
+        text, k = pat.subn(MASK, text)
+        n += k
+    for pat in _SECRET_ASSIGN:
+        text, k = pat.subn(lambda m: m.group(1) + MASK + (m.group(3) if m.lastindex and m.lastindex >= 3 else ""), text)
+        n += k
+    return text, n
+
+
+def _redact_messages(messages: list[dict]) -> tuple[list[dict], int]:
+    """Mascara segredos no que vem do cliente: resultados de ferramentas (arquivos, terminal) e texto do usuário."""
+    total, out = 0, []
+    for m in messages:
+        if m.get("role") in ("tool", "user") and isinstance(m.get("content"), str):
+            text, n = redact(m["content"])
+            if n:
+                total += n
+                m = {**m, "content": text + (f"\n[{n} segredo(s) mascarado(s) pelo Agent Hangar antes de ir ao modelo]"
+                                            if m["role"] == "tool" else "")}
+        out.append(m)
+    return out, total
 HIDDEN_TTL_S = 3600
 HIDDEN_MAX = 2000
 
@@ -505,6 +551,10 @@ async def _chat(messages: list[dict], client_tools: list | None = None, tool_cho
     if ctools:
         sys_prompt += "\n\n" + CLIENT_TOOLS_PROMPT
     msgs = [{"role": "system", "content": sys_prompt}] + [m for m in messages if m["role"] != "system"]
+    if ctools and REDACT:  # modo agente de código: o editor manda arquivos e terminal — segredos não seguem adiante
+        msgs, n_redacted = _redact_messages(msgs)
+        if n_redacted:
+            print(f"[info] {n_redacted} segredo(s) mascarado(s) antes do LLM", flush=True)
     start = len(msgs)  # daqui em diante, o que o servidor produzir nesta chamada
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     trace: list = []
@@ -646,7 +696,11 @@ def set_session(req: Request, body: dict | None = None):
 
 @app.post("/v1/chat/completions")
 async def chat_completions(req: Request):
-    body = await req.json()
+    try:
+        body = await req.json()
+    except (ValueError, UnicodeDecodeError):  # corpo que não é JSON UTF-8: erro do cliente, não do agente
+        return JSONResponse({"error": {"message": "corpo inválido: envie JSON em UTF-8", "type": "invalid_request_error"}},
+                            status_code=400)
     set_session(req, body)
     cid, created = f"chatcmpl-{uuid.uuid4().hex[:12]}", int(time.time())
     if body.get("stream"):

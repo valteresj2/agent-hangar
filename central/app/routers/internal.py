@@ -126,3 +126,28 @@ def dash_usage(db=Depends(dashboard_caller)):
 def dash_audit(db=Depends(dashboard_caller)):
     return [{"at": svc.iso(r.created_at), "actor": r.actor, "action": r.action, "target": r.target,
              "detail": r.detail} for r in db.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(100))]
+
+
+# ------------------------------------------------------------------ avaliação de código (sandbox -> agente em stage)
+@router.post("/eval/{token}/v1/chat/completions")
+def eval_chat(token: str, body: dict):
+    """O sandbox da avaliação fala com o STAGE do agente avaliado por aqui (token de uso único, só este agente)."""
+    import httpx
+
+    from .. import deploy
+    e = svc.code_eval.session(token)
+    if not e:
+        raise HTTPException(404, "avaliação inexistente ou encerrada")
+    r = httpx.post(f"{deploy.internal_url(e['slug'], 'stage')}/v1/chat/completions", timeout=300,
+                   headers={"X-Channel": "code-eval", "X-Session-Id": f"eval-{token[:10]}", "X-Progress": "off"},
+                   json={**body, "stream": False})
+    if r.status_code >= 400:
+        raise HTTPException(502, f"agente respondeu HTTP {r.status_code}: {r.text[:300]}")
+    return r.json()
+
+
+@router.post("/eval/{token}/result")
+def eval_result(token: str, body: dict):
+    if not svc.code_eval.complete(token, body):
+        raise HTTPException(404, "avaliação inexistente ou já concluída")
+    return {"ok": True}

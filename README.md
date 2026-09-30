@@ -24,7 +24,7 @@ MCP. Then come her Início page, the agent, a Playground answer, the team memory
 connections and the company catalog."></p>
 <p align="center"><sub>The user portal, recorded on a local install · <a href="docs/assets/portal-tour.mp4">MP4 version</a></sub></p>
 
-> **Status: alpha (v0.8).** It works end to end and is covered by tests, but APIs may still change. Run it inside
+> **Status: alpha (v0.9).** It works end to end and is covered by tests, but APIs may still change. Run it inside
 > your network until you have read [docs/security.md](docs/security.md).
 
 ---
@@ -219,6 +219,7 @@ flowchart LR
 | `platform-dashboard` | chat + builtin tool | An ops agent that reads the hangar's own live metrics |
 | `ticket-triage` | chat | Structured JSON classification + first reply, with regex and judge tests |
 | `sql-analyst` | chat (+ your DB MCP) | Read-only SQL generation with safety rules |
+| `code-assistant` | chat, coding agent | For VS Code / Cline / Continue: edits and tests your project; ships only after passing two real code evaluations |
 | `code-fixer` | harness (Codex) | Fixes code in an ephemeral container and returns a diff |
 | `data-studio` | chat + Data Studio MCP | Python/DuckDB analyst: spreadsheets, PDFs and images in; dashboards and PPTX/HTML decks out |
 | `research-team` | multi-agent | Orchestrator + researcher + critic + writer over A2A |
@@ -277,7 +278,7 @@ hangar jobs run code-fixer "Add input validation to parse_date()" --follow
 
 ## Project status and roadmap
 
-v0.8 adds coding agents in VS Code (client tools and the Agent Hangar extension). Earlier releases added the user portal (v0.7), long-term memory (v0.6), the MCP catalog with OAuth MCPs and
+v0.9 adds code evaluations in stage and governance for code (approved LLM connections, secret masking, the `code-assistant` template). Earlier releases added coding agents in VS Code (v0.8), the user portal (v0.7), long-term memory (v0.6), the MCP catalog with OAuth MCPs and
 Activepieces (v0.5), schedules and edit-after-ship (v0.4), and teams with SSO (v0.3). Next up: Kubernetes/Helm,
 OpenTelemetry + Langfuse traces, Slack/Teams adapters and egress allowlists for jobs. See
 [ROADMAP.md](ROADMAP.md), the [CHANGELOG](CHANGELOG.md) and the issues.

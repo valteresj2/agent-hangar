@@ -53,6 +53,12 @@ FLUXO
    ao modelo padrão dela = llm={"connection": "x", "model": null}. Veja o formato completo em
    get_spec_schema. Inclua 2+ casos em `tests` ({name, input, expect_contains | expect_regex | judge});
    `judge` é uma rubrica avaliada por um LLM (use para respostas abertas).
+   AGENTE DE CÓDIGO (vai editar projetos no VS Code/Cline/Continue): inclua 1+ casos com `workspace` — um mini-projeto
+   real que o agente precisa resolver: {name, input: "<tarefa>", workspace: {files: {"calc.py": "...",
+   "test_calc.py": "..."}, check: "python3 -m unittest" (ou "python3 -m pytest -q", "node --test"), protected:
+   ["test_calc.py"]}}. Em stage, um sandbox efêmero dá ao agente ferramentas de arquivo e terminal; o caso só passa
+   se o check sair com 0 e nenhum arquivo protegido mudar (sem "passar" editando o teste). Sandbox: Node 22,
+   Python 3 com pytest e git.
    MEMÓRIA: se o agente precisa lembrar entre conversas (clientes, decisões, preferências, histórico), passe
    memory={"scope": "agent"|"team"|"org"} (team = compartilhada com o time; write=false = só leitura). Ele ganha
    memory__recall e memory__remember; diga nas instructions quando consultar e o que gravar. Só funciona se a

@@ -516,10 +516,16 @@ async function catalogPage() {
   main.innerHTML = `<h1>Catálogo</h1><div class="sub">Skills, MCP servers e conexões de LLM reutilizáveis pelos agentes</div>
   <div class="card"><div class="row between"><h2>Conexões de LLM (${c.llm_connections.length})</h2>
     <span class="mute small">Nenhum LLM roda em Docker aqui — cada conexão é uma URL externa (gateway LiteLLM da empresa, OpenRouter, OpenAI…) + model_name + api key virtual.</span></div>
-    <div class="scroll"><table><tr><th>Nome</th><th>Protocolo</th><th>URL</th><th>Modelo padrão</th><th>Preço (US$/1M in · out)</th><th>Chave</th><th></th></tr>
+    ${ME.is_admin ? `<div class="card warn-card mt"><div class="row between" style="align-items:flex-start"><div><b>Código e LLMs</b>
+      <div class="small">No modo agente de código (VS Code, Cline, Continue) e nas avaliações de código, arquivos e saídas de terminal dos devs vão para o LLM do agente.
+        Com <b>só conexões aprovadas</b>, esse modo só funciona com conexões marcadas como aprovadas para código (ex.: o gateway corporativo). Segredos óbvios (chaves, tokens) são sempre mascarados antes de ir ao modelo.</div></div>
+      <select id="code-policy" style="width:auto"><option value="any">Qualquer conexão</option><option value="approved">Só conexões aprovadas</option></select></div></div>` : ''}
+    <div class="scroll"><table><tr><th>Nome</th><th>Protocolo</th><th>URL</th><th>Modelo padrão</th><th>Preço (US$/1M in · out)</th><th>Chave</th><th>Código</th><th></th></tr>
     ${c.llm_connections.map(x => `<tr><td><b>${esc(x.name)}</b><div class="mute small">${esc(x.description)}</div></td><td>${protoPill(x.protocol)}</td><td>${copyable(x.base_url)}</td><td>${esc(x.model_name)}</td>
       <td class="mute">${x.price_in_per_mtok == null && x.price_out_per_mtok == null ? '—' : `${x.price_in_per_mtok ?? 0} · ${x.price_out_per_mtok ?? 0}`}</td><td class="mute">${esc(x.api_key)}</td>
-      <td><button class="ghost llm-del" data-n="${esc(x.name)}">Remover</button></td></tr>`).join('') || `<tr><td colspan="7" class="empty">Nenhuma — sem conexão, os agentes rodam em ${esc(c.fallback_model)}</td></tr>`}</table></div>
+      <td>${x.allow_code ? '<span class="pill ok">aprovada</span>' : '<span class="pill">não aprovada</span>'}
+        ${ME.is_admin ? `<div><a href="#" class="small llm-code" data-n="${esc(x.name)}" data-v="${x.allow_code ? 0 : 1}">${x.allow_code ? 'retirar' : 'aprovar'}</a></div>` : ''}</td>
+      <td><button class="ghost llm-del" data-n="${esc(x.name)}">Remover</button></td></tr>`).join('') || `<tr><td colspan="8" class="empty">Nenhuma — sem conexão, os agentes rodam em ${esc(c.fallback_model)}</td></tr>`}</table></div>
     <details class="mt"><summary>Adicionar / editar conexão (mesmo nome = edição; chave vazia mantém a atual)</summary><div class="grid g4 mt">
       <input id="lc-name" placeholder="nome (ex.: litellm-corp)"><input id="lc-url" placeholder="base_url (https://.../v1)">
       <input id="lc-model" placeholder="model_name (ex.: gpt-4o-mini)"><input id="lc-key" placeholder="api key virtual" type="password"></div>
@@ -533,6 +539,20 @@ async function catalogPage() {
     <details class="mt"><summary>Adicionar MCP server</summary><input id="mc-name" placeholder="nome" class="mt"><input id="mc-url" placeholder="url (Streamable HTTP)" class="mt"><input id="mc-desc" placeholder="descrição" class="mt"><button id="mc-add" class="mt">Salvar MCP</button></details></div></div>
   ${ME.is_admin ? '<div id="rm-card" class="mt"></div><div id="gw-card" class="mt"></div>' : ''}`;
   if (ME.is_admin) { remoteMcps($('#rm-card')); gatewayCatalog($('#gw-card')); }
+  const pol = $('#code-policy');
+  if (pol) {
+    pol.value = (ME.org && ME.org.code_policy) || 'any';
+    pol.onchange = () => act(pol, async () => {
+      const o = await api('/org', { method: 'PATCH', body: { code_policy: pol.value } });
+      ME.org = o;
+      toast(o.code_policy === 'approved' ? 'Agora só conexões aprovadas recebem código' : 'Qualquer conexão pode receber código');
+    });
+  }
+  document.querySelectorAll('.llm-code').forEach(a => a.onclick = e => {
+    e.preventDefault();
+    act(a, () => api(`/catalog/llm/${encodeURIComponent(a.dataset.n)}/code`, { method: 'PATCH', body: { allow_code: a.dataset.v === '1' } }).then(catalogPage),
+      a.dataset.v === '1' ? 'Conexão aprovada para código' : 'Aprovação retirada');
+  });
   $('#lc-add').onclick = e => act(e.target, () => api('/catalog/llm', { method: 'POST', body: {
     name: $('#lc-name').value.trim(), base_url: $('#lc-url').value.trim(),
     model_name: $('#lc-model').value.trim(), api_key: $('#lc-key').value, description: $('#lc-desc').value,

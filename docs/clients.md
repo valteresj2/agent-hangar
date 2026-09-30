@@ -148,6 +148,35 @@ the platform MCP tool `test_agent_connection`, runs the exact path a coding clie
 
 The test costs one short LLM call and works in stage (for whoever can edit the agent) or in prod.
 
+**Governance: which LLMs may receive code.** In the coding path, the developer's files and terminal output go to the
+agent's LLM.
+- **Company policy.** An admin chooses it in **Catálogo → Conexões de LLM**, or with
+  `PATCH /api/org {"code_policy": …}`:
+  - `any` (the default) keeps coding mode open for every connection;
+  - `approved` allows it only with connections marked **approved for code**, for example the corporate gateway.
+    Approve a connection with `PATCH /api/catalog/llm/<name>/code {"allow_code": true}`.
+- **Where it applies.** The connection that counts is the effective one for each environment, including per-environment
+  overrides.
+- **When it takes effect.** It is enforced live, with no redeploy:
+  - The gateway answers `403` (`type: code_policy`) to any request that carries client tools.
+  - The connection test explains why.
+  - Code evaluations fail with the same message.
+  - Plain chat with the agent is not affected.
+
+**Secrets never reach the model.** In coding mode, the runtime masks obvious secrets in the client's tool results and
+in the user's text before calling the LLM:
+- private keys;
+- AWS, GitHub, Slack and Google keys;
+- `sk-…` API keys;
+- JWTs and the hangar's own keys;
+- `.env`-style `*_SECRET/_PASSWORD/_TOKEN/_API_KEY=…` lines;
+- `password = "…"` literals;
+- passwords inside database URLs.
+
+Only the value is replaced; names and code stay, so the agent can still say "this key is hardcoded". The agent's
+standing instructions also tell it not to read `.env` files or credentials. Turn masking off per agent with
+`llm.redact_secrets: false`.
+
 **Turning it off:** set `llm.client_tools: false` in an agent's spec. The agent then ignores the tools a client sends
 and answers only with its own. Harness agents don't take client tools, because they run in their own throwaway
 container.

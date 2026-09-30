@@ -326,6 +326,16 @@ def add_llm_connection(b: LlmConnectionBody, request: Request, db=Depends(db_dep
         b.price_in_per_mtok, b.price_out_per_mtok)))
 
 
+class CodeApproval(BaseModel):
+    allow_code: bool
+
+
+@router.patch("/catalog/llm/{name}/code", dependencies=[Depends(require_admin)])
+def llm_connection_code(name: str, b: CodeApproval, request: Request, db=Depends(db_dep)):
+    """Aprova (ou retira) a conexão para receber código — vale quando a empresa usa code_policy=approved."""
+    return guard(lambda: svc.llm_connection_dict(svc.set_code_approval(db, name, b.allow_code, actor(request))))
+
+
 @router.delete("/catalog/llm/{name}", dependencies=[Depends(require_admin)])
 def del_llm_connection(name: str, request: Request, db=Depends(db_dep)):
     guard(lambda: svc.delete_llm_connection(db, name, actor(request)))

@@ -5,6 +5,37 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-09-30
+
+### Upgrading from 0.8.x
+- **Migration `0009_code_policy` runs on start.** Nothing changes by default: the company policy starts as `any`.
+- **Rebuild or pull `central`, `agent-runtime` and `harness-base`,** which now includes Python 3, pytest and the code
+  evaluation runner.
+- **Re-ship coding agents** to get secret masking.
+- **To use code evaluations,** add test cases with `workspace` (see the `code-assistant` template).
+
+### Added
+- **Code evaluations in stage** (test cases with `workspace`, [docs/spec.md](docs/spec.md#code-evaluations-workspace)).
+  - A coding agent gets a real mini-project in a throwaway sandbox, with file and terminal tools like a coding
+    client. It passes only if `check` exits with 0 and no `protected` file (the tests) changed.
+  - Promotion stays blocked until the agent really solves the tasks. In a live run, an agent that edited the test to
+    "pass" was failed.
+  - The `harness-base` image gains Python 3, pytest and the runner (`eval_runner.js`).
+  - The platform MCP tells builders to include these cases for coding agents.
+- **Governance for code** ([docs/clients.md](docs/clients.md#coding-agents-in-vs-code-client-tools)).
+  - A company `code_policy` (`any` or `approved`) and LLM connections **approved for code**, managed in **Catálogo →
+    Conexões de LLM**.
+  - With `approved`, the gateway refuses coding mode (`403 code_policy`) on unapproved connections, live and with no
+    redeploy. The connection test and code evaluations say why. Plain chat is not affected.
+  - Migration `0009_code_policy`.
+- **Secret masking in coding mode.** Keys, tokens, private keys, `.env` values, password literals and database URL
+  passwords are masked in client tool results before they reach the LLM. Only the value is replaced.
+  `llm.redact_secrets: false` turns it off.
+- **Template `code-assistant`**: a coding agent with standards and two code evaluations (a bug fix and a feature).
+
+### Fixed
+- The runtime answers `400` (not `500`) to a request body that is not UTF-8 JSON.
+
 ## [0.8.0] — 2026-09-30
 
 ### Upgrading from 0.7.x

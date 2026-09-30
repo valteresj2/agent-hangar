@@ -137,6 +137,8 @@ class LlmConnection(Base):
     # Preço por 1M tokens (US$), para calcular custo por chamada. Opcional.
     price_in_per_mtok: Mapped[float | None] = mapped_column(Float, nullable=True)
     price_out_per_mtok: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # aprovada para receber código (arquivos e saídas de terminal dos devs) quando a empresa usa code_policy=approved
+    allow_code: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
@@ -196,6 +198,8 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(String(200))
     default_visibility: Mapped[str] = mapped_column(String(10), default="org")
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")  # padrão dos agendamentos
+    # any: qualquer conexão recebe código (modo agente de código); approved: só as conexões com allow_code
+    code_policy: Mapped[str] = mapped_column(String(10), default="any")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 

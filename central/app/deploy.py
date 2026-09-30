@@ -147,13 +147,14 @@ def job_container_name(job_id: int) -> str:
     return f"job-{job_id}-{uuid.uuid4().hex[:6]}"
 
 
-def run_job_container(name: str, image: str, environment: dict, mem_limit: str, cpus: float):
+def run_job_container(name: str, image: str, environment: dict, mem_limit: str, cpus: float,
+                      command: list[str] | None = None, labels: dict | None = None):
     """Container efêmero, um por job: sem socket do Docker, sem restart, sem volume persistente, numa
     rede própria (JOBS_NETWORK) — alcança a central (callback) e a internet, não os outros agentes."""
     try:
         return client().containers.run(
-            image, name=name, detach=True, environment=environment, network=config.JOBS_NETWORK,
-            hostname=name, labels={"central.job": name},
+            image, command=command, name=name, detach=True, environment=environment, network=config.JOBS_NETWORK,
+            hostname=name, labels={"central.job": name, **(labels or {})},
             mem_limit=mem_limit, nano_cpus=int(cpus * 1e9), pids_limit=512,
             cap_drop=["ALL"], security_opt=["no-new-privileges"], restart_policy={"Name": "no"},
         )

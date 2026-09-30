@@ -23,7 +23,7 @@ what the caller can see. Admins see everything.
 
 | Method | Path | Description |
 |---|---|---|
-| GET / PATCH | `/api/org` | Company name and default visibility (PATCH: admin) |
+| GET / PATCH | `/api/org` | Company name, default visibility, time zone and `code_policy` (`any` \| `approved`) (PATCH: admin) |
 | GET / POST | `/api/teams` | List (with spend and your role) / create `{name, description?, require_approval?, maintainer?}` (admin) |
 | GET / PATCH / DELETE | `/api/teams/{team}` | Detail / name, description (maintainer), `require_approval`, `budget_usd_month`, `budget_enforce` (admin) / delete (admin, no agents) |
 | GET / POST | `/api/teams/{team}/members` | Members / add `{email, role}` (maintainer; pre-registers unknown e-mails) |
@@ -132,6 +132,7 @@ Agents reach the memory at `/internal/memory/mcp` with their internal token and 
 | GET | `/api/catalog` | Skills, MCP servers, connections (keys masked) |
 | POST | `/api/catalog/skills` · `/api/catalog/mcps` · `/api/catalog/llm` | Upsert |
 | DELETE | `/api/catalog/llm/{name}` | Refused while an agent uses it |
+| PATCH | `/api/catalog/llm/{name}/code` | `{allow_code}`: approve a connection to receive code (coding mode, code evaluations) when `code_policy` is `approved`. Admin |
 | POST | `/api/apply` | GitOps document `{skills, mcp_servers, agents}` (idempotent) |
 | GET | `/api/templates`, `/api/templates/{id}` | Gallery |
 | POST | `/api/templates/{id}/apply` | `{connection?, harness_connection?}` |

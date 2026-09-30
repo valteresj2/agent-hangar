@@ -256,6 +256,10 @@ def probe(db: Session, slug: str, env: str = "prod") -> dict:
     refresh_deployments(db, [a])
     if not active_deployment(a, env):
         raise PlatformError(f"'{slug}' não está rodando em {env}")
+    from .catalog import code_allowed
+    ok_code, msg = code_allowed(db, spec_of(a), env)
+    if not ok_code:
+        return {"ok": False, "env": env, "steps": [{"name": "política de código", "ok": False, "detail": msg}]}
     if spec_of(a).get("llm", {}).get("client_tools") is False:
         return {"ok": False, "env": env, "steps": [{"name": "configuração", "ok": False,
                 "detail": "a spec desliga as ferramentas do cliente (llm.client_tools=false)"}]}

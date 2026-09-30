@@ -42,6 +42,15 @@ def _is_tool_call(raw: bytes) -> bool:
     return any(isinstance(i, dict) and i.get("method") == "tools/call" for i in items)
 
 
+def _sends_client_tools(raw: bytes) -> bool:
+    if b'"tools"' not in raw:
+        return False
+    try:
+        return bool((json.loads(raw) or {}).get("tools"))
+    except ValueError:
+        return False
+
+
 def protocol_of(path: str) -> str:
     if path.startswith("v1/"):
         return "openai"
@@ -191,6 +200,10 @@ async def _proxy(request: Request, slug: str, path: str, env: str):
         info = {"slug": a.slug, "name": a.name, "objective": a.objective, "final_output": a.final_output,
                 "version": a.current_version, "skills": spec.get("skills", []), "id": a.id}
         is_harness = bool(spec.get("harness"))
+        code_ok, code_msg = svc.code_allowed(db, spec, env)
+    if not code_ok and protocol_of(path) == "openai" and _sends_client_tools(await request.body()):
+        # modo agente de código (VS Code, Cline…): o cliente mandaria arquivos e saídas de terminal para esse LLM
+        return JSONResponse({"error": {"message": code_msg, "type": "code_policy"}}, 403)
     # sessão já fechada aqui: nada abaixo segura conexão do pool enquanto espera o agente
     if is_harness:
         return await _proxy_harness(info, path, request, env)

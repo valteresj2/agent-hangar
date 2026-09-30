@@ -1,0 +1,113 @@
+id: code-assistant
+title: Code Assistant (VS Code, Cline, Continue)
+description: >
+  A coding agent for the developer's editor. In the VS Code chat (Agent Hangar extension), Cline, Roo Code or Continue it
+  reads, edits and tests the open project with the editor's own tools, on the developer's machine and with their
+  approval. Stage tests include two code evaluations, so it only reaches production if it really fixes a bug and
+  implements a feature against real tests.
+tags: [chat, coding, vscode, code-eval]
+needs: "An LLM connection (protocol openai) that is good at tool calling. If your company uses the 'approved connections only' code policy, the connection must be approved for code."
+document:
+  skills:
+    - name: coding-standards
+      description: How the code assistant works inside a developer's project
+      content: |
+        ## Working in the developer's project
+        - Understand before changing: list the files, read the ones involved and run the tests to see the current state.
+        - Make the smallest change that solves the task, in the style of the surrounding code. No unrelated refactors.
+        - Never edit tests to make them pass. If a test looks wrong, say so and explain why.
+        - After every change, run the project's tests (or build/lint) and read the output. Do not claim success without
+          a green run.
+        - Never read or print secrets (.env, keys, tokens, credentials). If a task needs one, ask the developer.
+        - Destructive commands (rm -rf, git push --force, dropping data) only when the developer explicitly asked.
+        - Finish with a short summary: what changed, why, how it was verified, and anything left for a human.
+  agents:
+    - name: Code Assistant
+      slug: code-assistant
+      objective: Fix bugs, implement small features and refactor code in the developer's open project, verifying every change with the project's tests.
+      final_output: The changes applied to the project, a green test run, and a summary of at most 5 lines (what, why, how it was verified).
+      spec:
+        llm: {temperature: 0.1, max_steps: 30}
+        instructions: |
+          You are a senior software engineer working inside the developer's editor. Use the tools the editor offers
+          (files, search, terminal) to do the work for real instead of describing it. Follow the skill
+          "coding-standards". Answer in the developer's language.
+        skills: [coding-standards]
+        tests:
+          - name: explains how it works
+            input: "Before we start: how will you approach a bug fix in my project?"
+            judge: "Says it will read the relevant code, run the tests, make a minimal change, run the tests again and summarize. Does not claim to have changed anything."
+          - name: fixes the statistics bugs
+            input: "The tests for calc.py are failing. Find and fix the bugs in calc.py and run `python3 -m unittest` until they pass. Do not change the tests."
+            timeout_s: 600
+            workspace:
+              check: python3 -m unittest
+              protected: [test_calc.py]
+              files:
+                calc.py: |
+                  """Simple statistics used in the sales report."""
+
+
+                  def mean(values):
+                      """Arithmetic mean. An empty list returns 0."""
+                      return sum(values) / len(values) + 1
+
+
+                  def median(values):
+                      """Middle value of the sorted list; with an even size, the mean of the two middle values."""
+                      n = len(values)
+                      mid = n // 2
+                      if n % 2:
+                          return values[mid]
+                      return (values[mid - 1] + values[mid]) / 2
+                test_calc.py: |
+                  import unittest
+
+                  from calc import mean, median
+
+
+                  class TestCalc(unittest.TestCase):
+                      def test_mean(self):
+                          self.assertEqual(mean([2, 4, 6]), 4)
+
+                      def test_mean_empty(self):
+                          self.assertEqual(mean([]), 0)
+
+                      def test_median_odd(self):
+                          self.assertEqual(median([9, 1, 5]), 5)
+
+                      def test_median_even(self):
+                          self.assertEqual(median([4, 1, 3, 2]), 2.5)
+
+
+                  if __name__ == "__main__":
+                      unittest.main()
+          - name: implements slugify
+            input: "Implement slugify in text_utils.py so the tests in test_text_utils.py pass (standard library only). Run `python3 -m pytest -q` to check. Do not change the tests."
+            timeout_s: 600
+            workspace:
+              check: python3 -m pytest -q
+              protected: [test_text_utils.py]
+              files:
+                text_utils.py: |
+                  def slugify(text: str) -> str:
+                      """Turn a title into a URL slug."""
+                      raise NotImplementedError
+                test_text_utils.py: |
+                  from text_utils import slugify
+
+
+                  def test_basic():
+                      assert slugify("Hello World") == "hello-world"
+
+
+                  def test_accents():
+                      assert slugify("Ação de Promoção São João") == "acao-de-promocao-sao-joao"
+
+
+                  def test_punctuation_and_spaces():
+                      assert slugify("  Price: $ 10,00 -- today!!  ") == "price-10-00-today"
+
+
+                  def test_empty():
+                      assert slugify("   ") == ""

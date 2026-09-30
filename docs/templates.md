@@ -23,6 +23,21 @@ When a template is applied, `connection` fills `llm.connection` for chat agents 
 `harness_connection` fills `harness.connection` for harness agents. The protocols are checked. With no connections,
 agents run in mock mode.
 
+## Code Assistant (`code-assistant`)
+
+A coding agent for VS Code (the Agent Hangar extension), Cline, Roo Code and Continue:
+- a `coding-standards` skill: read before changing, make minimal changes, never edit tests to make them pass, run
+  the tests before claiming success, never touch secrets;
+- `max_steps: 30`;
+- three stage tests:
+  - an LLM-as-judge case on how it approaches a bug fix;
+  - **two code evaluations**: fixing the bugs in a statistics module, and implementing `slugify` from a stub, both
+    with the tests protected.
+
+The agent only reaches production if it really solves both. Apply it with `hangar templates apply code-assistant
+--connection <conn>`, or from **Templates** in the UI. If the company uses the "approved connections only" code
+policy, the connection must be approved for code.
+
 ## Contributing a template
 
 1. Add `templates/<id>.yaml`. Use generic example data, never real customer data.

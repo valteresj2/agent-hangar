@@ -126,3 +126,9 @@ def test_coding_client_snippets():
         s = conn.snippet(client, "model", "dev-bot", "Dev Bot", key="ah_x")
         assert "/gw/dev-bot/v1" in s["content"] and "ah_x" in s["content"]
     assert "tool_use" in conn.snippet("continue", "model", "dev-bot", "Dev Bot")["content"]
+
+
+def test_invalid_body_is_400(api):
+    r = api.post("/v1/chat/completions", content=b'{"messages": [{"role": "user", "content": "s\xf3"}]}',
+                 headers={"content-type": "application/json"})
+    assert r.status_code == 400 and r.json()["error"]["type"] == "invalid_request_error"

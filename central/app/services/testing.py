@@ -100,6 +100,11 @@ def _run_harness_tests(db: Session, a: Agent, spec: dict, actor="admin") -> Test
     cases = spec.get("tests") or [{"name": "smoke", "input": "Responda apenas: ok", "expect_contains": "ok"}]
     for i, case in enumerate(cases):
         s = time.time()
+        if case.get("workspace"):
+            results.append({"name": case.get("name") or f"caso {i + 1}", "passed": False, "latency_ms": 0,
+                            "detail": "avaliação de código (workspace) é para agentes de chat; agentes com harness "
+                                      "são avaliados pelo resultado do job"})
+            continue
         try:
             job = run_harness_job(db, a.slug, case["input"], env="stage", timeout_s=case.get("timeout_s"),
                                   actor=actor, channel="test")
@@ -113,6 +118,21 @@ def _run_harness_tests(db: Session, a: Agent, spec: dict, actor="admin") -> Test
         results.append({"name": case.get("name") or f"caso {i + 1}", "passed": ok, "detail": detail[:400],
                         "latency_ms": int((time.time() - s) * 1000)})
     return _record(db, a, results, t0, actor, " (harness)")
+
+
+def _code_case(db: Session, a: Agent, spec: dict, case: dict) -> tuple[bool, str]:
+    """Caso com workspace: o agente trabalha num mini-projeto real (sandbox) e o `check` decide."""
+    from . import code_eval
+
+    if is_mock(spec):
+        return True, "(mock: avaliação de código não executada — associe uma conexão de LLM)"
+    if (spec.get("llm") or {}).get("client_tools") is False:
+        return False, "a avaliação de código usa ferramentas do cliente, e a spec as desliga (llm.client_tools=false)"
+    from .catalog import code_allowed
+    ok_code, msg = code_allowed(db, spec, "stage")
+    if not ok_code:
+        return False, msg
+    return code_eval.run(a.slug, case)
 
 
 def run_tests(db: Session, slug: str, actor="admin") -> TestRun:
@@ -176,8 +196,10 @@ def run_tests(db: Session, slug: str, actor="admin") -> TestRun:
 
     for i, case in enumerate(spec.get("tests", [])):
         def run_case(case=case):
+            if case.get("workspace"):
+                return _code_case(db, a, spec, case)
             r = _post(base + "/v1/chat/completions", {"messages": [{"role": "user", "content": case["input"]}]})
             return evaluate(db, spec, case, r["choices"][0]["message"]["content"])
-        check(f"caso: {case.get('name') or i + 1}", run_case)
+        check(f"{'código' if case.get('workspace') else 'caso'}: {case.get('name') or i + 1}", run_case)
 
     return _record(db, a, results, t0, actor)

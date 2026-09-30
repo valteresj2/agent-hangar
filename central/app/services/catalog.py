@@ -95,7 +95,35 @@ def llm_connection_dict(c: LlmConnection) -> dict:
     return {"name": c.name, "base_url": c.base_url, "model_name": c.model_name, "description": c.description,
             "protocol": c.protocol, "api_key": mask_key(c.api_key), "has_key": bool(c.api_key),
             "price_in_per_mtok": c.price_in_per_mtok, "price_out_per_mtok": c.price_out_per_mtok,
-            "created_at": iso(c.created_at)}
+            "allow_code": bool(c.allow_code), "created_at": iso(c.created_at)}
+
+
+def set_code_approval(db: Session, name: str, allow: bool, actor="admin") -> LlmConnection:
+    c = get_connection(db, name)
+    c.allow_code = bool(allow)
+    db.commit()
+    audit(db, actor, "llm_connection.code", name, "aprovada para código" if allow else "não aprovada para código")
+    return c
+
+
+def code_allowed(db: Session, spec: dict, env: str) -> tuple[bool, str]:
+    """O agente pode receber código (ferramentas do cliente de código, avaliações de código) neste ambiente?
+    Com a política da empresa em "approved", só se a conexão de LLM efetiva estiver aprovada para código."""
+    from ..models import Organization
+
+    org = db.get(Organization, 1)
+    if not org or (org.code_policy or "any") != "approved":
+        return True, ""
+    llm = spec.get("llm") or {}
+    override = llm.get(env) if isinstance(llm.get(env), dict) else {}
+    name = override.get("connection") or llm.get("connection") or ""
+    if not name:
+        return True, ""  # mock: nada sai para um LLM
+    conn = db.scalar(select(LlmConnection).where(LlmConnection.name == name))
+    if conn and conn.allow_code:
+        return True, ""
+    return False, (f"a conexão de LLM '{name}' não está aprovada para receber código (política da empresa). "
+                   "Peça a um admin para aprová-la em Catálogo → Conexões de LLM, ou use uma conexão aprovada.")
 
 
 def get_connection(db: Session, name: str) -> LlmConnection:
