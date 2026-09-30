@@ -401,3 +401,42 @@ async function agentSchedules(t, a) {
   t.querySelectorAll('.sc-del').forEach(b => b.onclick = e => confirm('Excluir o agendamento e o histórico dele?') &&
     act(e.target, () => api(`/schedules/${b.dataset.id}`, { method: 'DELETE' }).then(() => agentSchedules(t, a)), 'Agendamento excluído'));
 }
+
+/* ---------- Catálogo Docker MCP (gateway) ---------- */
+async function gatewayCatalog(box, q = '') {
+  const [st, cat] = await Promise.all([api('/mcp-gateway/status').catch(e => ({ online: false, error: e.message })),
+    api('/mcp-gateway/catalog?limit=24&q=' + encodeURIComponent(q)).catch(e => ({ error: e.message, servers: [] }))]);
+  const tools = st.tools || {};
+  box.innerHTML = `<div class="card"><div class="row between"><h2>Catálogo Docker MCP ${cat.total ? `(${cat.total} servidores)` : ''}</h2>
+      ${st.online ? `<span class="pill ok">gateway no ar, ${st.total_tools} ferramentas</span>` : '<span class="pill warn">gateway fora do ar</span>'}</div>
+    <div class="mute small">Servidores MCP prontos, mantidos no catálogo oficial da Docker e rodando cada um num container isolado com imagem assinada.
+      Ao ativar, o servidor vira o item <code>docker:&lt;nome&gt;</code> deste catálogo e os agentes passam a usá-lo pela spec (<code>mcps</code>).
+      ${st.online ? '' : `<br>Para ligar o gateway: <code>docker compose --profile mcp-gateway up -d</code>${st.error ? ` <span class="bad-text">(${esc(st.error)})</span>` : ''}`}</div>
+    ${cat.error ? `<div class="bad-text small mt">${esc(cat.error)}</div>` : ''}
+    <div class="row mt"><input id="gw-q" placeholder="Buscar: github, postgres, slack, notion, busca…" value="${esc(q)}" style="flex:1"><button id="gw-go" class="ghost">Buscar</button></div>
+    <div class="mute small mt">${cat.matches ?? 0} resultado(s)${cat.matches > 24 ? ' (mostrando 24 — refine a busca)' : ''}${cat.enabled && cat.enabled.length ? `, ${cat.enabled.length} ativo(s)` : ''}.</div>
+    <div class="grid g3 mt">${(cat.servers || []).map(s => `<div class="card gw-item">
+      <div class="row between"><b>${esc(s.title)}</b>${s.enabled ? '<span class="pill ok">ativo</span>' : ''}</div>
+      <div class="mute small"><code>${esc(s.name)}</code>${s.secrets.length ? ` · precisa de ${s.secrets.length} segredo(s)` : ''}</div>
+      <div class="small mt one-line" style="white-space:normal;max-height:4.5em" title="${esc(s.description)}">${esc(s.description)}</div>
+      ${s.enabled && tools[s.name] ? `<div class="mute small mt">${tools[s.name].length} ferramentas: ${esc(tools[s.name].slice(0, 6).join(', '))}${tools[s.name].length > 6 ? '…' : ''}</div>` : ''}
+      <div class="gw-form" data-n="${esc(s.name)}" hidden>${s.secrets.map(x => `<label class="mt">${esc(x.name)}<input type="password" data-secret="${esc(x.name)}" placeholder="${s.enabled ? '•••••• (salvo — vazio mantém)' : esc(x.example || 'valor')}" autocomplete="new-password"></label>`).join('')}
+        ${s.config.map(x => `<label class="mt">${esc(x.name)}<input data-config="${esc(x.name)}" placeholder="${esc(x.description || x.type)}"></label>`).join('')}</div>
+      <div class="row mt">${s.enabled
+        ? `<button class="ghost gw-off" data-n="${esc(s.name)}">Desativar</button>${s.secrets.length || s.config.length ? `<button class="ghost gw-on" data-n="${esc(s.name)}" data-f="${s.secrets.length + s.config.length}">Atualizar</button>` : ''}`
+        : `<button class="gw-on" data-n="${esc(s.name)}" data-f="${s.secrets.length + s.config.length}">Ativar</button>`}</div></div>`).join('')}</div></div>`;
+  const reload = () => gatewayCatalog(box, $('#gw-q').value.trim());
+  $('#gw-go').onclick = reload;
+  $('#gw-q').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); reload(); } };
+  box.querySelectorAll('.gw-on').forEach(b => b.onclick = e => {
+    const form = box.querySelector(`.gw-form[data-n="${b.dataset.n}"]`);
+    if (+b.dataset.f && form.hidden) { form.hidden = false; b.textContent = 'Confirmar'; return; }  // pede os segredos antes
+    const secrets = {}, config = {};
+    form.querySelectorAll('[data-secret]').forEach(i => { if (i.value) secrets[i.dataset.secret] = i.value; });
+    form.querySelectorAll('[data-config]').forEach(i => { if (i.value) config[i.dataset.config] = i.value; });
+    act(e.target, () => api('/mcp-gateway/servers/' + encodeURIComponent(b.dataset.n), { method: 'PUT', body: { secrets, config } })
+      .then(r => { toast(`${b.dataset.n} ativo — use "${r.catalog_mcp}" nos agentes`); setTimeout(reload, 1500); }));
+  });
+  box.querySelectorAll('.gw-off').forEach(b => b.onclick = e => confirm(`Desativar ${b.dataset.n}? Agentes que o usam perdem essas ferramentas.`) &&
+    act(e.target, () => api('/mcp-gateway/servers/' + encodeURIComponent(b.dataset.n), { method: 'DELETE' }).then(reload), 'Desativado'));
+}

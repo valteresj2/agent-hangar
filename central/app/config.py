@@ -70,5 +70,11 @@ SCHEDULE_RUN_TIMEOUT_S = int(_env("SCHEDULE_RUN_TIMEOUT_S", "900"))
 SCHEDULE_MIN_INTERVAL_MIN = int(_env("SCHEDULE_MIN_INTERVAL_MIN", "5"))
 SCHEDULE_ALLOW_PRIVATE_WEBHOOKS = _env("SCHEDULE_ALLOW_PRIVATE_WEBHOOKS", "0") == "1"
 
+# Catálogo Docker MCP (profile mcp-gateway): o gateway agrega servidores MCP prontos, cada um num container
+MCP_GATEWAY_URL = _env("MCP_GATEWAY_URL", "http://mcp-gateway:8811/mcp")
+MCP_GATEWAY_CONFIG_DIR = _env("MCP_GATEWAY_CONFIG_DIR", "")  # volume compartilhado com o gateway (vazio = só o banco)
+MCP_GATEWAY_CATALOG_URL = _env("MCP_GATEWAY_CATALOG_URL", "https://desktop.docker.com/mcp/catalog/v2/catalog.yaml")
+MCP_GATEWAY_CATALOG_TTL_S = int(_env("MCP_GATEWAY_CATALOG_TTL_S", "21600"))
+
 TEMPLATES_DIR = _env("TEMPLATES_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                                   "templates"))

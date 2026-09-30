@@ -130,3 +130,18 @@ def test_lite_mode_skips_tools_and_agent_prompt(rt, monkeypatch):
     assert text == "Vendas 2026" and trace == []
     assert "tools" not in seen[0] and seen[0]["max_tokens"] == 1500
     assert "Instruções" not in seen[0]["messages"][0]["content"]
+
+
+def test_mcp_tool_prefix_filters_gateway_tools(rt, monkeypatch):
+    """Item do catálogo Docker MCP: o agente só vê as ferramentas do seu servidor, sem o prefixo repetido."""
+    class T:
+        def __init__(self, name):
+            self.name, self.description, self.inputSchema = name, "", {"type": "object"}
+
+    async def fake_list(url):
+        return [T("fetch__fetch"), T("duckduckgo__search"), T("duckduckgo__fetch_content")]
+    monkeypatch.setattr(rt, "_mcp_list", fake_list)
+    monkeypatch.setitem(rt.SPEC, "mcps", [{"name": "docker:duckduckgo", "url": "http://gw/mcp", "tool_prefix": "duckduckgo__"}])
+    tools, complete = asyncio.run(rt.build_tools())
+    assert complete and sorted(t.name for t in tools if t.name.startswith("docker")) == \
+        ["docker_duckduckgo__fetch_content", "docker_duckduckgo__search"]

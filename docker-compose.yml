@@ -112,6 +112,9 @@ services:
       SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-1}
       SCHEDULE_MIN_INTERVAL_MIN: ${SCHEDULE_MIN_INTERVAL_MIN:-5}
       SCHEDULE_ALLOW_PRIVATE_WEBHOOKS: ${SCHEDULE_ALLOW_PRIVATE_WEBHOOKS:-0}
+      # catálogo Docker MCP (profile mcp-gateway): a central escreve aqui o que o gateway deve rodar
+      MCP_GATEWAY_CONFIG_DIR: /mcp-gateway
+      MCP_GATEWAY_URL: ${MCP_GATEWAY_URL:-http://mcp-gateway:8811/mcp}
       COOKIE_SECURE: ${COOKIE_SECURE:-}
       OAUTH_GOOGLE_CLIENT_ID: ${OAUTH_GOOGLE_CLIENT_ID:-}
       OAUTH_GOOGLE_CLIENT_SECRET: ${OAUTH_GOOGLE_CLIENT_SECRET:-}
@@ -125,6 +128,8 @@ services:
       OAUTH_GITHUB_CLIENT_SECRET: ${OAUTH_GITHUB_CLIENT_SECRET:-}
       OAUTH_GITHUB_ORGS: ${OAUTH_GITHUB_ORGS:-}
       OAUTH_GITHUB_FETCH_GROUPS: ${OAUTH_GITHUB_FETCH_GROUPS:-}
+    volumes:
+      - mcp_gateway:/mcp-gateway
     ports:
       - "${CENTRAL_PORT:-8090}:8080"
     # agents_net: containers dos agentes (chat) e Postgres. jobs_net: callback dos containers de job, que
@@ -183,7 +188,82 @@ services:
     networks: [ds_docker_api]
     restart: unless-stopped
 
+  # Catálogo Docker MCP — 230+ servidores MCP prontos, cada um num container isolado (opcional):
+  #   docker compose --profile mcp-gateway up -d
+  # Ative os servidores em Catálogo -> "Catálogo Docker MCP"; os agentes os usam como `docker:<nome>`.
+  # Camadas: os agentes falam com `mcp-gateway` (encaminhador) -> o gateway fica numa rede própria, junto dos
+  # servidores MCP que ele cria (o gateway liga os servidores a TODAS as redes dele: por isso ele não está na rede
+  # dos agentes nem na do Docker). Docker só por um socket unix (shim) que repassa ao proxy restrito.
+  mcp-gateway:
+    profiles: [mcp-gateway]
+    image: alpine/socat:1.8.0.3
+    command: TCP-LISTEN:8811,fork,reuseaddr TCP:mcp-gateway-core:8811
+    depends_on: [mcp-gateway-core]
+    networks: [agents_net, mcp_servers_net]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges]
+    restart: unless-stopped
+
+  mcp-gateway-core:
+    profiles: [mcp-gateway]
+    image: docker/mcp-gateway:${MCP_GATEWAY_VERSION:-v0.43.3}   # estável (a v0.44.x é pré-release)
+    depends_on: [mcp-gateway-shim]
+    environment:
+      DOCKER_MCP_IN_CONTAINER: "1"
+      DOCKER_CONFIG: /docker-config   # features: sem mcp-add/mcp-remove para os LLMs; ferramentas com prefixo
+    command:
+      - --transport=streaming
+      - --port=8811
+      - --registry=/mcp-config/registry.yaml
+      - --config=/mcp-config/config.yaml
+      - --secrets=/mcp-config/secrets.env
+      - --watch
+      - --verify-signatures
+      - --block-secrets
+      - --long-lived
+      - --allow-unauthenticated        # só alcançável pela rede interna, via o encaminhador (sem porta publicada)
+    volumes:
+      - mcp_gateway:/mcp-config:ro
+      - mcp_gateway_sock:/var/run
+      - ./mcp-servers/docker-gateway/docker-config.json:/docker-config/config.json:ro
+    networks: [mcp_servers_net]
+    restart: unless-stopped
+
+  mcp-gateway-shim:
+    profiles: [mcp-gateway]
+    image: alpine/socat:1.8.0.3
+    command: UNIX-LISTEN:/sock/docker.sock,fork,mode=660 TCP:mcp-gateway-docker:2375
+    depends_on: [mcp-gateway-docker]
+    volumes:
+      - mcp_gateway_sock:/sock
+    networks: [mcp_gateway_docker_api]
+    restart: unless-stopped
+
+  mcp-gateway-docker:
+    profiles: [mcp-gateway]
+    image: tecnativa/docker-socket-proxy:v0.4.1
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1          # baixa as imagens assinadas dos servidores
+      POST: 1
+      DELETE: 1
+      ALLOW_START: 1
+      ALLOW_STOP: 1
+      INFO: 1
+      EXEC: 0
+      BUILD: 0
+      NETWORKS: 0
+      VOLUMES: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [mcp_gateway_docker_api]
+    restart: unless-stopped
+
 volumes:
+  mcp_gateway:
+    name: hangar_mcp_gateway
+  mcp_gateway_sock:
   data_studio:
     name: hangar_data_studio   # nome fixo: os sandboxes montam subpastas dele
   pgdata:
@@ -202,4 +282,8 @@ networks:
   sandbox_net:
     name: hangar_sandbox       # sandboxes do Data Studio: saída para a internet, sem os agentes nem o banco
   ds_docker_api:
+    internal: true
+  mcp_servers_net:
+    name: hangar_mcp_servers   # gateway + servidores MCP do catálogo Docker: saída para a internet, sem agentes nem banco
+  mcp_gateway_docker_api:
     internal: true

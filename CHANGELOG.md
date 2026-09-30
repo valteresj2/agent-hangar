@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Docker MCP catalog** (compose profile `mcp-gateway`, [docs/mcp-catalog.md](docs/mcp-catalog.md)): 230+
+  prebuilt MCP servers from Docker's official catalog, served by the open-source Docker MCP Gateway (MIT).
+  - Admins search and enable servers in **Catálogo → Catálogo Docker MCP**. Credentials are stored encrypted.
+  - Each enabled server becomes the catalog MCP `docker:<name>`, and an agent sees only that server's tools
+    (new `tool_prefix` on catalog MCPs).
+  - Safeguards: signed images; the LLM cannot add servers by itself (`dynamic-tools` disabled); servers run on
+    their own network, without agents or the database; Docker is reached only through a restricted proxy.
+  - API: `/api/mcp-gateway/catalog`, `/status` and `/servers/{name}`.
+
 ## [0.4.0] — 2026-09-29
 
 ### Added

@@ -301,7 +301,7 @@ async def job_events(job_id: int, request: Request):
 def catalog(db=Depends(db_dep)):
     return {"skills": [{"name": s.name, "description": s.description, "content": s.content}
                        for s in db.scalars(select(Skill))],
-            "mcp_servers": [{"name": m.name, "url": m.url, "description": m.description}
+            "mcp_servers": [{"name": m.name, "url": m.url, "description": m.description, "tool_prefix": m.tool_prefix}
                             for m in db.scalars(select(McpServer))],
             "llm_connections": [svc.llm_connection_dict(c) for c in db.scalars(select(LlmConnection))],
             "fallback_model": config.DEFAULT_MODEL}
@@ -329,6 +329,33 @@ def add_llm_connection(b: LlmConnectionBody, request: Request, db=Depends(db_dep
 @router.delete("/catalog/llm/{name}", dependencies=[Depends(require_admin)])
 def del_llm_connection(name: str, request: Request, db=Depends(db_dep)):
     guard(lambda: svc.delete_llm_connection(db, name, actor(request)))
+    return {"ok": True}
+
+
+# ------------------------------------------------------------------ catálogo Docker MCP (gateway)
+class GatewayEnable(BaseModel):
+    secrets: dict = Field(default_factory=dict)  # {nome_do_segredo: valor}; vazio mantém o salvo
+    config: dict | None = None
+
+
+@router.get("/mcp-gateway/catalog")
+def gateway_catalog(request: Request, q: str = "", limit: int = 60, db=Depends(db_dep)):
+    return guard(lambda: svc.mcp_gateway.search(db, acc(request, db), q, min(limit, 300)))
+
+
+@router.get("/mcp-gateway/status")
+def gateway_status(request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.mcp_gateway.status(db, acc(request, db)))
+
+
+@router.put("/mcp-gateway/servers/{name}")
+def gateway_enable(name: str, body: GatewayEnable, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.mcp_gateway.enable(db, acc(request, db), name, body.secrets, body.config))
+
+
+@router.delete("/mcp-gateway/servers/{name}")
+def gateway_disable(name: str, request: Request, db=Depends(db_dep)):
+    guard(lambda: svc.mcp_gateway.disable(db, acc(request, db), name))
     return {"ok": True}
 
 

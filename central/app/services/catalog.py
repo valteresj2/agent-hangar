@@ -25,11 +25,13 @@ def upsert_skill(db: Session, name, description, content, actor="admin"):
     return s
 
 
-def upsert_mcp(db: Session, name, url, description="", actor="admin"):
+def upsert_mcp(db: Session, name, url, description="", actor="admin", tool_prefix: str | None = None):
     if not url.startswith(("http://", "https://")):
         raise PlatformError("url do MCP deve ser http(s) (Streamable HTTP)")
     m = db.scalar(select(McpServer).where(McpServer.name == name)) or McpServer(name=name)
     m.url, m.description = url, description or ""
+    if tool_prefix is not None:
+        m.tool_prefix = tool_prefix
     db.add(m)
     db.commit()
     audit(db, actor, "mcp.upsert", name, url)

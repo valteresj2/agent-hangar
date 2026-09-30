@@ -22,6 +22,14 @@ log = logging.getLogger("hangar")
 mcp_app = mcp.streamable_http_app()
 
 
+def _write_gateway_files():
+    try:
+        with db.SessionLocal() as s:
+            svc.mcp_gateway.write_files(s)
+    except OSError as e:
+        log.warning("catálogo Docker MCP: não foi possível escrever em %s (%s)", config.MCP_GATEWAY_CONFIG_DIR, e)
+
+
 @asynccontextmanager
 async def lifespan(app):
     crypto.check_key()
@@ -31,6 +39,7 @@ async def lifespan(app):
         log.warning("ADMIN_TOKEN vazio ou padrão — defina um valor forte antes de expor a central")
     await run_in_threadpool(db.migrate)
     await run_in_threadpool(svc.recover_orphans)
+    await run_in_threadpool(_write_gateway_files)  # o gateway Docker MCP precisa dos arquivos mesmo sem servidor ativo
     svc.schedules.start()
     try:
         async with mcp.session_manager.run():

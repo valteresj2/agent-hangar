@@ -118,6 +118,8 @@ class McpServer(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True)
     url: Mapped[str] = mapped_column(String(300))
     description: Mapped[str] = mapped_column(Text, default="")
+    # só as ferramentas com este prefixo (ex.: "duckduckgo__" num gateway que agrega vários servidores)
+    tool_prefix: Mapped[str] = mapped_column(String(100), default="")
 
 
 class LlmConnection(Base):
@@ -357,3 +359,16 @@ class ScheduleRun(Base):
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+
+class GatewayServer(Base):
+    """Servidor do catálogo Docker MCP ativado no gateway (profile mcp-gateway). Os segredos ficam criptografados
+    aqui; a central escreve registry.yaml / config.yaml / secrets.env no volume que o gateway observa (--watch)."""
+    __tablename__ = "gateway_servers"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    secrets: Mapped[str] = mapped_column(Text, default="")  # "enc:v1:…" de um JSON {nome_do_segredo: valor}
+    enabled_by: Mapped[str] = mapped_column(String(254), default="")
+    enabled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

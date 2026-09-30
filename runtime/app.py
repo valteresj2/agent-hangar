@@ -255,9 +255,12 @@ async def build_tools() -> tuple[list[Tool], bool]:
                               t.get("parameters", {"type": "object", "properties": {}}),
                               _closure(_http_tool, t)))
     for m in SPEC.get("mcps", []):
+        prefix = m.get("tool_prefix") or ""
         try:
             for mt in await _mcp_list(m["url"]):
-                tools.append(Tool(_safe(f"{m['name']}__{mt.name}"), mt.description or "",
+                if prefix and not mt.name.startswith(prefix):
+                    continue  # gateway com vários servidores: este item do catálogo expõe só os seus
+                tools.append(Tool(_safe(f"{m['name']}__{mt.name[len(prefix):]}"), mt.description or "",
                                   mt.inputSchema, _closure(_mcp_call, m["url"], mt.name),
                                   hidden=mt.name == "ingest_file"))
         except Exception as e:  # MCP fora do ar não derruba o agente

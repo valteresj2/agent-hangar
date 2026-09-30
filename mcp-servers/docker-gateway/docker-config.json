@@ -1,0 +1,6 @@
+{
+  "features": {
+    "dynamic-tools": "disabled",
+    "tool-name-prefix": "enabled"
+  }
+}

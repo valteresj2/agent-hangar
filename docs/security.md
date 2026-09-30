@@ -36,6 +36,16 @@ Summary; the full model is in [access.md](access.md).
 - **Deactivation takes effect immediately.** Deactivating a user (UI or SCIM) ends their sessions and revokes
   all their keys at once. Losing a team role or a grant revokes the invoke keys that no longer apply.
 
+## Docker MCP catalog
+
+The optional gateway (profile `mcp-gateway`):
+- has Docker access through a restricted proxy (containers and images only);
+- runs signed images;
+- keeps the servers it starts on `hangar_mcp_servers`, a network with internet egress but no agents or database;
+- has LLM-driven server management (`mcp-add`/`mcp-remove`) disabled.
+
+Agents reach it without a token, only from the internal network. See [mcp-catalog.md](mcp-catalog.md).
+
 ## Networks
 
 | Network | Members | Why |

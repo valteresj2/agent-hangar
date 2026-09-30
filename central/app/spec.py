@@ -80,6 +80,7 @@ class InlineSkill(_Strict):
 class InlineMcp(_Strict):
     name: str
     url: str
+    tool_prefix: str = ""  # só as ferramentas com este prefixo (gateway que agrega vários servidores)
 
 
 class TestCase(_Strict):
