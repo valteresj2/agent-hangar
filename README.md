@@ -168,6 +168,11 @@ Wikipedia, GitHub, Postgres, Notion…). Each runs in an isolated container, and
 apps, Notion, Linear…) once. Agents use them through the central, which keeps and refreshes the tokens. See
 [docs/remote-mcp.md](docs/remote-mcp.md).
 
+**Long-term memory:** give an agent `memory: {scope: agent | team | org}`, and it remembers customers, decisions and
+preferences across conversations. The memory is a temporal knowledge graph (Graphiti on Neo4j Community or
+FalkorDB): changed facts are kept as history, not overwritten. The central decides which memory each agent
+reads and writes, and stage never pollutes production. See [docs/memory.md](docs/memory.md).
+
 **Plug and play:** the agent's **Connect** tab (or `hangar connect <slug> <tool>`) gives a per-tool key and the
 config to paste. Every tool can use the agent as an **MCP tool** (Claude Code, Claude Desktop, Codex, OpenCode,
 Cursor, VS Code, LibreChat, Open WebUI); chat UIs can also use it as a **model** (LibreChat, Open WebUI, OpenCode,

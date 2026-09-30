@@ -53,6 +53,10 @@ FLUXO
    ao modelo padrão dela = llm={"connection": "x", "model": null}. Veja o formato completo em
    get_spec_schema. Inclua 2+ casos em `tests` ({name, input, expect_contains | expect_regex | judge});
    `judge` é uma rubrica avaliada por um LLM (use para respostas abertas).
+   MEMÓRIA: se o agente precisa lembrar entre conversas (clientes, decisões, preferências, histórico), passe
+   memory={"scope": "agent"|"team"|"org"} (team = compartilhada com o time; write=false = só leitura). Ele ganha
+   memory__recall e memory__remember; diga nas instructions quando consultar e o que gravar. Só funciona se a
+   instalação ligou a memória (docs/memory.md) — senão o deploy avisa.
 6. Multiagente: crie os especialistas e depois o orquestrador com sub_agents=[slugs] (build_multi_agent).
 7. ship_agent(slug): testa em stage, registra e só promove para produção se passar. Se falhar, leia os
    resultados, corrija com design_agent e rode de novo. Errou uma versão? rollback_agent.
@@ -233,13 +237,14 @@ async def design_agent(ctx: Context, slug: str, instructions: str | None = None,
                        skills: list | None = None, mcps: list | None = None, tools: list | None = None,
                        sub_agents: list | None = None, tests: list | None = None, channels: list | None = None,
                        llm: dict | None = None, harness: dict | None = None, judge: dict | None = None,
-                       remove: list[str] | None = None) -> dict:
+                       memory: dict | None = None, remove: list[str] | None = None) -> dict:
     """Atualiza a spec do agente (gera nova versão se mudar). JSON Merge Patch: passe só o que quer mudar;
     dentro de llm/harness/judge, um valor null apaga o campo. `remove` apaga campos inteiros (ex.:
     remove=["harness"] para voltar a ser agente de chat, ou remove=["llm"] antes de virar harness)."""
     patch = {k: v for k, v in (("instructions", instructions), ("skills", skills), ("mcps", mcps),
                                ("tools", tools), ("sub_agents", sub_agents), ("tests", tests),
-                               ("channels", channels), ("llm", llm), ("harness", harness), ("judge", judge))
+                               ("channels", channels), ("llm", llm), ("harness", harness), ("judge", judge),
+                               ("memory", memory))
              if v is not None}
     if model is not None:
         patch["llm"] = {**(patch.get("llm") or {}), "model": model or None}

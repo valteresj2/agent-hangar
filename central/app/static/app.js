@@ -205,9 +205,9 @@ function shipResult(steps) {
 
 async function agentDetail(slug, tab = 'overview') {
   const a = await api('/agents/' + slug);
-  const tabs = ['overview', 'connect', 'topology', 'spec', 'versions', 'tests', 'jobs', 'deployments', 'usage', 'playground', 'schedules', 'access'];
-  const names = { overview: 'Visão geral', connect: 'Conectar', topology: 'Multiagente', spec: 'Spec', versions: 'Versões', tests: 'Testes', jobs: 'Jobs', deployments: 'Deployments', usage: 'Uso', playground: 'Playground', schedules: 'Agendamentos', access: 'Acesso' };
-  const need = { connect: 'consume', spec: 'view_spec', versions: 'view_spec', tests: 'view_spec', jobs: 'usage', deployments: 'view_spec', usage: 'usage', playground: 'consume', schedules: 'usage', access: 'manage' };
+  const tabs = ['overview', 'connect', 'topology', 'spec', 'versions', 'tests', 'jobs', 'deployments', 'usage', 'playground', 'schedules', 'memory', 'access'];
+  const names = { overview: 'Visão geral', connect: 'Conectar', topology: 'Multiagente', spec: 'Spec', versions: 'Versões', tests: 'Testes', jobs: 'Jobs', deployments: 'Deployments', usage: 'Uso', playground: 'Playground', schedules: 'Agendamentos', memory: 'Memória', access: 'Acesso' };
+  const need = { connect: 'consume', spec: 'view_spec', versions: 'view_spec', tests: 'view_spec', jobs: 'usage', deployments: 'view_spec', usage: 'usage', playground: 'consume', schedules: 'usage', memory: 'view_spec', access: 'manage' };
   const shown = tabs.filter(t => (t !== 'topology' || a.kind === 'multi') && (t !== 'jobs' || a.harness) && (!need[t] || can(a, need[t])));
   const direct = can(a, 'promote');
   main.innerHTML = `
@@ -234,7 +234,7 @@ async function agentDetail(slug, tab = 'overview') {
   on('#b-req', () => requestAccessDialog(slug));
   const t = $('#tab');
   const key = shown.includes(tab) ? tab : 'overview';
-  ({ overview, connect: agentConnect, topology, spec: specEditor, versions, tests, jobs, deployments, usage, playground, schedules: agentSchedules, access: agentAccess })[key](t, a);
+  ({ overview, connect: agentConnect, topology, spec: specEditor, versions, tests, jobs, deployments, usage, playground, schedules: agentSchedules, memory: agentMemory, access: agentAccess })[key](t, a);
 }
 
 async function agentConnect(t, a) {
@@ -715,7 +715,7 @@ async function route() {
 window.addEventListener('hashchange', () => { if (location.hash.startsWith('#/login')) showLogin(); else route(); });
 boot();
 // auto-refresh só em páginas de leitura (nunca em formulários, editor de spec ou playground)
-const NO_REFRESH = ['new', 'playground', 'spec', 'access', 'schedules'];
+const NO_REFRESH = ['new', 'playground', 'spec', 'access', 'schedules', 'memory'];
 setInterval(() => {
   const parts = location.hash.split('/');
   if (!ME || document.hidden || ['keys', 'templates', 'catalog', 'providers', 'connect', 'teams', 'users', 'sso', 'login'].includes(parts[1])) return;

@@ -1,0 +1,5 @@
+graphiti-core[falkordb]==0.30.2
+fastembed==0.8.1
+mcp>=1.10,<2
+uvicorn>=0.30
+httpx>=0.28

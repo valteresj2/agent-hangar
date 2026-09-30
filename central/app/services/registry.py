@@ -113,6 +113,8 @@ def delete_agent(db: Session, slug: str, actor="admin"):
     db.delete(a)
     db.commit()
     audit(db, actor, "agent.delete", slug)
+    from . import memory
+    memory.forget_agent(slug)  # memória própria do agente (a de time/empresa continua com os outros)
 
 
 def apply_document(db: Session, doc: dict, actor="admin", acc=None, trusted_catalog=False) -> list[dict]:

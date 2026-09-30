@@ -64,6 +64,7 @@ def run_agent(slug: str, env: str, resolved_spec: dict, llm_conf: dict):
                    "PUBLIC_URL": public_url(slug, env), "INTERNAL_BASE_URL": config.INTERNAL_BASE_URL,
                    # token só deste agente: ele não consegue se passar por outro ao chamar a central
                    "INTERNAL_TOKEN": auth.agent_token(slug),
+                   "INTERNAL_ENV_TOKEN": auth.agent_env_token(slug, env),
                    "LLM_BASE_URL": llm_conf.get("base_url", ""), "LLM_API_KEY": llm_conf.get("api_key", "")}
     try:
         return c.containers.run(

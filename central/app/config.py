@@ -76,5 +76,14 @@ MCP_GATEWAY_CONFIG_DIR = _env("MCP_GATEWAY_CONFIG_DIR", "")  # volume compartilh
 MCP_GATEWAY_CATALOG_URL = _env("MCP_GATEWAY_CATALOG_URL", "https://desktop.docker.com/mcp/catalog/v2/catalog.yaml")
 MCP_GATEWAY_CATALOG_TTL_S = int(_env("MCP_GATEWAY_CATALOG_TTL_S", "21600"))
 
-TEMPLATES_DIR = _env("TEMPLATES_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+# Memória dos agentes (profile memory): Graphiti sobre Neo4j/FalkorDB. Vazio = desligada.
+MEMORY_URL = _env("MEMORY_URL", "").rstrip("/")
+MEMORY_TOKEN = _env("MEMORY_TOKEN")  # só a central e o serviço de memória conhecem
+MEMORY_LLM_CONNECTION = _env("MEMORY_LLM_CONNECTION")  # LlmConnection (protocol openai) que extrai os fatos
+MEMORY_LLM_MODEL = _env("MEMORY_LLM_MODEL")  # vazio = o modelo padrão da conexão
+MEMORY_LLM_OUTPUT_MODE = _env("MEMORY_LLM_OUTPUT_MODE", "json_object")  # json_schema para provedores que suportam
+MEMORY_EMBEDDING_CONNECTION = _env("MEMORY_EMBEDDING_CONNECTION")  # só com MEMORY_EMBEDDER=openai no serviço
+MEMORY_EMBEDDING_MODEL = _env("MEMORY_EMBEDDING_MODEL")
+
+TEMPLATES_DIR =_env("TEMPLATES_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                                   "templates"))

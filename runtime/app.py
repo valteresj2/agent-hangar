@@ -38,7 +38,8 @@ LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 # nas chamadas a sub-agentes e ao dashboard; a central confere se o destino é permitido para este agente.
 INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN", "")
 INTERNAL_BASE_URL = os.environ.get("INTERNAL_BASE_URL", "http://central:8080").rstrip("/")
-INTERNAL_HEADERS = {"Authorization": f"Bearer {INTERNAL_TOKEN}", "X-Agent-Slug": SLUG}
+INTERNAL_HEADERS = {"Authorization": f"Bearer {INTERNAL_TOKEN}", "X-Agent-Slug": SLUG, "X-Agent-Env": ENV,
+                    "X-Agent-Env-Token": os.environ.get("INTERNAL_ENV_TOKEN", "")}
 LLM = SPEC.get("llm", {})
 MODEL = LLM.get("model", "mock/echo")
 PRICES = LLM.get("prices") or [None, None]  # US$ por 1M tokens (entrada, saída), da conexão do catálogo

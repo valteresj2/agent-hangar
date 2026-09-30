@@ -5,6 +5,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Agent memory (PoC)** ([docs/memory.md](docs/memory.md)): long-term memory as a temporal knowledge graph
+  (Graphiti), with Neo4j Community by default (profile `memory`) or FalkorDB (profile `memory-falkordb`).
+  - A spec field `memory: {scope: agent|team|org, write}` gives the agent `memory__recall` and `memory__remember`.
+  - Writes are asynchronous. Changed facts are invalidated with their dates, not deleted.
+  - The central decides the memory groups. Stage reads production memory but writes to its own group, proven by
+    a new per-environment container token.
+  - Local embeddings (fastembed), so no memory text leaves the network to be vectorized. The extraction LLM
+    comes from an encrypted LLM connection.
+  - An agent **Memory** tab to browse, search and delete memory, plus a `memory` argument on `design_agent`.
+    Deleting an agent deletes its own memory.
+  - New image `mcp-memory`.
+
 ## [0.5.0] — 2026-09-30
 
 ### Added

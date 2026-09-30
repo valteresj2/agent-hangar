@@ -74,6 +74,17 @@ schedule requires the right to edit the agent. Team members can see schedules an
 
 Agents reach the MCP at `/internal/mcp-remote/{name}` with their internal token. See [remote-mcp.md](remote-mcp.md).
 
+## Agent memory
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/memory/status` | Backend, models, write queue (`pending`, `processed`, `failed`). Admin or auditor |
+| GET | `/api/agents/{slug}/memory?env=prod\|stage&q=&limit=` | Facts of the agent's memory group (search with `q`). Needs `view_spec` |
+| DELETE | `/api/agents/{slug}/memory?env=prod\|stage` | Delete the group's memory. Needs `manage`; org memory is admin only |
+
+Agents reach the memory at `/internal/memory/mcp` with their internal token and per-environment token. See
+[memory.md](memory.md).
+
 ## SCIM 2.0 (`/scim/v2`, scope `scim`)
 
 `Users`, `Groups`, `ServiceProviderConfig`, `ResourceTypes` and `Schemas`, with filters (`userName eq`,

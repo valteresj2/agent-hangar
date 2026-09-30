@@ -252,3 +252,19 @@ def agent_token(slug: str) -> str:
 
 def verify_agent_token(slug: str, token: str) -> bool:
     return bool(slug and token and config.INTERNAL_SECRET) and hmac.compare_digest(agent_token(slug), token)
+
+
+def agent_env_token(slug: str, env: str) -> str:
+    """Prova o ambiente (stage/prod) do container: o token do agente é o mesmo nos dois, e um container de
+    stage não pode gravar na memória de produção se passando por prod."""
+    if not config.INTERNAL_SECRET:
+        raise RuntimeError("INTERNAL_SECRET não definido")
+    return hmac.new(config.INTERNAL_SECRET.encode(), f"agent-env:{slug}:{env}".encode(), hashlib.sha256).hexdigest()
+
+
+def verified_env(slug: str, env: str, token: str) -> str:
+    """O ambiente declarado, se o token confere; senão stage (o menos privilegiado)."""
+    if env in ("stage", "prod") and token and config.INTERNAL_SECRET and \
+            hmac.compare_digest(agent_env_token(slug, env), token):
+        return env
+    return "stage"

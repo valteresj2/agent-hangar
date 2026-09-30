@@ -115,6 +115,14 @@ services:
       # catálogo Docker MCP (profile mcp-gateway): a central escreve aqui o que o gateway deve rodar
       MCP_GATEWAY_CONFIG_DIR: /mcp-gateway
       MCP_GATEWAY_URL: ${MCP_GATEWAY_URL:-http://mcp-gateway:8811/mcp}
+      # memória dos agentes (profile memory): MEMORY_URL=http://memory:8000 no .env liga — ver docs/memory.md
+      MEMORY_URL: ${MEMORY_URL:-}
+      MEMORY_TOKEN: ${MEMORY_TOKEN:-}
+      MEMORY_LLM_CONNECTION: ${MEMORY_LLM_CONNECTION:-}
+      MEMORY_LLM_MODEL: ${MEMORY_LLM_MODEL:-}
+      MEMORY_LLM_OUTPUT_MODE: ${MEMORY_LLM_OUTPUT_MODE:-json_object}
+      MEMORY_EMBEDDING_CONNECTION: ${MEMORY_EMBEDDING_CONNECTION:-}
+      MEMORY_EMBEDDING_MODEL: ${MEMORY_EMBEDDING_MODEL:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-}
       OAUTH_GOOGLE_CLIENT_ID: ${OAUTH_GOOGLE_CLIENT_ID:-}
       OAUTH_GOOGLE_CLIENT_SECRET: ${OAUTH_GOOGLE_CLIENT_SECRET:-}
@@ -134,7 +142,7 @@ services:
       - "${CENTRAL_PORT:-8090}:8080"
     # agents_net: containers dos agentes (chat) e Postgres. jobs_net: callback dos containers de job, que
     # NÃO estão em agents_net. docker_api: só a central alcança o proxy do Docker.
-    networks: [agents_net, jobs_net, docker_api, db_net]
+    networks: [agents_net, jobs_net, docker_api, db_net, memory_net]
     restart: unless-stopped
 
   # MCP server de análise de dados e entregáveis (Python/DuckDB/PPTX/dashboards) — opcional:
@@ -321,7 +329,67 @@ services:
     networks: [activepieces_db]
     restart: unless-stopped
 
+  # Memória dos agentes: Graphiti (grafo de conhecimento temporal). Neo4j Community é o padrão:
+  #   docker compose --profile memory up -d --build
+  # FalkorDB (mais rápido, licença SSPL) no lugar do Neo4j: MEMORY_BACKEND=falkordb no .env e
+  #   docker compose --profile memory-falkordb up -d --build
+  # Só a central fala com o serviço (MEMORY_TOKEN); os agentes passam por /internal/memory/mcp na central.
+  memory:
+    profiles: [memory, memory-falkordb]
+    image: ${HANGAR_REGISTRY:-agent-hangar}/mcp-memory:${HANGAR_VERSION:-latest}
+    build: { context: mcp-servers/memory }
+    environment:
+      MEMORY_BACKEND: ${MEMORY_BACKEND:-neo4j}
+      MEMORY_TOKEN: ${MEMORY_TOKEN:-}
+      CENTRAL_URL: http://central:8080
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-}
+      FALKORDB_HOST: falkordb
+      FALKORDB_PASSWORD: ${FALKORDB_PASSWORD:-}
+      MEMORY_EMBEDDER: ${MEMORY_EMBEDDER:-local}
+      EMBEDDING_DIM: ${MEMORY_EMBEDDING_DIM:-384}  # 384 = modelo local; ajuste ao modelo remoto
+    read_only: true
+    tmpfs: ["/tmp:size=64m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges"]
+    # memory_net: só a central (e saída para o LLM de extração); memory_db: o banco de grafo, sem internet
+    networks: [memory_net, memory_db]
+    restart: unless-stopped
+
+  neo4j:
+    profiles: [memory]
+    image: neo4j:${NEO4J_VERSION:-5.26.31-community}
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP:-1G}
+      NEO4J_server_memory_pagecache_size: ${NEO4J_PAGECACHE:-512M}
+    volumes:
+      - neo4j_data:/data
+    ports:  # Neo4j Browser só no localhost, para inspecionar o grafo (bolt na 7687)
+      - "127.0.0.1:${NEO4J_BROWSER_PORT:-7474}:7474"
+      - "127.0.0.1:${NEO4J_BOLT_PORT:-7687}:7687"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:7474 >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks: [memory_db]
+    restart: unless-stopped
+
+  falkordb:
+    profiles: [memory-falkordb]
+    image: falkordb/falkordb:${FALKORDB_VERSION:-v4.20.7}
+    environment:
+      REDIS_ARGS: "--requirepass ${FALKORDB_PASSWORD:-}"
+    volumes:
+      - falkordb_data:/var/lib/falkordb/data
+    networks: [memory_db]
+    restart: unless-stopped
+
 volumes:
+  neo4j_data:
+  falkordb_data:
   activepieces_pg:
   activepieces_redis:
   mcp_gateway:
@@ -351,4 +419,8 @@ networks:
   mcp_gateway_docker_api:
     internal: true
   activepieces_db:
+    internal: true
+  memory_net:
+    name: hangar_memory
+  memory_db:
     internal: true

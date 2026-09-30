@@ -83,6 +83,13 @@ class InlineMcp(_Strict):
     tool_prefix: str = ""  # só as ferramentas com este prefixo (gateway que agrega vários servidores)
 
 
+class MemorySpec(_Strict):
+    """Memória de longo prazo (profile memory): o agente ganha as tools memory__recall e memory__remember."""
+    scope: Literal["agent", "team", "org"] = Field(
+        default="agent", description="agent: só este agente; team: compartilhada com o time; org: com a empresa")
+    write: bool = Field(default=True, description="false: só consulta (não grava fatos novos)")
+
+
 class TestCase(_Strict):
     name: str = ""
     input: str
@@ -103,6 +110,7 @@ class AgentSpec(_Strict):
     sub_agents: list[str] = Field(default_factory=list)
     tests: list[TestCase] = Field(default_factory=list)
     channels: list[str] = Field(default_factory=list)
+    memory: MemorySpec | None = None
 
     @field_validator("tools", mode="before")
     @classmethod

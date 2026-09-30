@@ -24,6 +24,10 @@ Set-IfEmpty 'POSTGRES_PASSWORD' (New-Hex)
 Set-IfEmpty 'ACTIVEPIECES_ENCRYPTION_KEY' (New-Hex16)
 Set-IfEmpty 'ACTIVEPIECES_JWT_SECRET' (New-Hex)
 Set-IfEmpty 'ACTIVEPIECES_POSTGRES_PASSWORD' (New-Hex)
+# Memoria dos agentes (docker compose --profile memory): so usados se voce ligar o profile
+Set-IfEmpty 'MEMORY_TOKEN' (New-Hex)
+Set-IfEmpty 'NEO4J_PASSWORD' (New-Hex)
+Set-IfEmpty 'FALKORDB_PASSWORD' (New-Hex)
 [IO.File]::WriteAllLines((Resolve-Path .env), $lines)
 Write-Host ''
 Write-Host 'Pronto. Suba com:  docker compose up -d --build'

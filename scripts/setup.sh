@@ -31,6 +31,10 @@ set_if_empty POSTGRES_PASSWORD "$(rand)"
 set_if_empty ACTIVEPIECES_ENCRYPTION_KEY "$(hex16)"
 set_if_empty ACTIVEPIECES_JWT_SECRET "$(rand)"
 set_if_empty ACTIVEPIECES_POSTGRES_PASSWORD "$(rand)"
+# Memória dos agentes (docker compose --profile memory): só usados se você ligar o profile
+set_if_empty MEMORY_TOKEN "$(rand)"
+set_if_empty NEO4J_PASSWORD "$(rand)"
+set_if_empty FALKORDB_PASSWORD "$(rand)"
 chmod 600 .env 2>/dev/null || true
 echo
 echo "Pronto. Suba com:  docker compose up -d --build"

@@ -54,6 +54,17 @@ The optional gateway (profile `mcp-gateway`):
 
 Agents reach it without a token, only from the internal network. See [mcp-catalog.md](mcp-catalog.md).
 
+## Agent memory
+
+The optional memory service (profile `memory`) is reachable only by the central, with `MEMORY_TOKEN`:
+- **Groups:** agents call `/internal/memory/mcp` on the central, which decides the memory groups from the spec.
+  The agent never picks them.
+- **Stage vs production:** a per-environment token keeps stage containers from writing production memory.
+- **Database:** the graph database (Neo4j or FalkorDB) sits on an internal network with no internet access.
+- **Embeddings:** computed locally by default.
+
+See [memory.md](memory.md).
+
 ## Networks
 
 | Network | Members | Why |
@@ -62,6 +73,8 @@ Agents reach it without a token, only from the internal network. See [mcp-catalo
 | `hangar_agents` | hangar, agent containers, MCP servers such as Data Studio | Gateway → agents, agents → hangar `/internal`, agents → MCPs |
 | `hangar_jobs` | hangar, harness job containers | Job callbacks. Jobs don't see agents |
 | `docker_api` (internal) | hangar, docker-socket-proxy | Only the hangar talks to Docker |
+| `hangar_memory` | hangar, memory service | Only the central reaches the memory service. It has egress to the extraction LLM |
+| `memory_db` (internal) | memory service, Neo4j / FalkorDB | The graph database has no internet access and no agents |
 
 ## Containers
 

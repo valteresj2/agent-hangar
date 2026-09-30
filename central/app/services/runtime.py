@@ -31,6 +31,12 @@ def resolve_spec(db: Session, agent: Agent, env: str, version: int | None = None
             mcps.append({"name": row.name, "url": row.url, **({"tool_prefix": row.tool_prefix} if row.tool_prefix else {})})
         else:
             mcps.append(m)
+    if spec.get("memory"):
+        if not config.MEMORY_URL:
+            raise PlatformError("a spec usa `memory`, mas a memória não está ligada nesta instalação "
+                                "(docker compose --profile memory; ver docs/memory.md)")
+        # sempre pela central, que confere o agente e impõe os grupos de memória (o agente não escolhe)
+        mcps.append({"name": "memory", "url": f"{config.INTERNAL_BASE_URL}/internal/memory/mcp"})
     subs = []
     gw = "gw" if env == "prod" else "gw-stage"
     for s in spec.get("sub_agents", []):

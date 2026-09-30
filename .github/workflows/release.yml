@@ -24,6 +24,7 @@ jobs:
           - {name: harness-deepseek-harness, context: harness, file: harness/Dockerfile, target: deepseek-harness}
           - {name: harness-hermes, context: harness, file: harness/Dockerfile, target: hermes}
           - {name: mcp-data-studio, context: mcp-servers/data-studio, file: mcp-servers/data-studio/Dockerfile, target: ""}
+          - {name: mcp-memory, context: mcp-servers/memory, file: mcp-servers/memory/Dockerfile, target: ""}
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4

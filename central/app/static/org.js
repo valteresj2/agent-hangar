@@ -478,3 +478,46 @@ async function remoteMcps(box) {
   box.querySelectorAll('.rm-del').forEach(b => b.onclick = e => confirm(`Remover o MCP remoto ${b.dataset.n}? Os tokens são revogados e os agentes perdem essas ferramentas.`) &&
     act(e.target, () => api(`/remote-mcps/${encodeURIComponent(b.dataset.n)}`, { method: 'DELETE' }).then(() => remoteMcps(box)), 'Removido'));
 }
+
+/* ---------- agente: aba Memória (Graphiti) ---------- */
+const MEM_SCOPE = { agent: 'só este agente', team: 'compartilhada com o time', org: 'compartilhada com a empresa' };
+const memDate = iso => iso ? new Date(iso).toLocaleDateString('pt-BR') : '—';
+
+async function agentMemory(t, a, env = 'prod', q = '') {
+  const mem = a.spec && a.spec.memory;
+  if (!mem) {
+    t.innerHTML = `<div class="card mt"><h2>Memória de longo prazo</h2>
+      <div class="mute">Este agente não guarda memória entre conversas. Com memória, ele ganha as ferramentas <code>memory__recall</code> e
+        <code>memory__remember</code>: grava fatos (clientes, decisões, preferências) num grafo com histórico — um fato que muda não é apagado,
+        fica marcado como substituído a partir da data da mudança.</div>
+      ${can(a, 'edit') ? `<div class="grid g2 mt"><label>Escopo<select id="mem-scope">${Object.entries(MEM_SCOPE).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label></div>
+        <div class="row mt"><button id="mem-on">Ligar memória</button><span class="mute small">Cria uma nova versão da spec; faça deploy em stage para testar.</span></div>` : ''}</div>`;
+    const b = $('#mem-on');
+    if (b) b.onclick = e => act(e.target, () => api(`/agents/${a.slug}`, { method: 'PATCH', body: { memory: { scope: $('#mem-scope').value } } })
+      .then(() => { toast('Memória ligada — faça o deploy em stage'); route(); }));
+    return;
+  }
+  t.innerHTML = '<div class="card mt mute">Carregando memória…</div>';
+  let r;
+  try { r = await api(`/agents/${a.slug}/memory?env=${env}&q=${encodeURIComponent(q)}&limit=100`); }
+  catch (e) { t.innerHTML = `<div class="card mt warn-card">${esc(e.message)}</div>`; return; }
+  const facts = r.facts || [];
+  t.innerHTML = `<div class="card mt"><div class="row between"><h2>Memória (${facts.length})</h2>
+      <div class="row"><select id="mem-env"><option value="prod">Produção</option><option value="stage">Stage</option></select>
+        ${can(a, 'manage') ? '<button id="mem-clear" class="danger">Apagar memória</button>' : ''}</div></div>
+    <div class="mute small">Escopo: <b>${MEM_SCOPE[r.scope] || esc(r.scope)}</b>${r.write ? '' : ' · só leitura'} · grupo <code>${esc(r.group)}</code>.
+      Stage lê a memória de produção, mas grava à parte — testar não suja a produção.</div>
+    <div class="row mt"><input id="mem-q" placeholder="Buscar na memória (ex.: plano da ACME)" value="${esc(q)}" style="flex:1"><button id="mem-go" class="ghost">Buscar</button></div>
+    ${facts.length ? `<div class="scroll mt"><table><tr><th>Fato</th><th>Vale desde</th><th>Situação</th></tr>
+      ${facts.map(f => `<tr><td>${esc(f.fact)}</td><td class="small">${memDate(f.valid_at)}</td>
+        <td>${f.current ? '<span class="pill ok">atual</span>' : `<span class="pill">substituído</span><div class="mute small">em ${memDate(f.invalid_at)}</div>`}</td></tr>`).join('')}</table></div>`
+      : `<div class="mute mt">${q ? 'Nada encontrado.' : 'Nenhum fato ainda. O agente grava com memory__remember durante as conversas.'}</div>`}</div>`;
+  $('#mem-env').value = env;
+  $('#mem-env').onchange = () => agentMemory(t, a, $('#mem-env').value, $('#mem-q').value.trim());
+  const search = () => agentMemory(t, a, env, $('#mem-q').value.trim());
+  $('#mem-go').onclick = search;
+  $('#mem-q').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); search(); } };
+  const c = $('#mem-clear');
+  if (c) c.onclick = e => confirm(`Apagar toda a memória de ${env === 'prod' ? 'produção' : 'stage'} (grupo ${r.group})? Não dá para desfazer.`) &&
+    act(e.target, () => api(`/agents/${a.slug}/memory?env=${env}`, { method: 'DELETE' }).then(() => agentMemory(t, a, env)), 'Memória apagada');
+}
