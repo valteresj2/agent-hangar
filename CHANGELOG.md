@@ -5,6 +5,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-09-30
+
+### Upgrading from 0.5.x
+- **No database migrations.** Memory lives in its own graph database.
+- **Rebuild or pull `central` and `agent-runtime`, then re-ship agents.** Containers now get a per-environment
+  token (`INTERNAL_ENV_TOKEN`). Agents that aren't re-shipped are treated as stage when they use memory.
+- **Optional profile `memory`:**
+  - Run `scripts/setup.sh` or `setup.ps1` again to generate `MEMORY_TOKEN` and `NEO4J_PASSWORD`.
+  - Set `MEMORY_URL=http://memory:8000` and `MEMORY_LLM_CONNECTION` in `.env`.
+  - Run `docker compose --profile memory up -d`.
+
+  See [docs/memory.md](docs/memory.md).
+
 ### Added
 - **Agent memory (PoC)** ([docs/memory.md](docs/memory.md)): long-term memory as a temporal knowledge graph
   (Graphiti), with Neo4j Community by default (profile `memory`) or FalkorDB (profile `memory-falkordb`).
