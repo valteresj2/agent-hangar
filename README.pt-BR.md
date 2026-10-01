@@ -9,7 +9,7 @@ reúne todos num só lugar, roda cada um no seu container e deixa que sejam usad
 **OpenAI-compatible, MCP, A2A e ACP**. Todos podem encontrar os agentes, conversar com eles e combiná-los em
 agentes novos.
 
-[English](README.md) · [Documentação](docs/) · [Roadmap](ROADMAP.md)
+[Demo interativa (inglês)](https://valteresj2.github.io/agent-hangar/demo/) · [English](README.md) · [Documentação](docs/) · [Roadmap](ROADMAP.md)
 
 </div>
 

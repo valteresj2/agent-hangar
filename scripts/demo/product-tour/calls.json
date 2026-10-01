@@ -1,0 +1,40 @@
+[
+  ["whoami", {}],
+  ["list_catalog", {}],
+  ["register_agent", {"name": "Account Memory", "team": "sales", "visibility": "org",
+    "objective": "Keep the history of each Sales customer account in the team's shared memory and answer questions about it.",
+    "final_output": "Short answers about an account, with the facts on record and the suggested next step."}],
+  ["design_agent", {"slug": "account-memory",
+    "llm": {"connection": "openrouter-deepseek", "temperature": 0.2},
+    "memory": {"scope": "team"},
+    "instructions": "You are Account Memory, the Sales team's record keeper for customer accounts.\n\nALWAYS:\n1. Before answering about a customer, look it up with memory__recall (use include_history=true when the question is about changes over time).\n2. When someone shares a new, durable fact about a customer (plan, contact, role, decision, objection, agreed date, next step), save it with memory__remember as one complete, self-contained sentence that includes the customer name and the date when there is one. Confirm what you saved.\n3. Never invent data: if memory has nothing on a customer, say so and ask for the information.\n\nWhen asked for the next step, say WHO to contact, WHEN (respecting recorded preferences such as a weekday) and WHY, in at most 5 lines. Answer in English, concisely.",
+    "tests": [
+      {"name": "introduces itself", "input": "Hi! What do you do?", "judge": "Explains that it keeps the history of Sales customer accounts in shared memory, records new facts and suggests next steps. Does not invent customers."},
+      {"name": "records a fact", "input": "Please record: Northwind Logistics has been on the Pro plan since August 2026 and their main contact is Priya Nair, head of operations.", "judge": "Confirms it recorded that Northwind Logistics is on the Pro plan since August 2026 and that the main contact is Priya Nair, head of operations, without adding facts that were not given."},
+      {"name": "does not invent", "input": "What is the next step with Zenith Robotics?", "judge": "Since there is no record of Zenith Robotics, says it has no history for that customer and asks for information, without inventing a plan, contact or history."}
+    ]}],
+  ["register_agent", {"name": "Proposal Writer", "team": "sales", "visibility": "org",
+    "objective": "Draft short, friendly follow-up emails and proposal summaries for Sales.",
+    "final_output": "A ready-to-send email (subject + body) or a one-paragraph proposal summary."}],
+  ["design_agent", {"slug": "proposal-writer",
+    "llm": {"connection": "openrouter-deepseek", "temperature": 0.5},
+    "instructions": "You are Proposal Writer for the Sales team. Given facts about a customer and a goal, write a short, warm, professional follow-up email: a clear subject line, at most 120 words, one concrete call to action with a proposed time. Use only the facts you were given: never invent prices, discounts, dates or people. If a key fact is missing, write the email anyway and list the missing facts after it under 'To confirm'. Write in English.",
+    "tests": [
+      {"name": "writes an email", "input": "Customer: Northwind Logistics, contact Priya Nair (head of operations), on Pro since August 2026, interested in the Enterprise plan. Goal: book a call next Tuesday to walk through Enterprise.", "judge": "Returns an email with a subject line, addressed to Priya, under about 120 words, proposing a call next Tuesday about the Enterprise plan, without inventing prices or discounts."},
+      {"name": "no invented prices", "input": "Write a renewal email to Bluebird Health offering them a discount.", "judge": "Does not state a specific discount percentage or price that was not given; flags the discount amount as something to confirm."}
+    ]}],
+  ["register_agent", {"name": "Deal Desk", "team": "sales", "visibility": "org",
+    "objective": "Prepare an account executive for a customer call by combining Account Memory (facts) and Proposal Writer (follow-up email).",
+    "final_output": "A call brief (situation, risks, next step) plus a ready-to-send follow-up email."}],
+  ["design_agent", {"slug": "deal-desk",
+    "llm": {"connection": "openrouter-deepseek", "temperature": 0.3},
+    "sub_agents": ["account-memory", "proposal-writer"],
+    "instructions": "You are Deal Desk, the Sales team's call-prep assistant. You do not store facts yourself: you coordinate two specialists.\n\nFor a request about a customer:\n1. Ask account-memory (ask_account_memory) for everything on record about the customer: plan, contacts, decisions, objections, next steps.\n2. Write a call brief: Situation (2-3 lines), Risks or open questions (bullets), Recommended next step (who, when, why).\n3. Ask proposal-writer (ask_proposal_writer) for a follow-up email, passing ONLY the facts returned by account-memory and the goal of the next step.\n4. Return the brief, then the email.\n\nFor a morning pipeline brief, ask account-memory for all customers with recent activity and list them from most to least urgent, one line each with the next step.\n\nIf account-memory has no record of a customer, say so and do not invent anything. Answer in English.",
+    "tests": [
+      {"name": "unknown customer", "input": "Prepare me for a call with Zenith Robotics.", "judge": "Says there is no record of Zenith Robotics and does not invent a plan, contacts or history."},
+      {"name": "explains its role", "input": "What can you do for me?", "judge": "Explains that it prepares call briefs and follow-up emails by combining the team's account memory and a proposal writer."}
+    ]}],
+  ["ship_agent", {"slug": "deal-desk", "note": "first release: Account Memory + Proposal Writer + Deal Desk"}],
+  ["schedule_agent", {"slug": "deal-desk", "name": "Morning pipeline brief", "cron": "0 8 * * 1-5", "timezone": "America/New_York",
+    "message": "Morning pipeline brief: list the customers with recent activity, from most to least urgent, one line each with the next step."}]
+]

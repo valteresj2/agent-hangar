@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent Hangar · Interactive demo</title>
+<meta name="description" content="Click through Agent Hangar: an agent built from Claude, tested, approved, combined with other agents, and used from any platform. Real screens from a local install.">
+<meta property="og:title" content="Agent Hangar · Interactive demo">
+<meta property="og:description" content="One home for every AI agent your company builds — usable from any platform.">
+<meta property="og:image" content="https://valteresj2.github.io/agent-hangar/demo/img/01-claude.webp">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23F4B400' stroke-width='2.2' stroke-linejoin='round'><path d='M2.5 20.5V11L12 3.5 21.5 11v9.5'/><path d='M6.5 20.5v-6h11v6'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Barlow+Semi+Condensed:wght@600;700&display=swap">
+<style>
+  :root {
+    --bg: #0f1623; --panel: #172133; --line: #26324a; --text: #e8ecf3; --mute: #9aa6bb;
+    --brand: #f4b400; --brand-ink: #1b1400; --ok: #3fb37f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 "IBM Plex Sans", system-ui, sans-serif; }
+  a { color: var(--brand); }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  .logo { display: flex; align-items: center; gap: 10px; font: 700 20px "Barlow Semi Condensed", sans-serif; color: var(--text); text-decoration: none; }
+  .logo svg { width: 26px; height: 26px; }
+  .tag { font-size: 12px; color: var(--mute); border: 1px solid var(--line); border-radius: 99px; padding: 2px 10px; }
+  header .gh { margin-left: auto; font-size: 14px; text-decoration: none; border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; color: var(--text); }
+  header .gh:hover { border-color: var(--brand); }
+
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; padding: 20px; max-width: 1500px; margin: 0 auto; }
+  .stage { position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #000; align-self: start; }
+  .stage img { display: block; width: 100%; height: auto; aspect-ratio: 1440 / 900; }
+  .hot { position: absolute; width: 0; height: 0; }
+  .hot button { position: absolute; left: -22px; top: -22px; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer;
+    background: rgba(244, 180, 0, .25); box-shadow: 0 0 0 3px var(--brand) inset; animation: pulse 1.6s ease-out infinite; }
+  .hot button::after { content: ""; position: absolute; inset: 15px; border-radius: 50%; background: var(--brand); }
+  .hot .tip { position: absolute; top: 28px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 12px; font-weight: 600;
+    background: var(--brand); color: var(--brand-ink); padding: 3px 9px; border-radius: 6px; pointer-events: none; }
+  .hot.up .tip { top: auto; bottom: 28px; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 3px var(--brand) inset, 0 0 0 0 rgba(244,180,0,.55); } 100% { box-shadow: 0 0 0 3px var(--brand) inset, 0 0 0 22px rgba(244,180,0,0); } }
+  @media (prefers-reduced-motion: reduce) { .hot button { animation: none; } }
+
+  aside { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; align-self: start; position: sticky; top: 20px; }
+  .count { font-size: 12px; color: var(--mute); text-transform: uppercase; letter-spacing: .06em; }
+  h1 { font: 700 26px/1.15 "Barlow Semi Condensed", sans-serif; margin: 6px 0 10px; }
+  .body p { margin: 0 0 10px; }
+  .body ul { margin: 0 0 10px; padding-left: 18px; }
+  .body li { margin: 3px 0; }
+  .note { font-size: 13px; color: var(--mute); border-left: 3px solid var(--line); padding-left: 10px; margin-top: 12px; }
+  .nav { display: flex; gap: 8px; margin-top: 18px; }
+  .nav button { flex: 1; font: 600 15px "IBM Plex Sans", sans-serif; padding: 10px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; }
+  .nav button.primary { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+  .nav button:disabled { opacity: .4; cursor: default; }
+  .dots { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 16px; }
+  .dots button { width: 22px; height: 6px; border-radius: 3px; border: 0; background: var(--line); cursor: pointer; padding: 0; }
+  .dots button.on { background: var(--brand); }
+  .dots button.done { background: #6b5a1c; }
+  .keys { font-size: 12px; color: var(--mute); margin-top: 10px; }
+  kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+
+  .cover { display: none; position: absolute; inset: 0; background: radial-gradient(1200px 500px at 70% 20%, #1d2a42, var(--bg)); padding: 6% 7%; flex-direction: column; justify-content: center; }
+  .cover.show { display: flex; }
+  .cover h2 { font: 700 clamp(26px, 4vw, 48px)/1.08 "Barlow Semi Condensed", sans-serif; margin: 0 0 12px; }
+  .cover p { color: var(--mute); max-width: 680px; font-size: clamp(14px, 1.5vw, 18px); margin: 0 0 18px; }
+  .cover .cta { display: flex; gap: 10px; flex-wrap: wrap; }
+  .cover .cta a { text-decoration: none; font-weight: 600; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--line); color: var(--text); }
+  .cover .cta a.primary { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+  .cover code { background: #0b111b; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 14px; display: inline-block; margin-bottom: 16px; color: var(--text); white-space: pre-wrap; word-break: break-all; }
+
+  @media (max-width: 980px) {
+    main { grid-template-columns: 1fr; padding: 12px 16px; }
+    aside { position: static; }
+    .hot .tip { display: none; }
+    header .tag { display: none; }
+    .stage.covering img { display: none; }
+    .stage.covering .cover { position: static; padding: 28px 20px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <a class="logo" href="https://github.com/valteresj2/agent-hangar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#F4B400" stroke-width="2.2" stroke-linejoin="round"><path d="M2.5 20.5V11L12 3.5 21.5 11v9.5"/><path d="M6.5 20.5v-6h11v6"/></svg>
+    Agent Hangar</a>
+  <span class="tag">Interactive demo</span>
+  <a class="gh" href="https://github.com/valteresj2/agent-hangar">★ GitHub</a>
+</header>
+<main>
+  <div class="stage" id="stage">
+    <img id="shot" alt="" src="img/01-claude.webp">
+    <div id="hots"></div>
+    <div class="cover" id="cover"></div>
+  </div>
+  <aside aria-live="polite">
+    <div class="count" id="count"></div>
+    <h1 id="title"></h1>
+    <div class="body" id="body"></div>
+    <div class="nav"><button id="prev">← Back</button><button id="next" class="primary">Next →</button></div>
+    <div class="dots" id="dots"></div>
+    <div class="keys">Click the pulsing dot, or use <kbd>←</kbd> <kbd>→</kbd></div>
+  </aside>
+</main>
+<script>
+// Real screens from a local install (v0.12.0). The agents, tests, memory, answers and costs are real; the people and
+// customers are fictional. The portal's interface is in Portuguese; the data and this tour are in English.
+const STEPS = [
+  { cover: "intro" },
+  { img: "01-claude", x: 74, y: 59, tip: "Claude ships it",
+    title: "It starts in the AI tool you already use",
+    body: `<p>Maya, from Sales, asks Claude for three agents. Claude builds them through the Hangar's <b>MCP server</b>: register, design, add tests, ship and schedule.</p>
+      <p>The same works from ChatGPT, Cursor, VS Code, Codex or OpenCode. Nothing is locked inside one vendor.</p>`,
+    note: "This screen is a visual reconstruction of Claude, built from the recorded MCP calls. Every call in it really ran." },
+  { img: "03-approval", x: 85, y: 40, tip: "Pending approval",
+    title: "Production needs a second pair of eyes",
+    body: `<p>All three agents passed their tests in stage, but the Sales team requires approval before production. Whoever asked can't approve their own release (<b>four-eyes</b>).</p>
+      <p>An admin approved it; the release then went live.</p>`,
+    note: "Portuguese UI: “Aprovações” = Approvals, “pendente” = pending." },
+  { img: "02-home", x: 37, y: 30, tip: "3 in production",
+    title: "Everyone gets a home page",
+    body: `<p>Maya sees her agents, what is live, requests waiting for her, her calls and her cost, plus anything that needs attention: a failed test, a failing schedule, a budget running out.</p>` },
+  { img: "14-multiagent", x: 50, y: 63, tip: "Two agents, one team",
+    title: "Agents combine into new agents",
+    body: `<p><b>Deal Desk</b> doesn't store facts or write emails itself. It is an orchestrator: it asks <b>Account Memory</b> for the facts and <b>Proposal Writer</b> for the email, over A2A.</p>
+      <p>Existing agents are reused as specialists, each keeping its own instructions, model and tests.</p>` },
+  { img: "06-tests", x: 24, y: 38, tip: "9/9 checks",
+    title: "Nothing reaches production untested",
+    body: `<p>Every change creates a new version that runs in stage first:</p>
+      <ul><li>smoke checks of every protocol: OpenAI, A2A, ACP, MCP;</li><li>the agent's own test cases, graded by an LLM judge.</li></ul>
+      <p>Here Account Memory proves it records facts and refuses to invent a customer it doesn't know.</p>` },
+  { img: "08-memory", x: 89, y: 66, tip: "Shared memory",
+    title: "The team shares one memory",
+    body: `<p>Maya told Account Memory about three customers. Each fact is stored in the <b>Sales team's</b> memory, with the date it became true, so every agent and teammate sees the same history.</p>
+      <p>Stage reads production memory but writes apart, so tests never pollute it.</p>` },
+  { img: "07-playground", x: 87, y: 58, tip: "Real answer",
+    title: "Ask it anything",
+    body: `<p>“Prepare me for my call with Northwind Logistics tomorrow.”</p>
+      <p>Deal Desk pulled the facts from memory and wrote a call brief: the situation, the open risks (SSO is the blocker, Priya prefers Tuesdays) and the next step. A follow-up email comes after it.</p>` },
+  { img: "11-schedule", x: 55, y: 42, tip: "Ran on its own",
+    title: "Agents work on a schedule",
+    body: `<p>Every weekday at 8:00, Deal Desk sends the <b>morning pipeline brief</b>, with customers ranked by urgency and the next step for each.</p>
+      <p>It flags what is missing instead of making it up. Results can also go to Slack or Teams through a webhook.</p>` },
+  { img: "15-connect-tools", x: 58, y: 43, tip: "Pick a tool",
+    title: "Use it from any platform",
+    body: `<p>The same agent plugs into Claude Code, Claude Desktop, Codex, OpenCode, Cursor, VS Code, Cline, Continue, LibreChat, Open WebUI, SDKs or any MCP client.</p>
+      <p>It works as a <b>tool (MCP)</b> or as a <b>model</b> in the chat picker.</p>`,
+    note: "“Como ferramenta” = as a tool, “Como modelo” = as a model." },
+  { img: "16-connect-cursor", x: 34, y: 50, tip: "Ready to paste",
+    title: "One click, ready-made config",
+    body: `<p>Connecting Cursor gives a config to paste, with a key just for that tool and that agent, issued in Maya's name.</p>
+      <p>Revoke one tool without touching the others. Usage is tracked per tool, and keys die automatically if she loses access.</p>`,
+    note: "The key was masked in this screenshot and revoked right after." },
+  { img: "10-catalog", x: 36, y: 15, tip: "Company catalog",
+    title: "Everyone can find every agent",
+    body: `<p>The company catalog lists the agents of every team: what they do, who owns them, whether they passed their tests.</p>
+      <p>People request access in one click, and a maintainer of the owning team approves.</p>`,
+    note: "Other teams' agents in this install have Portuguese names." },
+  { img: "12-usage", x: 78, y: 30, tip: "Per channel & protocol",
+    title: "Every call has a cost and a trail",
+    body: `<p>For each call: agent, environment, channel, protocol, tokens, cost and latency. The <b>A2A</b> rows are Deal Desk calling its two specialists.</p>
+      <p>Teams can have monthly budgets, and everything lands in the audit log.</p>` },
+  { cover: "end" },
+];
+
+const COVERS = {
+  intro: { count: "Interactive demo · 2 minutes", title: "One home for every AI agent your company builds",
+    side: `<p>Follow Maya, an account executive, from a request in Claude to three agents working in production, used from any platform.</p>
+      <p>These are real screens from a local install of Agent Hangar v0.12.0. The agents, tests, memory, answers and costs are real; the people and customers are fictional.</p>`,
+    html: `<h2>One home for every AI agent<br>your company builds.</h2>
+      <p>Build agents in Claude, ChatGPT, Cursor or VS Code. Agent Hangar tests them, runs each in its own container and makes them usable from any platform, over OpenAI-compatible, MCP, A2A and ACP.</p>
+      <div class="cta"><a class="primary" href="#" data-go="1">Start the tour →</a><a href="https://github.com/valteresj2/agent-hangar">View on GitHub</a></div>` },
+  end: { count: "That's the tour", title: "Your agents stop belonging to a tool",
+    side: `<p>Open source (Apache-2.0) and self-hosted.</p>
+      <ul><li>Docker on a laptop or VM;</li><li>Kubernetes on GKE, AKS or EKS (Helm chart and Terraform);</li><li>SSO, memory, budgets, audit log.</li></ul>`,
+    html: `<h2>…and start belonging to your company.</h2>
+      <p>Install it in a few minutes with the guided installer:</p>
+      <code>git clone https://github.com/valteresj2/agent-hangar &amp;&amp; cd agent-hangar
+./scripts/install.sh</code>
+      <div class="cta"><a class="primary" href="https://github.com/valteresj2/agent-hangar">★ Star on GitHub</a>
+        <a href="https://github.com/valteresj2/agent-hangar/blob/main/docs/install.md">Install guide</a>
+        <a href="#" data-go="0">Restart</a></div>` },
+};
+
+let i = 0;
+const $ = id => document.getElementById(id);
+STEPS.forEach((s, n) => {
+  const d = document.createElement("button");
+  d.setAttribute("aria-label", `Step ${n + 1}`);
+  d.onclick = () => show(n);
+  $("dots").appendChild(d);
+  if (s.img) { const im = new Image(); im.src = `img/${s.img}.webp`; }  // pré-carrega
+});
+
+function show(n) {
+  i = Math.max(0, Math.min(STEPS.length - 1, n));
+  const s = STEPS[i];
+  const total = STEPS.length - 2;
+  $("hots").innerHTML = "";
+  if (s.cover) {
+    const c = COVERS[s.cover];
+    $("cover").innerHTML = c.html;
+    $("cover").classList.add("show");
+    $("stage").classList.add("covering");
+    $("count").textContent = c.count;
+    $("title").textContent = c.title;
+    $("body").innerHTML = c.side;
+    $("cover").querySelectorAll("[data-go]").forEach(a => a.onclick = e => { e.preventDefault(); show(+a.dataset.go); });
+  } else {
+    $("cover").classList.remove("show");
+    $("stage").classList.remove("covering");
+    $("shot").src = `img/${s.img}.webp`;
+    $("shot").alt = s.title;
+    $("count").textContent = `Step ${i} of ${total}`;
+    $("title").textContent = s.title;
+    $("body").innerHTML = s.body + (s.note ? `<div class="note">${s.note}</div>` : "");
+    const h = document.createElement("div");
+    h.className = "hot" + (s.y > 70 ? " up" : "");
+    h.style.left = s.x + "%"; h.style.top = s.y + "%";
+    h.innerHTML = `<button aria-label="Next: ${s.tip}"></button><span class="tip">${s.tip}</span>`;
+    h.querySelector("button").onclick = () => show(i + 1);
+    $("hots").appendChild(h);
+  }
+  $("prev").disabled = i === 0;
+  $("next").textContent = i === STEPS.length - 1 ? "Restart ↺" : "Next →";
+  [...$("dots").children].forEach((d, k) => { d.className = k === i ? "on" : k < i ? "done" : ""; });
+  history.replaceState(null, "", "#" + i);
+}
+$("prev").onclick = () => show(i - 1);
+$("next").onclick = () => show(i === STEPS.length - 1 ? 0 : i + 1);
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") show(i + 1);
+  if (e.key === "ArrowLeft") show(i - 1);
+});
+show(parseInt(location.hash.slice(1), 10) || 0);
+</script>
+</body>
+</html>

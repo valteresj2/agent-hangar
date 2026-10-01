@@ -1,0 +1,5 @@
+I'm Maya from the Sales team. In Agent Hangar, build three agents for us:
+1. "Account Memory" — keeps the history of each customer account in our team's shared memory, records new facts (plan, contacts, decisions, next steps) and never invents data.
+2. "Proposal Writer" — drafts short, friendly follow-up emails and proposal summaries.
+3. "Deal Desk" — combines the two: it gets the facts from Account Memory and asks Proposal Writer for the email, to prepare me for each customer call.
+Use the openrouter-deepseek connection, add tests, ship everything to production and schedule Deal Desk every weekday at 8:00 to send me a morning pipeline brief.

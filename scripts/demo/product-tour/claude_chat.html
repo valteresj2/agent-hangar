@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<!-- Recriação visual da conversa a partir de transcript.jsonl (chamadas MCP reais feitas com o token da Maya). -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  body{margin:0;background:#F5F4EF;font:15px/1.55 "IBM Plex Sans",system-ui,sans-serif;color:#1F1E1B}
+  .top{height:52px;display:flex;align-items:center;gap:10px;padding:0 28px;border-bottom:1px solid #E3E1D8;background:#FAF9F5;font-weight:600}
+  .top small{font-weight:400;color:#6B6860}
+  .mcp{margin-left:auto;font:500 12px "IBM Plex Mono",monospace;color:#2B5BA8;background:#E3ECF8;padding:3px 9px;border-radius:99px}
+  .wrap{max-width:940px;margin:0 auto;padding:22px 24px}
+  .user{background:#EAE7DD;border-radius:14px;padding:12px 16px;margin-left:110px;margin-bottom:16px}
+  .user ol{margin:4px 0 4px 0;padding-left:20px}
+  .who{font:600 12px "IBM Plex Sans";color:#6B6860;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
+  .tool{display:flex;align-items:center;gap:10px;font:13px "IBM Plex Mono",monospace;background:#fff;border:1px solid #E3E1D8;border-radius:10px;padding:6px 12px;margin:5px 0}
+  .tool b{color:#1F1E1B}.tool span{color:#6B6860;font-family:"IBM Plex Sans"}
+  .ok{margin-left:auto;color:#1E7F46;font-weight:600;font-family:"IBM Plex Sans";white-space:nowrap}
+  .wait{margin-left:auto;color:#9A6700;font-weight:600;font-family:"IBM Plex Sans";white-space:nowrap}
+  .reply{margin-top:14px;background:#fff;border:1px solid #E3E1D8;border-radius:14px;padding:12px 18px}
+  .reply ul{margin:6px 0;padding-left:20px}.reply li{margin:3px 0}
+  code{font:13px "IBM Plex Mono",monospace;background:#F0EEE6;padding:1px 5px;border-radius:4px}
+</style></head><body>
+<div class="top">Claude <small>· Maya Chen (Sales team)</small><span class="mcp">MCP · agent-hangar</span></div>
+<div class="wrap">
+  <div class="user"><div class="who">Maya</div>I'm Maya from the Sales team. In Agent Hangar, build three agents for us:
+    <ol><li><b>Account Memory</b> — keeps each customer's history in our team's shared memory and never invents data.</li>
+      <li><b>Proposal Writer</b> — drafts short, friendly follow-up emails.</li>
+      <li><b>Deal Desk</b> — combines the two to prepare me for each customer call.</li></ol>
+    Use <code>openrouter-deepseek</code>, add tests, ship to production and schedule Deal Desk every weekday at 8:00 for a morning pipeline brief.</div>
+  <div class="who">Claude</div>
+  <div class="tool"><b>whoami</b><span>Maya Chen · maintainer of the Sales team</span><span class="ok">✓</span></div>
+  <div class="tool"><b>list_catalog</b><span>connection openrouter-deepseek available</span><span class="ok">✓</span></div>
+  <div class="tool"><b>register_agent</b><span>account-memory · proposal-writer · deal-desk (Sales)</span><span class="ok">✓</span></div>
+  <div class="tool"><b>design_agent</b><span>account-memory · memory: team · 3 LLM-as-judge tests → v2</span><span class="ok">✓</span></div>
+  <div class="tool"><b>design_agent</b><span>proposal-writer · 2 tests → v2</span><span class="ok">✓</span></div>
+  <div class="tool"><b>design_agent</b><span>deal-desk · sub_agents: account-memory, proposal-writer → v2 (multi-agent)</span><span class="ok">✓</span></div>
+  <div class="tool"><b>ship_agent</b><span>stage tests 9/9 · 8/8 · 8/8 passed → production request</span><span class="wait">101 s · awaiting approval</span></div>
+  <div class="tool"><b>schedule_agent</b><span>“Morning pipeline brief” · Mon–Fri 08:00 (America/New_York)</span><span class="ok">✓</span></div>
+  <div class="reply">Done. The three agents passed all their tests in stage, and <b>Deal Desk</b> is waiting for production approval.
+    <ul>
+      <li><b>Deal Desk</b> is a multi-agent: it asks <code>account-memory</code> for the facts and <code>proposal-writer</code> for the email, over A2A.</li>
+      <li><b>Account Memory</b> uses the <b>Sales team's shared memory</b>, so every agent and teammate sees the same history.</li>
+      <li><b>Approval:</b> your team requires a second person to approve production (four-eyes). Another maintainer or an admin approves it in <i>Approvals</i>.</li>
+      <li><b>Use anywhere:</b> each agent is an endpoint (<code>/gw/deal-desk</code>) for ChatGPT, Cursor, VS Code, LibreChat or any OpenAI, MCP, A2A or ACP client.</li>
+    </ul></div>
+</div></body></html>

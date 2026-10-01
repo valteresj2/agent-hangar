@@ -59,3 +59,10 @@ setup.yaml
 *.tfvars
 !*.tfvars.example
 crash.log
+
+# demo interativa (Product Hunt): tokens, sessões e saídas brutas
+scripts/demo/product-tour/*.txt
+scripts/demo/product-tour/transcript.jsonl
+scripts/demo/product-tour/chats.jsonl
+scripts/demo/product-tour/shots/
+!scripts/demo/product-tour/prompt.txt

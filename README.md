@@ -14,7 +14,7 @@ agents.
 [![Release](https://img.shields.io/github/v/release/valteresj2/agent-hangar)](https://github.com/valteresj2/agent-hangar/releases)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
-[Example](#from-a-request-in-claude-to-a-working-agent) · [Install](#installation) · [Features](#features) ·
+[Interactive demo](https://valteresj2.github.io/agent-hangar/demo/) · [Example](#from-a-request-in-claude-to-a-working-agent) · [Install](#installation) · [Features](#features) ·
 [How it works](#how-it-works) · [Docs](#documentation) · [Roadmap](ROADMAP.md) · [Português](README.pt-BR.md)
 
 </div>
