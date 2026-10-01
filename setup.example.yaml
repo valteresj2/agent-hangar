@@ -1,0 +1,69 @@
+# Respostas do `hangar setup` para instalar sem perguntas (automação, CI, imagens de VM):
+#
+#   cp setup.example.yaml setup.yaml    # edite; NÃO versione (tem chaves)
+#   ./scripts/install.sh --answers setup.yaml          # Linux/macOS/WSL
+#   scripts\install.ps1 --answers setup.yaml           # Windows
+#
+# Só os campos marcados (*) são obrigatórios na escolha feita; o resto tem padrão.
+
+target: docker             # docker (uma máquina) | kubernetes (GKE, AKS, EKS ou outro cluster — docs/kubernetes.md)
+# kubernetes:              # só com target: kubernetes (as perguntas de exposure/images/port valem para docker)
+#   provider: gke          # gke | aks | eks | local  (escolhe charts/agent-hangar/values-<provider>.yaml)
+#   namespace: agent-hangar
+#   release: agent-hangar
+#   registry: ghcr.io/valteresj2           # ou o espelho privado
+#   exposure: ingress      # ingress | cloudflare | portforward
+#   host: hangar.acme.com                 (*) ingress
+#   issuer: letsencrypt                   # ClusterIssuer do cert-manager (aks/local)
+#   hostname: hangar.acme.com             (*) cloudflare
+#   token: ""                             (*) cloudflare — token do túnel
+#   database: bundled      # bundled (StatefulSet no cluster) | external (Cloud SQL, Azure Database, RDS)
+#   database_url: postgresql+psycopg://hangar:SENHA@host:5432/hangar?sslmode=require   (*) external
+#   allow_private_egress: false           # agentes alcançam IPs privados (gateway de LLM interno)
+
+images: published          # published (baixa as imagens prontas, recomendado) | build (constrói deste código)
+port: 8090                 # porta local da central
+
+exposure:
+  mode: local              # local | cloudflare | ngrok | tailscale
+  # cloudflare: no Zero Trust crie o túnel (Docker) e um Public Hostname -> http://central:8080
+  # hostname: hangar.suaempresa.com      (*) cloudflare
+  # token: eyJh...                       (*) cloudflare — token do túnel
+  # ngrok:
+  # domain: hangar-acme.ngrok-free.app   (*) ngrok — domínio fixo (o gratuito serve)
+  # authtoken: 2abc...                   (*) ngrok
+  # tailscale (habilite HTTPS + Funnel na política da tailnet):
+  # hostname: agent-hangar               (*) tailscale
+  # tailnet: acme.ts.net                 (*) tailscale
+  # authkey: tskey-auth-...              (*) tailscale
+
+admin:
+  username: admin
+  password: ""             # vazio = gera uma senha forte e mostra no fim
+  email: ""                # opcional: também vira admin ao entrar por SSO
+
+llm:
+  provider: openrouter     # openai | anthropic | azure | gemini | openrouter | deepseek | litellm | ollama | custom | none
+  name: openrouter         # nome da conexão no catálogo
+  model: ""                # (*) ex.: openai/gpt-4.1-mini, anthropic/claude-sonnet-4.5, deepseek/deepseek-v4.1-flash
+  api_key: ""              # (*) exceto ollama
+  # base_url: https://...  # opcional: o padrão do provedor (obrigatório em azure e custom)
+  approve_for_code: true   # aprovada para receber código (agentes de código no VS Code)
+
+memory: neo4j              # none | neo4j | falkordb
+
+sso:
+  provider: none           # none | google | microsoft | github | oauth2
+  # client_id: ""          (*) com SSO
+  # client_secret: ""      (*) com SSO
+  # tenant: acme.onmicrosoft.com          (*) microsoft
+  # allowed_domains: acme.com             # google/microsoft: só e-mails destes domínios
+  # oauth2 (Okta, Keycloak, Auth0…):
+  # label: Okta
+  # authorize_url: https://...            (*) oauth2
+  # token_url: https://...                (*) oauth2
+  # userinfo_url: https://...             (*) oauth2
+
+extras: []                 # data-studio | mcp-gateway | activepieces | harness
+code_policy: approved      # approved (só conexões aprovadas recebem código) | any
+clients: [claude-code, vscode]   # claude-code | claude-desktop | codex | opencode | cursor | vscode

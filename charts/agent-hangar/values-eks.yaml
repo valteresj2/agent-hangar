@@ -1,0 +1,26 @@
+# Amazon EKS. Use junto com os seus values:
+#   helm upgrade --install agent-hangar charts/agent-hangar -n agent-hangar --create-namespace \
+#     -f charts/agent-hangar/values-eks.yaml -f meus-values.yaml
+#
+# - Ingress: AWS Load Balancer Controller (ALB). O TLS fica no ALB, com um certificado do ACM:
+#   preencha alb.ingress.kubernetes.io/certificate-arn e aponte o DNS (Route 53) para o ALB.
+# - Volumes: driver EBS CSI com a StorageClass gp3.
+# - Banco gerenciado (recomendado): Amazon RDS / Aurora PostgreSQL na mesma VPC:
+#   postgresql.enabled=false e postgresql.external.url=postgresql+psycopg://hangar:SENHA@<endpoint>.rds.amazonaws.com:5432/hangar?sslmode=require
+# - NetworkPolicy: habilite o suporte do VPC CNI (enableNetworkPolicy=true no add-on) ou use Calico/Cilium.
+# - LLM no Bedrock: use um gateway (LiteLLM) com IRSA / Pod Identity; o Hangar aponta para o gateway.
+ingress:
+  enabled: true
+  className: alb
+  tls: {enabled: false}            # o TLS termina no ALB (ACM)
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /api/health
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:REGIAO:CONTA:certificate/ID
+postgresql:
+  storageClass: gp3
+memory:
+  neo4j: {storageClass: gp3}
+  falkordb: {storageClass: gp3}

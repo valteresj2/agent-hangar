@@ -1,0 +1,6 @@
+# Cluster local para testar (k3s, kind, Docker Desktop, minikube): sem ingress, acesso por port-forward.
+#   helm upgrade --install agent-hangar charts/agent-hangar -n agent-hangar --create-namespace -f charts/agent-hangar/values-local.yaml
+#   kubectl -n agent-hangar port-forward svc/agent-hangar-central 8090:8080
+publicUrl: http://localhost:8090
+ingress: {enabled: false}
+agents: {memLimit: 384m}

@@ -4,6 +4,7 @@ sqlalchemy>=2.0,<3
 alembic>=1.13
 psycopg[binary]>=3.3.6
 docker>=7.2.0
+kubernetes>=31.0.0   # RUNTIME_BACKEND=kubernetes (GKE, AKS, EKS…)
 httpx>=0.28.1
 mcp>=1.10,<2
 cryptography>=50.0.1

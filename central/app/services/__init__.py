@@ -24,6 +24,7 @@ from .catalog import (  # noqa: F401
                       resolve_harness,
                       resolve_llm,
                       set_code_approval,
+                      test_connection,
                       upsert_llm_connection,
                       upsert_mcp,
                       upsert_skill,

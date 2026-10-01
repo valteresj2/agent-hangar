@@ -185,3 +185,25 @@ def cleanup_job_containers():
             c.remove(force=True)
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------- backend
+# RUNTIME_BACKEND=kubernetes troca a implementação inteira (mesmo contrato): agentes viram Deployment + Service,
+# jobs e avaliações viram Jobs do Kubernetes. Ver deploy_k8s.py.
+if config.RUNTIME_BACKEND == "kubernetes":
+    from . import deploy_k8s as _k8s
+
+    client = _k8s.client
+    container_name = _k8s.container_name
+    internal_url = _k8s.internal_url
+    run_agent = _k8s.run_agent
+    wait_healthy = _k8s.wait_healthy
+    logs = _k8s.logs
+    states = _k8s.states
+    invalidate_states = _k8s.invalidate_states
+    state = _k8s.state
+    stop_agent = _k8s.stop_agent
+    run_job_container = _k8s.run_job_container
+    job_logs = _k8s.job_logs
+    remove_job_container = _k8s.remove_job_container
+    cleanup_job_containers = _k8s.cleanup_job_containers

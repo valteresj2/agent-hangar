@@ -136,6 +136,13 @@ services:
       OAUTH_GITHUB_CLIENT_SECRET: ${OAUTH_GITHUB_CLIENT_SECRET:-}
       OAUTH_GITHUB_ORGS: ${OAUTH_GITHUB_ORGS:-}
       OAUTH_GITHUB_FETCH_GROUPS: ${OAUTH_GITHUB_FETCH_GROUPS:-}
+      OAUTH_OAUTH2_CLIENT_ID: ${OAUTH_OAUTH2_CLIENT_ID:-}
+      OAUTH_OAUTH2_CLIENT_SECRET: ${OAUTH_OAUTH2_CLIENT_SECRET:-}
+      OAUTH_OAUTH2_AUTHORIZE_URL: ${OAUTH_OAUTH2_AUTHORIZE_URL:-}
+      OAUTH_OAUTH2_TOKEN_URL: ${OAUTH_OAUTH2_TOKEN_URL:-}
+      OAUTH_OAUTH2_USERINFO_URL: ${OAUTH_OAUTH2_USERINFO_URL:-}
+      OAUTH_OAUTH2_LABEL: ${OAUTH_OAUTH2_LABEL:-}
+      OAUTH_OAUTH2_SCOPES: ${OAUTH_OAUTH2_SCOPES:-}
     volumes:
       - mcp_gateway:/mcp-gateway
     ports:
@@ -387,7 +394,46 @@ services:
     networks: [memory_db]
     restart: unless-stopped
 
+  # Exposição pública sem abrir portas (o `hangar setup` liga um destes). Os três levam HTTPS até a central:8080.
+  # Cloudflare Tunnel: crie o túnel no Zero Trust, adicione o hostname público -> http://central:8080 e use o token.
+  cloudflared:
+    profiles: [tunnel-cloudflare]
+    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-2026.9.3}
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    networks: [agents_net]
+    restart: unless-stopped
+
+  # ngrok: domínio fixo (o gratuito também serve) em NGROK_DOMAIN e o authtoken da sua conta.
+  ngrok:
+    profiles: [tunnel-ngrok]
+    image: ngrok/ngrok:${NGROK_VERSION:-3.39.11-alpine}
+    command: ["http", "central:8080", "--url=${NGROK_DOMAIN:-}", "--log=stdout"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    networks: [agents_net]
+    restart: unless-stopped
+
+  # Tailscale Funnel: https://<TS_HOSTNAME>.<sua-tailnet>.ts.net (habilite o Funnel na política da tailnet).
+  tailscale:
+    profiles: [tunnel-tailscale]
+    image: tailscale/tailscale:${TAILSCALE_VERSION:-v1.102.5}
+    hostname: ${TS_HOSTNAME:-agent-hangar}
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: ${TS_HOSTNAME:-agent-hangar}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_USERSPACE: "true"
+    volumes:
+      - tailscale_state:/var/lib/tailscale
+      - ./integrations/tailscale:/config:ro
+    networks: [agents_net]
+    restart: unless-stopped
+
 volumes:
+  tailscale_state:
   neo4j_data:
   falkordb_data:
   activepieces_pg:

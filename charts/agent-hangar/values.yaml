@@ -1,0 +1,108 @@
+# Agent Hangar — valores padrão. Presets por nuvem: values-gke.yaml, values-aks.yaml, values-eks.yaml, values-local.yaml.
+# O `hangar setup` (alvo kubernetes) gera um values com as suas escolhas; veja docs/kubernetes.md.
+
+image:
+  registry: ghcr.io/valteresj2      # imagens: <registry>/central, agent-runtime, harness-*, mcp-memory
+  tag: ""                           # vazio = appVersion do chart
+  pullPolicy: IfNotPresent
+  pullSecrets: []                   # registry privado / espelho (air-gapped): [regcred]
+
+# Endereço pelo qual as pessoas acessam (ingress, túnel). Obrigatório fora de testes: links, OAuth e cookies dependem dele.
+publicUrl: ""
+
+central:
+  replicas: 1                       # alta disponibilidade (várias réplicas) chega na próxima fase
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "2", memory: 2Gi}
+  extraEnv: {}                      # variáveis extras (ver .env.example), ex.: {SESSION_TTL_HOURS: "8"}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Segredos. Vazios = gerados na primeira instalação e preservados nos upgrades.
+# Empresas com Vault / External Secrets: crie um Secret com as chaves ADMIN_TOKEN, HANGAR_SECRET_KEY, INTERNAL_SECRET,
+# DATABASE_URL (+ MEMORY_TOKEN, NEO4J_PASSWORD/FALKORDB_PASSWORD com memória, OAUTH_*_CLIENT_SECRET com SSO,
+# CLOUDFLARE_TUNNEL_TOKEN com túnel) e informe o nome em existingSecret.
+secrets:
+  existingSecret: ""
+  adminToken: ""                    # acesso de emergência (break-glass)
+  secretKey: ""                     # Fernet: criptografa as chaves de LLM no banco — NUNCA troque depois de instalar
+  internalSecret: ""
+
+postgresql:
+  enabled: true                     # Postgres no cluster (StatefulSet). Produção: prefira o gerenciado (abaixo)
+  image: postgres:16
+  password: ""
+  storage: 10Gi
+  storageClass: ""
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+  # Gerenciado (Cloud SQL, Azure Database for PostgreSQL, Amazon RDS/Aurora): enabled=false e um dos dois
+  external:
+    url: ""                         # postgresql+psycopg://usuario:senha@host:5432/hangar?sslmode=require
+    existingSecret: ""              # Secret com a chave DATABASE_URL
+
+agents:
+  memLimit: 512m                    # por agente (Deployment)
+  cpus: "1.0"
+  jobMemLimit: 1g                   # por job de harness / avaliação de código (Job)
+  jobCpus: "1.0"
+  jobTimeoutS: 180
+  defaultModel: mock/echo           # agentes sem conexão de LLM
+
+# Memória de longo prazo dos agentes (Graphiti). Precisa de uma conexão de LLM (protocol openai) para extrair fatos.
+memory:
+  enabled: false
+  backend: neo4j                    # neo4j | falkordb
+  llmConnection: ""                 # nome da conexão no catálogo do Hangar
+  outputMode: json_object           # json_schema se o provedor suportar
+  resources:
+    requests: {cpu: 100m, memory: 512Mi}
+    limits: {memory: 2Gi}
+  neo4j:
+    image: neo4j:5.26.31-community
+    password: ""
+    heap: 1G
+    pagecache: 512M
+    storage: 10Gi
+    storageClass: ""
+  falkordb:
+    image: falkordb/falkordb:v4.20.7
+    password: ""
+    storage: 10Gi
+    storageClass: ""
+
+ingress:
+  enabled: false
+  className: ""                     # nginx | gce | webapprouting.kubernetes.azure.com | alb | traefik
+  host: ""                          # hangar.suaempresa.com
+  annotations: {}                   # ex.: cert-manager.io/cluster-issuer: letsencrypt
+  tls:
+    enabled: true
+    secretName: ""                  # vazio = <release>-tls (cert-manager preenche)
+  gkeManagedCertificate: false      # GKE: cria um ManagedCertificate (Google) para o host
+
+# Túnel Cloudflare (HTTPS público sem load balancer): no Zero Trust, Public Hostname -> http://<release>-central:8080
+tunnel:
+  cloudflare:
+    enabled: false
+    token: ""
+    image: cloudflare/cloudflared:2026.9.3
+
+sso:
+  localLogin: true                  # contas locais (usuário e senha); false = só SSO
+  bootstrapAdminEmails: ""          # e-mails que viram admin no primeiro login SSO
+  google: {clientId: "", clientSecret: "", allowedDomains: ""}
+  microsoft: {clientId: "", clientSecret: "", tenant: "", allowedDomains: "", fetchGroups: false}
+  github: {clientId: "", clientSecret: "", orgs: ""}
+  oauth2: {clientId: "", clientSecret: "", label: "", authorizeUrl: "", tokenUrl: "", userinfoUrl: "", scopes: ""}
+
+networkPolicy:
+  enabled: true                     # exige um CNI que aplique NetworkPolicy (GKE Dataplane V2, AKS com política, EKS com VPC CNI policy, Calico, Cilium…)
+  allowPrivateEgress: false         # agentes/jobs alcançam IPs privados (ex.: gateway de LLM dentro da rede)
+  extraAgentEgress: []              # regras extras de egress para agentes/jobs (formato NetworkPolicyEgressRule)
+
+scheduler:
+  enabled: true

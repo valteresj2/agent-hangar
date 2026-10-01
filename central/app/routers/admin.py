@@ -330,6 +330,12 @@ class CodeApproval(BaseModel):
     allow_code: bool
 
 
+@router.post("/catalog/llm/{name}/test", dependencies=[Depends(require_admin)])
+def llm_connection_test(name: str, db=Depends(db_dep)):
+    """Chamada real e mínima ao LLM da conexão: confere URL, chave e modelo."""
+    return guard(lambda: svc.test_connection(db, name))
+
+
 @router.patch("/catalog/llm/{name}/code", dependencies=[Depends(require_admin)])
 def llm_connection_code(name: str, b: CodeApproval, request: Request, db=Depends(db_dep)):
     """Aprova (ou retira) a conexão para receber código — vale quando a empresa usa code_policy=approved."""

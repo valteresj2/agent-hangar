@@ -35,7 +35,7 @@ Each item links to a GitHub issue once the repository is public. Priorities foll
 - Secret references for HTTP tool auth (`secret:crm-token`)
 
 ## v1.0 — enterprise-ready
-- Kubernetes runtime driver + Helm chart + NetworkPolicies
+- Kubernetes runtime driver + Helm chart + NetworkPolicies (done in v0.10, with GKE/AKS/EKS presets; next: high availability)
 - Multi-tenancy (several companies per installation; `org_id` is already on the tables). Done earlier: OAuth2 SSO, teams and roles, SCIM
 - Egress allowlist for jobs; human approval for destructive harness actions
 - Exportable audit trail (SIEM)

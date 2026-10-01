@@ -525,7 +525,7 @@ async function catalogPage() {
       <td class="mute">${x.price_in_per_mtok == null && x.price_out_per_mtok == null ? '—' : `${x.price_in_per_mtok ?? 0} · ${x.price_out_per_mtok ?? 0}`}</td><td class="mute">${esc(x.api_key)}</td>
       <td>${x.allow_code ? '<span class="pill ok">aprovada</span>' : '<span class="pill">não aprovada</span>'}
         ${ME.is_admin ? `<div><a href="#" class="small llm-code" data-n="${esc(x.name)}" data-v="${x.allow_code ? 0 : 1}">${x.allow_code ? 'retirar' : 'aprovar'}</a></div>` : ''}</td>
-      <td><button class="ghost llm-del" data-n="${esc(x.name)}">Remover</button></td></tr>`).join('') || `<tr><td colspan="8" class="empty">Nenhuma — sem conexão, os agentes rodam em ${esc(c.fallback_model)}</td></tr>`}</table></div>
+      <td class="row" style="flex-wrap:nowrap"><button class="ghost llm-test" data-n="${esc(x.name)}">Testar</button><button class="ghost llm-del" data-n="${esc(x.name)}">Remover</button></td></tr>`).join('') || `<tr><td colspan="8" class="empty">Nenhuma — sem conexão, os agentes rodam em ${esc(c.fallback_model)}</td></tr>`}</table></div>
     <details class="mt"><summary>Adicionar / editar conexão (mesmo nome = edição; chave vazia mantém a atual)</summary><div class="grid g4 mt">
       <input id="lc-name" placeholder="nome (ex.: litellm-corp)"><input id="lc-url" placeholder="base_url (https://.../v1)">
       <input id="lc-model" placeholder="model_name (ex.: gpt-4o-mini)"><input id="lc-key" placeholder="api key virtual" type="password"></div>
@@ -548,6 +548,10 @@ async function catalogPage() {
       toast(o.code_policy === 'approved' ? 'Agora só conexões aprovadas recebem código' : 'Qualquer conexão pode receber código');
     });
   }
+  document.querySelectorAll('.llm-test').forEach(b => b.onclick = e => act(e.target, async () => {
+    const r = await api(`/catalog/llm/${encodeURIComponent(b.dataset.n)}/test`, { method: 'POST' });
+    toast(`${b.dataset.n}: ${r.ok ? '✓ ' : '✗ '}${r.detail}`, !r.ok);
+  }));
   document.querySelectorAll('.llm-code').forEach(a => a.onclick = e => {
     e.preventDefault();
     act(a, () => api(`/catalog/llm/${encodeURIComponent(a.dataset.n)}/code`, { method: 'PATCH', body: { allow_code: a.dataset.v === '1' } }).then(catalogPage),

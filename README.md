@@ -13,7 +13,7 @@ MCP**.
 [![Release](https://img.shields.io/github/v/release/valteresj2/agent-hangar)](https://github.com/valteresj2/agent-hangar/releases)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
-[Example](#from-a-request-in-claude-to-a-working-agent) · [Quickstart](#quickstart) · [Features](#features) ·
+[Example](#from-a-request-in-claude-to-a-working-agent) · [Install](#installation) · [Features](#features) ·
 [How it works](#how-it-works) · [Docs](#documentation) · [Roadmap](ROADMAP.md) · [Português](README.pt-BR.md)
 
 </div>
@@ -24,7 +24,7 @@ MCP. Then come her Início page, the agent, a Playground answer, the team memory
 connections and the company catalog."></p>
 <p align="center"><sub>The user portal, recorded on a local install · <a href="docs/assets/portal-tour.mp4">MP4 version</a></sub></p>
 
-> **Status: alpha (v0.9).** It works end to end and is covered by tests, but APIs may still change. Run it inside
+> **Status: alpha (v0.10).** It works end to end and is covered by tests, but APIs may still change. Run it inside
 > your network until you have read [docs/security.md](docs/security.md).
 
 ---
@@ -84,30 +84,75 @@ The run was recorded with Claude as the MCP client, with Ana's personal token. T
 DeepSeek via OpenRouter. The scripts that reproduce it are in
 [scripts/demo/portal-tour](scripts/demo/portal-tour/).
 
-## Quickstart
+## Installation
 
-Requirements: Docker (Desktop or Engine) with Compose v2.
+A guided installer asks a few questions and does the rest: it writes `.env`, starts the stack, registers and **tests**
+your LLM, creates the admin and generates the configuration of your AI tools. Full guide:
+[docs/install.md](docs/install.md).
+
+**1. Requirements.** Docker (Desktop or Engine) with Compose 2.20+, and Python 3.10+ to run the installer.
+
+**2. Run the installer.**
 
 ```bash
 git clone https://github.com/valteresj2/agent-hangar && cd agent-hangar
+./scripts/install.sh                                              # Linux, macOS, WSL
+# Windows: powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+```
+
+**3. Answer seven questions** (each has a sensible default):
+
+| | Choices |
+|---|---|
+| Images | published (recommended) · build from this checkout |
+| Address | local · **Cloudflare Tunnel** · **ngrok** · **Tailscale Funnel** (public HTTPS without opening ports) |
+| Admin | username and password (or a generated one) |
+| LLM | OpenAI · Anthropic · Azure OpenAI · Gemini · OpenRouter · DeepSeek · corporate gateway (LiteLLM, Portkey…; also the way to Bedrock/Vertex) · Ollama · any OpenAI-compatible endpoint |
+| Memory | Neo4j · FalkorDB · none |
+| Sign-in | local accounts · Google · Microsoft Entra ID · GitHub · OAuth2 (Okta, Keycloak, Auth0…) |
+| Extras and tools | Data Studio, Docker MCP catalog, Activepieces, coding harnesses; code policy; configs for Claude Code, Claude Desktop, Codex, OpenCode, Cursor, VS Code |
+
+**4. Open it.** Go to the address shown at the end (e.g. `http://localhost:8090`) and sign in. Your AI tools'
+configuration is in `.hangar/clients/` (start with its `README.md`). Then ask the tool: *"create an agent that…"*.
+
+**5. Check it.** `hangar doctor` checks Docker, the central, each LLM (with a real call), memory, the public address
+and TLS, sign-in, MCP and the VS Code extension, and tells you how to fix anything that fails.
+
+To install without questions (automation, VM images), use `./scripts/install.sh --answers setup.yaml`, with
+[`setup.example.yaml`](setup.example.yaml) as the model. To change an answer or upgrade, `git pull` and run
+`hangar setup` again: previous answers are the defaults and secrets are kept.
+
+### On Kubernetes (GKE, AKS, EKS)
+
+The same installer deploys the Helm chart (`charts/agent-hangar`); agents become Deployments and harness runs become
+Jobs, isolated by NetworkPolicies. Full guide: [docs/kubernetes.md](docs/kubernetes.md).
+
+1. **Requirements:** `kubectl` pointing at the cluster, Helm 3.12+, Python 3.10+.
+2. **Run** `./scripts/install.sh --target kubernetes` (or `hangar setup --target kubernetes`).
+3. **Answer:** cloud (`gke` · `aks` · `eks` · `local`, which picks the preset), namespace, image registry (or your
+   mirror), access (**Ingress with TLS** · **Cloudflare Tunnel** · port-forward), Postgres (in the cluster or
+   **managed**: Cloud SQL, Azure Database, RDS), then the same admin/LLM/memory/sign-in/tools questions.
+4. **Check:** `hangar doctor --namespace agent-hangar`.
+
+Plain Helm works too: `helm upgrade --install agent-hangar charts/agent-hangar -n agent-hangar --create-namespace
+-f charts/agent-hangar/values-gke.yaml -f my-values.yaml`.
+
+<details><summary>Manual install, without the wizard</summary>
+
+```bash
 ./scripts/setup.sh              # Windows: powershell -File scripts/setup.ps1 (writes .env with random secrets)
 docker compose up -d --build    # hangar + Postgres + agent runtime + mock harness
 ```
 
-1. Open **http://localhost:8090** and sign in with the `ADMIN_TOKEN` from `.env`.
-2. Add an LLM under **Provedores de LLM**: LiteLLM, OpenRouter, OpenAI, Anthropic, DeepSeek, Gemini, Ollama…
-3. Invite people. They sign in with Google, Microsoft Entra ID, GitHub, any OAuth2 provider, or a local account,
-   and land in **their portal**.
-4. Connect your AI client to the hangar. Admins use an admin key; everyone else uses their personal token from
-   **Minhas chaves**:
+Open **http://localhost:8090**, sign in with the `ADMIN_TOKEN` from `.env`, add an LLM under **Provedores de LLM** and
+connect your AI client with a personal token from **Minhas chaves**:
 
 ```bash
 claude mcp add --transport http agent-hangar http://localhost:8090/mcp --header "Authorization: Bearer <key>"
 ```
 
-Then just ask for an agent. Other clients (Claude Desktop, Codex, OpenCode, ChatGPT, Cursor, VS Code) are covered
-in [docs/clients.md](docs/clients.md). To try the flow without any key, apply **Templates → Document Q&A** in mock
-mode.
+Other clients are covered in [docs/clients.md](docs/clients.md).
+</details>
 
 ### Two web apps
 
@@ -269,6 +314,7 @@ hangar jobs run code-fixer "Add input validation to parse_date()" --follow
 
 | | |
 |---|---|
+| [Installation](docs/install.md) | Guided installer, exposure (Cloudflare, ngrok, Tailscale), unattended install, `hangar doctor`, upgrades |
 | [Concepts](docs/concepts.md) · [Spec reference](docs/spec.md) · [Templates](docs/templates.md) | What an agent is and how to describe one |
 | [Clients](docs/clients.md) | Connecting Claude, ChatGPT, Codex, OpenCode, Cursor, VS Code, LibreChat, Open WebUI |
 | [Access, teams, SSO and the portal](docs/access.md) | Roles, approvals, budgets, OAuth2/SCIM, where each person lands |
@@ -278,9 +324,9 @@ hangar jobs run code-fixer "Add input validation to parse_date()" --follow
 
 ## Project status and roadmap
 
-v0.9 adds code evaluations in stage and governance for code (approved LLM connections, secret masking, the `code-assistant` template). Earlier releases added coding agents in VS Code (v0.8), the user portal (v0.7), long-term memory (v0.6), the MCP catalog with OAuth MCPs and
-Activepieces (v0.5), schedules and edit-after-ship (v0.4), and teams with SSO (v0.3). Next up: Kubernetes/Helm,
-OpenTelemetry + Langfuse traces, Slack/Teams adapters and egress allowlists for jobs. See
+v0.10 adds the guided installer (`hangar setup` / `hangar doctor`), tunnels (Cloudflare, ngrok, Tailscale) and Kubernetes (Helm chart, runtime driver, GKE/AKS/EKS presets). Earlier releases added code evaluations and code governance (v0.9), coding agents in VS Code (v0.8), the user portal (v0.7), long-term memory (v0.6), the MCP catalog with OAuth MCPs and
+Activepieces (v0.5), schedules and edit-after-ship (v0.4), and teams with SSO (v0.3). Next up: high availability,
+MCP OAuth for web clients, OpenTelemetry + Langfuse traces, Slack/Teams adapters and egress allowlists for jobs. See
 [ROADMAP.md](ROADMAP.md), the [CHANGELOG](CHANGELOG.md) and the issues.
 
 ## Contributing

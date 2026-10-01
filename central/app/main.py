@@ -167,7 +167,7 @@ def portal_index():
 DOWNLOADS = os.environ.get("DOWNLOADS_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "downloads"))
 
 
-@app.get("/downloads/agent-hangar-vscode.vsix")
+@app.api_route("/downloads/agent-hangar-vscode.vsix", methods=["GET", "HEAD"])
 def vscode_extension():
     """A extensão do VS Code, gerada no build da imagem (extensions/vscode). Instale com
     `code --install-extension agent-hangar-vscode.vsix` ou pelo menu Extensions → Install from VSIX."""

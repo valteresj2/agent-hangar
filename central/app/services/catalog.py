@@ -98,6 +98,39 @@ def llm_connection_dict(c: LlmConnection) -> dict:
             "allow_code": bool(c.allow_code), "created_at": iso(c.created_at)}
 
 
+def test_connection(db: Session, name: str) -> dict:
+    """Chamada real e mínima ao LLM da conexão (uma frase, poucos tokens): confere URL, chave e modelo. Usada pelo
+    `hangar doctor`, pelo instalador e pelo botão Testar do catálogo."""
+    import time
+
+    import httpx
+
+    c = get_connection(db, name)
+    key = crypto.decrypt(c.api_key) if c.api_key else ""
+    t0 = time.monotonic()
+    try:
+        if c.protocol == "anthropic":
+            r = httpx.post(f"{c.base_url}/v1/messages", timeout=30,
+                           headers={"x-api-key": key, "anthropic-version": "2023-06-01"},
+                           json={"model": c.model_name, "max_tokens": 16,
+                                 "messages": [{"role": "user", "content": "Responda só: ok"}]})
+        else:
+            r = httpx.post(f"{c.base_url}/chat/completions", timeout=30,
+                           headers={"Authorization": f"Bearer {key}"} if key else {},
+                           json={"model": c.model_name, "max_tokens": 16,
+                                 "messages": [{"role": "user", "content": "Responda só: ok"}]})
+    except httpx.HTTPError as e:
+        return {"name": name, "ok": False, "latency_ms": int((time.monotonic() - t0) * 1000),
+                "detail": f"não consegui conectar em {c.base_url}: {type(e).__name__}"}
+    ms = int((time.monotonic() - t0) * 1000)
+    if r.status_code >= 400:
+        hint = {401: "chave inválida", 403: "chave sem permissão", 404: "URL ou modelo inexistente",
+                429: "limite/créditos do provedor"}.get(r.status_code, "")
+        return {"name": name, "ok": False, "latency_ms": ms,
+                "detail": f"HTTP {r.status_code}{' (' + hint + ')' if hint else ''}: {r.text[:200]}"}
+    return {"name": name, "ok": True, "latency_ms": ms, "detail": f"{c.model_name} respondeu em {ms} ms"}
+
+
 def set_code_approval(db: Session, name: str, allow: bool, actor="admin") -> LlmConnection:
     c = get_connection(db, name)
     c.allow_code = bool(allow)

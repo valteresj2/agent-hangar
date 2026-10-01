@@ -7,7 +7,7 @@ def _env(name: str, default: str = "") -> str:
 
 
 APP_NAME = "Agent Hangar"
-VERSION = "0.9.0"
+VERSION = "0.10.0"
 
 DATABASE_URL = _env("DATABASE_URL", "sqlite:///./hangar.db")
 
@@ -46,6 +46,12 @@ def harness_image(harness_id: str) -> str:
     override = _env(f"HARNESS_IMAGE_{harness_id.upper().replace('-', '_')}")
     return override or f"{REGISTRY}/harness-{harness_id}:{IMAGE_TAG}"
 
+
+# Onde os agentes rodam: docker (containers via socket proxy) | kubernetes (Deployments/Jobs no namespace da central)
+RUNTIME_BACKEND = _env("RUNTIME_BACKEND", "docker").lower()
+K8S_NAMESPACE = _env("K8S_NAMESPACE")  # vazio = o namespace da própria central (ServiceAccount)
+K8S_IMAGE_PULL_SECRET = _env("K8S_IMAGE_PULL_SECRET")  # registry privado: nome(s) do(s) Secret(s), separados por vírgula
+K8S_PULL_POLICY = _env("K8S_PULL_POLICY", "IfNotPresent")
 
 AGENTS_NETWORK = _env("AGENTS_NETWORK", "hangar_agents")
 # Rede isolada dos jobs: alcançam a central (callback) e a internet (LLM/MCP), nunca os outros agentes.

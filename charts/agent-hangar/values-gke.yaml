@@ -1,0 +1,23 @@
+# Google Kubernetes Engine (GKE). Use junto com os seus values:
+#   helm upgrade --install agent-hangar charts/agent-hangar -n agent-hangar --create-namespace \
+#     -f charts/agent-hangar/values-gke.yaml -f meus-values.yaml
+#
+# - Ingress: GKE Ingress (load balancer HTTP(S) do Google) com certificado gerenciado pelo Google.
+#   Reserve um IP global: gcloud compute addresses create agent-hangar-ip --global
+#   e aponte o DNS do host para ele.
+# - Banco gerenciado (recomendado): Cloud SQL para PostgreSQL com IP privado na mesma VPC:
+#   postgresql.enabled=false e postgresql.external.url=postgresql+psycopg://hangar:SENHA@IP_PRIVADO:5432/hangar
+# - NetworkPolicy: crie o cluster com Dataplane V2 (--enable-dataplane-v2) para as políticas valerem.
+# - LLM no Vertex AI: use um gateway (LiteLLM) com Workload Identity; o Hangar aponta para o gateway.
+ingress:
+  enabled: true
+  className: gce
+  gkeManagedCertificate: true
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: agent-hangar-ip
+    kubernetes.io/ingress.allow-http: "false"
+postgresql:
+  storageClass: standard-rwo
+memory:
+  neo4j: {storageClass: standard-rwo}
+  falkordb: {storageClass: standard-rwo}

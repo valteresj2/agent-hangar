@@ -1,0 +1,99 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $full := include "hangar.fullname" . -}}
+{{- $sel := include "hangar.selector" . -}}
+# Agentes, jobs de harness e avaliações de código (pods criados pela central, rótulo hangar.dev/role): falam só com a
+# central, o DNS e a internet (LLMs, MCPs remotos) — não com outros agentes, o banco ou a memória.
+{{- range $role := list "agent" "job" "eval" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-{{ $role }}
+  labels: {{- include "hangar.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {hangar.dev/role: {{ $role }}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    {{- if eq $role "agent" }}
+    - from:
+        - podSelector:
+            matchLabels: {{- $sel | nindent 14 }}
+              app.kubernetes.io/component: central
+      ports: [{port: 8000, protocol: TCP}]
+    {{- end }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {{- $sel | nindent 14 }}
+              app.kubernetes.io/component: central
+      ports: [{port: 8080, protocol: TCP}]
+    - ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            {{- if not $.Values.networkPolicy.allowPrivateEgress }}
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]
+            {{- end }}
+    {{- with $.Values.networkPolicy.extraAgentEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- if .Values.postgresql.enabled }}
+---
+# Postgres: só a central
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-postgres
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- $sel | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {{- $sel | nindent 14 }}
+              app.kubernetes.io/component: central
+      ports: [{port: 5432, protocol: TCP}]
+{{- end }}
+{{- if .Values.memory.enabled }}
+---
+# Memória: só a central chama; o banco de grafo: só a memória
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-memory
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- $sel | nindent 6 }}
+      app.kubernetes.io/component: memory
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {{- $sel | nindent 14 }}
+              app.kubernetes.io/component: central
+      ports: [{port: 8000, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-graph
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/instance, operator: In, values: [{{ .Release.Name | quote }}]}
+      - {key: app.kubernetes.io/component, operator: In, values: [neo4j, falkordb]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {{- $sel | nindent 14 }}
+              app.kubernetes.io/component: memory
+{{- end }}
+{{- end }}

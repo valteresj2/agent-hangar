@@ -31,6 +31,20 @@ Credentials are read from `HANGAR_URL` / `HANGAR_TOKEN`, or from `~/.config/hang
 | `hangar request-access <slug> <reason…>` | Ask a team to use its agent |
 | `hangar schedules ls [slug]` / `add <slug> <message…> --cron '0 9 * * 1-5'` (or `--at 2026-10-05T09:00`) / `run <id>` / `rm <id>` | Schedules: the agent runs by itself in production |
 
+
+## Install and diagnose
+
+```bash
+./scripts/install.sh                     # installs the CLI in .hangar/venv and runs `hangar setup`
+hangar setup                             # guided install / reconfigure (Docker)
+hangar setup --answers setup.yaml        # unattended (see setup.example.yaml); --no-start only writes .env
+hangar doctor                            # checks the installation; --json for monitoring
+hangar setup --target kubernetes         # install / upgrade on a cluster with Helm (docs/kubernetes.md)
+hangar doctor --namespace agent-hangar   # pods + every check above, via a temporary port-forward
+```
+
+See [install.md](install.md).
+
 ## Agents in CI
 
 ```yaml

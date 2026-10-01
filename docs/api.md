@@ -132,6 +132,7 @@ Agents reach the memory at `/internal/memory/mcp` with their internal token and 
 | GET | `/api/catalog` | Skills, MCP servers, connections (keys masked) |
 | POST | `/api/catalog/skills` · `/api/catalog/mcps` · `/api/catalog/llm` | Upsert |
 | DELETE | `/api/catalog/llm/{name}` | Refused while an agent uses it |
+| POST | `/api/catalog/llm/{name}/test` | Real, minimal call to the connection's LLM (checks URL, key and model): `{ok, latency_ms, detail}`. Admin |
 | PATCH | `/api/catalog/llm/{name}/code` | `{allow_code}`: approve a connection to receive code (coding mode, code evaluations) when `code_policy` is `approved`. Admin |
 | POST | `/api/apply` | GitOps document `{skills, mcp_servers, agents}` (idempotent) |
 | GET | `/api/templates`, `/api/templates/{id}` | Gallery |

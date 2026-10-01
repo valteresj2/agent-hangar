@@ -1,0 +1,123 @@
+{{- $full := include "hangar.fullname" . -}}
+{{- if and (not .Values.postgresql.enabled) (not .Values.postgresql.external.url) (not .Values.postgresql.external.existingSecret) (not .Values.secrets.existingSecret) }}
+{{- fail "banco: use postgresql.enabled=true, postgresql.external.url, postgresql.external.existingSecret ou secrets.existingSecret com DATABASE_URL" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-central
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+data:
+  RUNTIME_BACKEND: kubernetes
+  PUBLIC_BASE_URL: {{ .Values.publicUrl | default "http://localhost:8090" | trimSuffix "/" | quote }}
+  INTERNAL_BASE_URL: {{ include "hangar.centralUrl" . | quote }}
+  HANGAR_REGISTRY: {{ .Values.image.registry | quote }}
+  HANGAR_VERSION: {{ include "hangar.tag" . | quote }}
+  K8S_PULL_POLICY: {{ .Values.image.pullPolicy | quote }}
+  K8S_IMAGE_PULL_SECRET: {{ join "," .Values.image.pullSecrets | quote }}
+  AGENT_MEM_LIMIT: {{ .Values.agents.memLimit | quote }}
+  AGENT_CPUS: {{ .Values.agents.cpus | quote }}
+  JOB_MEM_LIMIT: {{ .Values.agents.jobMemLimit | quote }}
+  JOB_CPUS: {{ .Values.agents.jobCpus | quote }}
+  JOB_TIMEOUT_S: {{ .Values.agents.jobTimeoutS | quote }}
+  DEFAULT_MODEL: {{ .Values.agents.defaultModel | quote }}
+  LOCAL_LOGIN: {{ ternary "1" "0" .Values.sso.localLogin | quote }}
+  BOOTSTRAP_ADMIN_EMAILS: {{ .Values.sso.bootstrapAdminEmails | quote }}
+  SCHEDULER_ENABLED: {{ ternary "1" "0" .Values.scheduler.enabled | quote }}
+  {{- if .Values.memory.enabled }}
+  MEMORY_URL: {{ printf "http://%s-memory:8000" $full | quote }}
+  MEMORY_LLM_CONNECTION: {{ .Values.memory.llmConnection | quote }}
+  MEMORY_LLM_OUTPUT_MODE: {{ .Values.memory.outputMode | quote }}
+  {{- end }}
+  {{- with .Values.sso.google }}{{ if .clientId }}
+  OAUTH_GOOGLE_CLIENT_ID: {{ .clientId | quote }}
+  OAUTH_GOOGLE_ALLOWED_DOMAINS: {{ .allowedDomains | quote }}
+  {{- end }}{{ end }}
+  {{- with .Values.sso.microsoft }}{{ if .clientId }}
+  OAUTH_MICROSOFT_CLIENT_ID: {{ .clientId | quote }}
+  OAUTH_MICROSOFT_TENANT: {{ required "sso.microsoft.tenant é obrigatório" .tenant | quote }}
+  OAUTH_MICROSOFT_ALLOWED_DOMAINS: {{ .allowedDomains | quote }}
+  OAUTH_MICROSOFT_FETCH_GROUPS: {{ ternary "1" "" .fetchGroups | quote }}
+  {{- end }}{{ end }}
+  {{- with .Values.sso.github }}{{ if .clientId }}
+  OAUTH_GITHUB_CLIENT_ID: {{ .clientId | quote }}
+  OAUTH_GITHUB_ORGS: {{ .orgs | quote }}
+  {{- end }}{{ end }}
+  {{- with .Values.sso.oauth2 }}{{ if .clientId }}
+  OAUTH_OAUTH2_CLIENT_ID: {{ .clientId | quote }}
+  OAUTH_OAUTH2_LABEL: {{ .label | quote }}
+  OAUTH_OAUTH2_AUTHORIZE_URL: {{ .authorizeUrl | quote }}
+  OAUTH_OAUTH2_TOKEN_URL: {{ .tokenUrl | quote }}
+  OAUTH_OAUTH2_USERINFO_URL: {{ .userinfoUrl | quote }}
+  OAUTH_OAUTH2_SCOPES: {{ .scopes | quote }}
+  {{- end }}{{ end }}
+  {{- range $k, $v := .Values.central.extraEnv }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-central
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+    app.kubernetes.io/component: central
+spec:
+  replicas: {{ .Values.central.replicas }}
+  strategy: {type: Recreate}   # uma réplica por vez até a alta disponibilidade (próxima fase)
+  selector:
+    matchLabels: {{- include "hangar.selector" . | nindent 6 }}
+      app.kubernetes.io/component: central
+  template:
+    metadata:
+      labels: {{- include "hangar.selector" . | nindent 8 }}
+        app.kubernetes.io/component: central
+      annotations:
+        checksum/config: {{ toJson .Values | sha256sum | trunc 16 }}
+    spec:
+      serviceAccountName: {{ $full }}-central
+      securityContext: {{- include "hangar.podSecurity" . | nindent 8 }}
+      {{- include "hangar.pullSecrets" . | nindent 6 }}
+      containers:
+        - name: central
+          image: {{ include "hangar.image" (dict "ctx" . "name" "central") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{containerPort: 8080, name: http}]
+          envFrom:
+            - configMapRef: {name: {{ $full }}-central}
+            - secretRef: {name: {{ include "hangar.secretName" . }}}
+            {{- with .Values.postgresql.external.existingSecret }}
+            - secretRef: {name: {{ . }}}
+            {{- end }}
+          securityContext: {{- include "hangar.containerSecurity" . | nindent 12 }}
+          resources: {{- toYaml .Values.central.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: {path: /api/health, port: 8080}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /api/health, port: 8080}
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}
+      {{- with .Values.central.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.central.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.central.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-central
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "hangar.selector" . | nindent 4 }}
+    app.kubernetes.io/component: central
+  ports: [{name: http, port: 8080, targetPort: 8080}]

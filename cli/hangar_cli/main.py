@@ -517,7 +517,34 @@ def build_parser() -> argparse.ArgumentParser:
     s = add(sub, "request-access", cmd_request_access, "pede acesso a um agente de outro time")
     s.add_argument("slug")
     s.add_argument("reason", nargs="*")
+
+    s = add(sub, "setup", cmd_setup, "instala e configura o Agent Hangar com Docker (guiado ou --answers arquivo.yaml)")
+    s.add_argument("--dir", default=".", help="pasta do repositório (onde está o docker-compose.yml)")
+    s.add_argument("--answers", help="arquivo YAML de respostas (instalação sem perguntas; ver setup.example.yaml)")
+    s.add_argument("--no-start", action="store_true", help="só gera o .env, sem subir a stack")
+    s.add_argument("--yes", action="store_true", help="não pergunta antes de subir")
+    s.add_argument("--target", choices=["docker", "kubernetes"], help="onde instalar (padrão: pergunta)")
+    s = add(sub, "doctor", cmd_doctor, "diagnóstico da instalação (Docker, central, LLM, memória, túnel, SSO, MCP)")
+    s.add_argument("--dir", default=".", help="pasta do repositório")
+    s.add_argument("--namespace", help="Kubernetes: namespace da instalação (usa kubectl e um port-forward)")
+    s.add_argument("--release", default="agent-hangar", help="Kubernetes: nome do release Helm")
     return p
+
+
+def cmd_setup(a):
+    from .setup import SetupError, setup
+    try:
+        sys.exit(setup(Path(a.dir), a.answers, start=not a.no_start, assume_yes=a.yes, target=a.target))
+    except SetupError as e:
+        raise CliError(str(e)) from None
+    except KeyboardInterrupt:
+        print("\ninterrompido — rode  hangar setup  de novo quando quiser (as respostas ficam salvas)")
+        sys.exit(130)
+
+
+def cmd_doctor(a):
+    from .doctor import doctor
+    sys.exit(doctor(Path(a.dir), as_json=getattr(a, "json", False), namespace=a.namespace, release=a.release))
 
 
 def main(argv=None):

@@ -1,0 +1,23 @@
+{{- $full := include "hangar.fullname" . -}}
+⌂ Agent Hangar {{ .Chart.AppVersion }} instalado no namespace {{ .Release.Namespace }}.
+
+Endereço: {{ .Values.publicUrl | default "(publicUrl não definido — só por port-forward)" }}
+{{- if not .Values.publicUrl }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ $full }}-central 8090:8080   →  http://localhost:8090
+{{- end }}
+{{- if .Values.tunnel.cloudflare.enabled }}
+
+Cloudflare Tunnel: no Zero Trust, o Public Hostname do túnel deve apontar para  http://{{ $full }}-central:8080
+{{- end }}
+
+Token de emergência (admin):
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "hangar.secretName" . }} -o jsonpath='{.data.ADMIN_TOKEN}' | base64 -d
+
+Próximos passos — cadastre o LLM, crie o admin e configure as ferramentas de IA:
+  hangar setup --target kubernetes      (rode de novo com as mesmas respostas: segredos e admin são mantidos)
+  hangar doctor --namespace {{ .Release.Namespace }}
+{{- if .Values.networkPolicy.enabled }}
+
+NetworkPolicies ativas: agentes e jobs só falam com a central, o DNS e a internet (sem IPs privados{{ if .Values.networkPolicy.allowPrivateEgress }} — liberados por allowPrivateEgress{{ end }}).
+Confira se o CNI do cluster aplica NetworkPolicy (GKE Dataplane V2, AKS com política de rede, EKS com VPC CNI network policy, Calico, Cilium).
+{{- end }}

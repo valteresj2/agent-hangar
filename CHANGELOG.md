@@ -5,6 +5,50 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-10-01
+
+### Upgrading from 0.9.x
+- No migration. Docker installs keep working as before; `hangar setup` can now take over an existing `.env` (secrets are kept, the old file is backed up).
+
+### Added
+- **Guided installer: `hangar setup`** ([docs/install.md](docs/install.md)), started by `scripts/install.sh` /
+  `install.ps1`, which install the CLI in an isolated venv. It asks seven questions:
+  - images: published or built from this checkout;
+  - exposure: local, Cloudflare Tunnel, ngrok or Tailscale Funnel;
+  - the admin account;
+  - the LLM: a direct provider or a corporate gateway;
+  - memory: Neo4j, FalkorDB or none;
+  - sign-in: local accounts, Google, Entra ID, GitHub or OAuth2;
+  - extras, the code policy and the AI tools to configure.
+
+  Then it writes `.env` (secrets kept, previous file backed up), turns on the profiles via `COMPOSE_PROFILES`, starts
+  the stack, registers and tests the LLM, creates the admin, and writes the AI tools' configs to `.hangar/clients/`
+  with a personal token.
+  - Unattended mode: `--answers setup.yaml` (see `setup.example.yaml`). Re-running it is safe.
+- **`hangar doctor`**: checks Docker and containers, the central, admin access, each LLM connection (real call),
+  memory, the public address and TLS, sign-in, the platform MCP, the VS Code extension and agents. Each failure comes
+  with the fix; it exits with `1` on failure, and `--json` is available.
+- **Tunnels as Compose profiles:** `tunnel-cloudflare` (cloudflared), `tunnel-ngrok` and `tunnel-tailscale` (Funnel).
+- **LLM connection test:** `POST /api/catalog/llm/{name}/test` and a **Testar** button in the catalog.
+- The generic OAuth2 login variables (`OAUTH_OAUTH2_*`) are now passed to the central by `docker-compose.yml`.
+
+- **Kubernetes** ([docs/kubernetes.md](docs/kubernetes.md)):
+  - **runtime driver** (`RUNTIME_BACKEND=kubernetes`): each agent is a `Deployment` + `Service` + `Secret`; harness
+    runs and code evaluations are `Job`s whose `Secret` is owned by the Job. Pods run as non-root, read-only root
+    filesystem (agents), all capabilities dropped, `seccomp: RuntimeDefault`, no service-account token;
+  - **Helm chart** `charts/agent-hangar`: namespace-scoped RBAC, NetworkPolicies (agents and jobs reach only the
+    central, DNS and the internet minus private ranges), Postgres in the cluster or managed, memory with Neo4j or
+    FalkorDB, Ingress (GKE managed certificate, AKS app routing, ALB, cert-manager), Cloudflare Tunnel, secrets
+    generated once and kept on upgrades or taken from an existing Secret;
+  - **presets** `values-gke.yaml`, `values-aks.yaml`, `values-eks.yaml`, `values-local.yaml`;
+  - **`hangar setup --target kubernetes`** writes the values (secrets in a separate 600 file), runs Helm and configures
+    the installation through a temporary port-forward; **`hangar doctor --namespace`** checks the pods too;
+  - the chart is published as OCI (`oci://ghcr.io/valteresj2/charts/agent-hangar`) with each release; CI lints it and
+    renders every preset.
+
+### Fixed
+- `/downloads/agent-hangar-vscode.vsix` answers `HEAD` too.
+
 ## [0.9.0] — 2026-09-30
 
 ### Upgrading from 0.8.x

@@ -44,3 +44,9 @@ scripts/demo/portal-tour/transcript.jsonl
 scripts/demo/portal-tour/chats.jsonl
 scripts/demo/portal-tour/shots/
 scripts/demo/portal-tour/out/
+
+# hangar setup: venv do CLI, respostas e tokens das ferramentas de IA
+.hangar/
+# respostas do hangar setup com chaves (use setup.example.yaml como modelo)
+setup.yaml
+.env.bak-*

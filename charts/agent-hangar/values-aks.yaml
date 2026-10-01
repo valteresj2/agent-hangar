@@ -1,0 +1,21 @@
+# Azure Kubernetes Service (AKS). Use junto com os seus values:
+#   helm upgrade --install agent-hangar charts/agent-hangar -n agent-hangar --create-namespace \
+#     -f charts/agent-hangar/values-aks.yaml -f meus-values.yaml
+#
+# - Ingress: add-on de roteamento de aplicativos do AKS (NGINX gerenciado):
+#   az aks approuting enable -g <rg> -n <cluster>
+#   TLS: cert-manager (annotation abaixo) ou certificado do Key Vault (kubernetes.azure.com/tls-cert-keyvault-uri).
+# - Banco gerenciado (recomendado): Azure Database for PostgreSQL – Flexible Server com acesso privado (VNet):
+#   postgresql.enabled=false e postgresql.external.url=postgresql+psycopg://hangar:SENHA@<servidor>.postgres.database.azure.com:5432/hangar?sslmode=require
+# - NetworkPolicy: crie o cluster com política de rede (--network-policy azure | calico | cilium).
+# - LLM no Azure OpenAI: conexão OpenAI-compatible https://<recurso>.openai.azure.com/openai/v1 (modelo = deployment).
+ingress:
+  enabled: true
+  className: webapprouting.kubernetes.azure.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+postgresql:
+  storageClass: managed-csi
+memory:
+  neo4j: {storageClass: managed-csi}
+  falkordb: {storageClass: managed-csi}

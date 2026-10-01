@@ -15,7 +15,7 @@ Claude um Assistente Comercial, que é criado, testado e publicado pelo MCP do H
 agente, o Playground, a memória do time, o resumo diário agendado, as conexões e o catálogo da empresa"></p>
 <p align="center"><sub>O portal do usuário, gravado numa instalação local · <a href="docs/assets/portal-tour.mp4">versão MP4</a></sub></p>
 
-> **Status: alpha (v0.9).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
+> **Status: alpha (v0.10).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
 > sua rede até ler [docs/security.md](docs/security.md).
 
 ## Exemplo: do pedido no Claude ao agente funcionando
@@ -52,6 +52,48 @@ reproduzem a demo estão em [scripts/demo/portal-tour](scripts/demo/portal-tour/
   pedidos, as chaves e os times.
 - **`/ui/`** é o console de administração, só para admins.
 - O login é o mesmo, e cada pessoa cai no lugar certo.
+
+## Instalação (passo a passo)
+
+O instalador guiado faz as perguntas e cuida do resto: gera o `.env`, sobe a stack, cadastra e **testa** o LLM, cria o
+admin e gera as configurações das ferramentas de IA. O guia completo está em [docs/install.md](docs/install.md).
+
+1. **Pré-requisitos:** Docker (Desktop ou Engine) com Compose 2.20+, e Python 3.10+ para rodar o instalador.
+2. **Rode o instalador:**
+   ```bash
+   git clone https://github.com/valteresj2/agent-hangar && cd agent-hangar
+   ./scripts/install.sh                                     # Linux, macOS, WSL
+   # Windows: powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+   ```
+3. **Responda às perguntas** (todas têm um padrão):
+   - imagens publicadas ou build local;
+   - endereço: local, **Cloudflare Tunnel**, **ngrok** ou **Tailscale Funnel**;
+   - usuário e senha do admin;
+   - LLM: OpenAI, Anthropic, Azure OpenAI, Gemini, OpenRouter, DeepSeek, gateway corporativo (LiteLLM, Portkey… e,
+     por ele, Bedrock e Vertex), Ollama ou outro endpoint;
+   - memória: Neo4j, FalkorDB ou nenhuma;
+   - login: contas locais, Google, Entra ID, GitHub ou OAuth2;
+   - extras e configurações para Claude Code, Claude Desktop, Codex, OpenCode, Cursor e VS Code.
+4. **Abra o endereço** mostrado no fim e entre. As configurações das ferramentas de IA estão em `.hangar/clients/`
+   (comece pelo `README.md` de lá).
+5. **Confira com `hangar doctor`:** ele testa Docker, a central, cada LLM, a memória, o endereço público e o TLS, o
+   login, o MCP e a extensão do VS Code, e diz como corrigir o que falhar.
+
+### No Kubernetes (GKE, AKS, EKS)
+
+O mesmo instalador implanta o chart Helm (`charts/agent-hangar`): cada agente vira um Deployment e cada execução de
+harness um Job, isolados por NetworkPolicies. Guia completo: [docs/kubernetes.md](docs/kubernetes.md).
+
+1. **Pré-requisitos:** `kubectl` apontando para o cluster, Helm 3.12+ e Python 3.10+.
+2. **Rode** `./scripts/install.sh --target kubernetes` (ou `hangar setup --target kubernetes`).
+3. **Responda:** nuvem (`gke` · `aks` · `eks` · `local`, que escolhe o preset), namespace, registry das imagens (ou o
+   seu espelho), acesso (**Ingress com TLS** · **Cloudflare Tunnel** · port-forward), Postgres (no cluster ou
+   **gerenciado**: Cloud SQL, Azure Database, RDS) e as mesmas perguntas de admin, LLM, memória, login e ferramentas.
+4. **Confira:** `hangar doctor --namespace agent-hangar`.
+
+Para instalar sem perguntas, use `./scripts/install.sh --answers setup.yaml`, com o
+[`setup.example.yaml`](setup.example.yaml) como modelo. Para mudar alguma escolha ou atualizar, faça `git pull` e rode
+`hangar setup` de novo: as respostas anteriores viram o padrão e os segredos são mantidos.
 
 ## O que faz
 

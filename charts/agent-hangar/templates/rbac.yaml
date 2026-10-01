@@ -1,0 +1,41 @@
+{{- $full := include "hangar.fullname" . -}}
+# A central publica agentes (Deployment + Service + Secret) e roda jobs (Job + Secret) SÓ neste namespace.
+# Sem acesso a nós, ao runtime de containers, a outros namespaces ou a recursos do cluster.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $full }}-central
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $full }}-central
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete", "deletecollection"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $full }}-central
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $full }}-central
+subjects:
+  - kind: ServiceAccount
+    name: {{ $full }}-central
+    namespace: {{ .Release.Namespace }}

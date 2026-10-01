@@ -31,6 +31,18 @@ jobs:
           node --check harness/entrypoint.js
           node --check harness/eval_runner.js
 
+  helm-chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v4
+      - run: helm lint charts/agent-hangar
+      - name: Render every preset
+        run: |
+          for p in local gke aks eks; do
+            helm template t charts/agent-hangar -f charts/agent-hangar/values-$p.yaml               --set publicUrl=https://h.example.com --set ingress.host=h.example.com --set memory.enabled=true > /dev/null
+          done
+
   vscode-extension:
     runs-on: ubuntu-latest
     defaults:

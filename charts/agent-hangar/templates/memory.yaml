@@ -1,0 +1,135 @@
+{{- if .Values.memory.enabled }}
+{{- $full := include "hangar.fullname" . -}}
+{{- $secret := include "hangar.secretName" . -}}
+{{- $neo := eq .Values.memory.backend "neo4j" -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-memory
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "hangar.selector" . | nindent 4 }}
+    app.kubernetes.io/component: memory
+  ports: [{name: http, port: 8000, targetPort: 8000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $full }}-memory
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+    app.kubernetes.io/component: memory
+spec:
+  replicas: 1   # a fila de gravação vive no processo (ver docs/memory.md)
+  selector:
+    matchLabels: {{- include "hangar.selector" . | nindent 6 }}
+      app.kubernetes.io/component: memory
+  template:
+    metadata:
+      labels: {{- include "hangar.selector" . | nindent 8 }}
+        app.kubernetes.io/component: memory
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {{- include "hangar.podSecurity" . | nindent 8 }}
+      {{- include "hangar.pullSecrets" . | nindent 6 }}
+      containers:
+        - name: memory
+          image: {{ include "hangar.image" (dict "ctx" . "name" "mcp-memory") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - {name: MEMORY_BACKEND, value: {{ .Values.memory.backend | quote }}}
+            - {name: CENTRAL_URL, value: {{ include "hangar.centralUrl" . | quote }}}
+            - {name: NEO4J_URI, value: {{ printf "bolt://%s-neo4j:7687" $full | quote }}}
+            - {name: NEO4J_USER, value: neo4j}
+            - {name: FALKORDB_HOST, value: {{ printf "%s-falkordb" $full | quote }}}
+            - {name: MEMORY_EMBEDDER, value: local}
+            - name: MEMORY_TOKEN
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: MEMORY_TOKEN}}
+            - name: NEO4J_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: NEO4J_PASSWORD}}
+            - name: FALKORDB_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: FALKORDB_PASSWORD}}
+          ports: [{containerPort: 8000, name: http}]
+          securityContext: {{- include "hangar.containerSecurity" . | nindent 12 }}
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 10
+          resources: {{- toYaml .Values.memory.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}
+---
+{{- $db := ternary "neo4j" "falkordb" $neo }}
+{{- $cfg := ternary .Values.memory.neo4j .Values.memory.falkordb $neo }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-{{ $db }}
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "hangar.selector" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $db }}
+  ports:
+    {{- if $neo }}
+    - {name: bolt, port: 7687, targetPort: 7687}
+    {{- else }}
+    - {name: redis, port: 6379, targetPort: 6379}
+    {{- end }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $full }}-{{ $db }}
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ $db }}
+spec:
+  serviceName: {{ $full }}-{{ $db }}
+  replicas: 1
+  selector:
+    matchLabels: {{- include "hangar.selector" . | nindent 6 }}
+      app.kubernetes.io/component: {{ $db }}
+  template:
+    metadata:
+      labels: {{- include "hangar.selector" . | nindent 8 }}
+        app.kubernetes.io/component: {{ $db }}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: {{ $db }}
+          image: {{ $cfg.image }}
+          {{- if $neo }}
+          env:
+            # a imagem do Neo4j transforma toda variável NEO4J_* em configuração: a senha entra com outro nome
+            - name: HANGAR_GRAPH_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: NEO4J_PASSWORD}}
+            - {name: NEO4J_AUTH, value: "neo4j/$(HANGAR_GRAPH_PASSWORD)"}
+            - {name: NEO4J_server_memory_heap_max__size, value: {{ .Values.memory.neo4j.heap | quote }}}
+            - {name: NEO4J_server_memory_pagecache_size, value: {{ .Values.memory.neo4j.pagecache | quote }}}
+          ports: [{containerPort: 7687, name: bolt}]
+          readinessProbe:
+            tcpSocket: {port: 7687}
+            periodSeconds: 10
+          volumeMounts: [{name: data, mountPath: /data}]
+          {{- else }}
+          env:
+            - name: FALKORDB_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: FALKORDB_PASSWORD}}
+            - {name: REDIS_ARGS, value: "--requirepass $(FALKORDB_PASSWORD)"}
+          ports: [{containerPort: 6379, name: redis}]
+          readinessProbe:
+            tcpSocket: {port: 6379}
+            periodSeconds: 10
+          volumeMounts: [{name: data, mountPath: /var/lib/falkordb/data}]
+          {{- end }}
+          # as imagens oficiais sobem como root e trocam de usuário no entrypoint (gosu): sem drop ALL aqui
+          securityContext: {allowPrivilegeEscalation: false}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with $cfg.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources: {requests: {storage: {{ $cfg.storage }}}}
+{{- end }}
