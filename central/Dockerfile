@@ -12,7 +12,7 @@ FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /srv
 COPY central/requirements.txt .
-RUN pip install -r requirements.txt && useradd -u 10001 -m hangar \
+RUN PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=8 pip install -r requirements.txt && useradd -u 10001 -m hangar \
     && mkdir -p /mcp-gateway && chown hangar /mcp-gateway   # volume compartilhado com o gateway Docker MCP
 COPY central/alembic.ini ./alembic.ini
 COPY central/migrations ./migrations

@@ -13,20 +13,17 @@ import base64
 import hashlib
 import re
 import secrets
-import threading
 import time
 
 from sqlalchemy.orm import Session
 
-from .. import auth, sso
+from .. import auth, shared, sso
 from ..models import User
 from .access import Access, Forbidden
 from .common import PlatformError, audit
 
 CODE_TTL_S = 300
 CLIENT = "vscode-ext"
-_USED: dict[str, float] = {}  # jti -> expiração (uso único; o código já expira sozinho em 5 min)
-_LOCK = threading.Lock()
 
 
 def _device(name: str) -> str:
@@ -53,13 +50,8 @@ def exchange(db: Session, code: str, verifier: str) -> dict:
     expected = base64.urlsafe_b64encode(hashlib.sha256((verifier or "").encode()).digest()).decode().rstrip("=")
     if not secrets.compare_digest(expected, data.get("c", "")):
         raise PlatformError("verificação PKCE falhou — comece de novo pelo VS Code")
-    now = time.time()
-    with _LOCK:
-        for j in [j for j, exp in _USED.items() if exp < now]:
-            _USED.pop(j, None)
-        if data["j"] in _USED:
-            raise PlatformError("este código já foi usado — comece de novo pelo VS Code")
-        _USED[data["j"]] = now + CODE_TTL_S
+    if not shared.take_once(f"vscode-code:{data['j']}", CODE_TTL_S + 60):  # uso único, valendo para todas as réplicas
+        raise PlatformError("este código já foi usado — comece de novo pelo VS Code")
     u = db.get(User, data["u"])
     if not u or not u.active:
         raise PlatformError("usuário inativo")

@@ -82,6 +82,22 @@ Agents reach the MCP at `/internal/mcp-remote/{name}` with their internal token.
 | POST | `/api/auth/vscode/token` | Extension (open route): `{code, verifier}` (PKCE) → personal key `{token, key_id, user}`, scope `user`, client `vscode-ext` |
 | GET | `/downloads/agent-hangar-vscode.vsix` | The extension package, built with the central image |
 
+## OAuth for the platform MCP (Claude.ai, ChatGPT…)
+
+Discovery and token endpoints are open (CORS enabled); the consent and management routes need a signed-in user.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/.well-known/oauth-protected-resource[/mcp]` | RFC 9728 metadata. `/mcp` without a token answers 401 with `WWW-Authenticate: Bearer resource_metadata="…"` |
+| GET | `/.well-known/oauth-authorization-server` | RFC 8414 metadata (also at `/.well-known/openid-configuration`) |
+| POST | `/oauth/register` | Dynamic client registration (RFC 7591): public clients only (`token_endpoint_auth_method=none`); redirect hosts limited by `OAUTH_REDIRECT_HOSTS`; 30 registrations/hour per IP |
+| GET | `/oauth/authorize` | Validates the request (PKCE S256 required) and sends the browser to the portal consent page `/app/#/oauth` |
+| POST | `/oauth/token` | `authorization_code` (+ `code_verifier`) or `refresh_token` (rotating; reusing an old one revokes the authorization) |
+| POST | `/oauth/revoke` | RFC 7009: revokes the authorization owning the token |
+| GET / POST | `/api/oauth/consent` | Portal: request details / `{params, approve}` → `{redirect}` back to the app with `code` and `state` |
+| GET / DELETE | `/api/me/oauth[/{id}]` | Connected apps of the caller (admins: everyone's) / revoke one |
+| GET / DELETE | `/api/oauth/clients[/{client_id}]` | Admin: registered apps / block an app and all its authorizations |
+
 ## User portal
 
 | Method | Path | Description |
@@ -160,7 +176,7 @@ Agents reach the memory at `/internal/memory/mcp` with their internal token and 
 Optional header `X-Channel: <name>` tags usage for per-channel metrics. Without it, a key created by a tool
 connection tags usage with its tool (`claude-code`, `open-webui`, …); other keys fall back to `api`.
 
-## Platform MCP (`/mcp`, admin key or personal token)
+## Platform MCP (`/mcp`, admin key, personal token or OAuth token)
 
 The client acts with the key owner's roles. The tools are:
 

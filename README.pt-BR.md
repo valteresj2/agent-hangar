@@ -15,7 +15,7 @@ Claude um Assistente Comercial, que é criado, testado e publicado pelo MCP do H
 agente, o Playground, a memória do time, o resumo diário agendado, as conexões e o catálogo da empresa"></p>
 <p align="center"><sub>O portal do usuário, gravado numa instalação local · <a href="docs/assets/portal-tour.mp4">versão MP4</a></sub></p>
 
-> **Status: alpha (v0.10).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
+> **Status: alpha (v0.11).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
 > sua rede até ler [docs/security.md](docs/security.md).
 
 ## Exemplo: do pedido no Claude ao agente funcionando
@@ -91,6 +91,9 @@ harness um Job, isolados por NetworkPolicies. Guia completo: [docs/kubernetes.md
    **gerenciado**: Cloud SQL, Azure Database, RDS) e as mesmas perguntas de admin, LLM, memória, login e ferramentas.
 4. **Confira:** `hangar doctor --namespace agent-hangar`.
 
+Para alta disponibilidade, use 2+ réplicas da central com Postgres gerenciado: atualização sem parada e estado
+compartilhado no banco.
+
 Para instalar sem perguntas, use `./scripts/install.sh --answers setup.yaml`, com o
 [`setup.example.yaml`](setup.example.yaml) como modelo. Para mudar alguma escolha ou atualizar, faça `git pull` e rode
 `hangar setup` de novo: as respostas anteriores viram o padrão e os segredos são mantidos.
@@ -154,7 +157,8 @@ Harnesses de código são opcionais porque as imagens são grandes:
 
 - **Agentes são criados onde as pessoas já trabalham.** O hangar é um servidor MCP, então o próprio
   Claude/ChatGPT/Codex vira o "builder". Ele escolhe entre agente de chat, harness de código ou multiagente a partir
-  do objetivo.
+  do objetivo. No Claude.ai e no ChatGPT (web), basta colar a URL `/mcp`: a pessoa entra e autoriza (OAuth), sem
+  copiar chave.
 - **Nada chega à produção sem teste.** Cada mudança gera uma versão imutável, e a promoção exige que essa versão
   tenha passado nos testes de stage. Os testes combinam smoke dos protocolos, `expect_contains`/`regex` e
   **LLM-as-judge**. O rollback é um clique.

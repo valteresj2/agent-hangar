@@ -6,6 +6,7 @@ from . import (  # noqa: F401  (svc.access.Access, svc.connect.snippet, svc.org.
                       connect,
                       home,
                       mcp_gateway,
+                      mcp_oauth,
                       memory,
                       org,
                       registry,

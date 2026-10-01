@@ -154,9 +154,23 @@ The chart generates the secrets on the first install and keeps them on upgrades 
 in [`values.yaml`](../charts/agent-hangar/values.yaml). After installing, register the LLM and the admin in the console
 (`/ui/`, sign in with the emergency token printed by `helm status`) or run `hangar setup --target kubernetes`.
 
+## High availability
+
+Run two or more central replicas: answer the installer's *replicas* question, or set `central.replicas: 2` (or more).
+- **Rolling updates** with no downtime (`maxUnavailable: 0`, a `preStop` pause so a pod leaves the Service before
+  stopping), a **PodDisruptionBudget** (`central.pdb.minAvailable`), and replicas spread across nodes.
+- **Shared state** lives in Postgres: job and evaluation callbacks, single-use codes (OAuth, VS Code), the login
+  lockout and remote-MCP token refreshes work whichever replica receives them. Migrations run under a database lock,
+  so replicas can start together.
+- **Jobs** record the replica running them. A restarted replica recovers only its own jobs; jobs of a replica that
+  disappears (no heartbeat for 75 s) are closed by the others within about a minute.
+- Use a **managed Postgres with HA** (Cloud SQL, Azure Database, RDS/Aurora): the bundled StatefulSet is a single pod.
+
+Validated on k3s with 2 replicas: concurrent start (one migration), harness jobs whose callbacks land on the other
+replica, OAuth codes exchanged across replicas (single use), the login lockout shared, and a rolling restart under
+continuous traffic with no failed request.
+
 ## Limits of this release
 
-- The central runs as **one replica** (`strategy: Recreate`): some state (sessions in progress, caches) is still
-  in memory. High availability is the next milestone.
 - Tested end to end on k3s; the GKE/AKS/EKS presets follow each provider's documentation. Please report differences.
 - Optional Compose extras (Data Studio, Docker MCP catalog, Activepieces) are not part of the chart yet.

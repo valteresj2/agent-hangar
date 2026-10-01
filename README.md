@@ -24,7 +24,7 @@ MCP. Then come her Início page, the agent, a Playground answer, the team memory
 connections and the company catalog."></p>
 <p align="center"><sub>The user portal, recorded on a local install · <a href="docs/assets/portal-tour.mp4">MP4 version</a></sub></p>
 
-> **Status: alpha (v0.10).** It works end to end and is covered by tests, but APIs may still change. Run it inside
+> **Status: alpha (v0.11).** It works end to end and is covered by tests, but APIs may still change. Run it inside
 > your network until you have read [docs/security.md](docs/security.md).
 
 ---
@@ -134,6 +134,9 @@ Jobs, isolated by NetworkPolicies. Full guide: [docs/kubernetes.md](docs/kuberne
    **managed**: Cloud SQL, Azure Database, RDS), then the same admin/LLM/memory/sign-in/tools questions.
 4. **Check:** `hangar doctor --namespace agent-hangar`.
 
+For high availability, run 2+ central replicas with a managed Postgres: rolling updates without downtime, and
+shared state in the database.
+
 Plain Helm works too: `helm upgrade --install agent-hangar charts/agent-hangar -n agent-hangar --create-namespace
 -f charts/agent-hangar/values-gke.yaml -f my-values.yaml`.
 
@@ -169,7 +172,8 @@ Everyone signs in on the same page and lands in the right app. Every API call st
 **Build where people already work.** The hangar is an MCP server, so Claude, ChatGPT, Codex or OpenCode *are* the
 builder. They choose between a chat agent, a coding harness or a multi-agent team from the objective. You can also
 start from a template or the UI, and edit a live agent later: `edit_agent` makes a new version, tests it in stage
-and publishes it only when you say so.
+and publishes it only when you say so. Claude.ai and ChatGPT on the web connect by pasting only the `/mcp` URL: the
+person signs in and authorizes (OAuth), with no key to copy.
 
 **Nothing reaches production untested.**
 - Every change creates an immutable version.
@@ -324,9 +328,9 @@ hangar jobs run code-fixer "Add input validation to parse_date()" --follow
 
 ## Project status and roadmap
 
-v0.10 adds the guided installer (`hangar setup` / `hangar doctor`), tunnels (Cloudflare, ngrok, Tailscale) and Kubernetes (Helm chart, runtime driver, GKE/AKS/EKS presets). Earlier releases added code evaluations and code governance (v0.9), coding agents in VS Code (v0.8), the user portal (v0.7), long-term memory (v0.6), the MCP catalog with OAuth MCPs and
-Activepieces (v0.5), schedules and edit-after-ship (v0.4), and teams with SSO (v0.3). Next up: high availability,
-MCP OAuth for web clients, OpenTelemetry + Langfuse traces, Slack/Teams adapters and egress allowlists for jobs. See
+v0.11 adds OAuth on the platform MCP (Claude.ai and ChatGPT on the web connect with just the URL) and high availability on Kubernetes (several central replicas). v0.10 added the guided installer (`hangar setup` / `hangar doctor`), tunnels (Cloudflare, ngrok, Tailscale) and Kubernetes (Helm chart, runtime driver, GKE/AKS/EKS presets). Earlier releases added code evaluations and code governance (v0.9), coding agents in VS Code (v0.8), the user portal (v0.7), long-term memory (v0.6), the MCP catalog with OAuth MCPs and
+Activepieces (v0.5), schedules and edit-after-ship (v0.4), and teams with SSO (v0.3). Next up: external secrets and cloud identity,
+OpenTelemetry + Langfuse traces, Slack/Teams adapters and egress allowlists for jobs. See
 [ROADMAP.md](ROADMAP.md), the [CHANGELOG](CHANGELOG.md) and the issues.
 
 ## Contributing

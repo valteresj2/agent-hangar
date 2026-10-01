@@ -74,6 +74,7 @@ def build_values(a: dict, version: str) -> tuple[dict, dict]:
         v["sso"][prov] = pub
         s["sso"] = {prov: {"clientSecret": sso.get("client_secret", "")}}
     v["networkPolicy"] = {"enabled": True, "allowPrivateEgress": bool(k.get("allow_private_egress"))}
+    v["central"] = {"replicas": int(k.get("replicas") or 1)}
     return v, s
 
 

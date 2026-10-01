@@ -32,7 +32,7 @@ def _no_docker(*a, **k):
 
 # Nada nos testes pode alcançar o Docker de verdade (limparia containers reais de job, por exemplo).
 deploy.client = _no_docker
-deploy.cleanup_job_containers = lambda: None
+deploy.cleanup_job_containers = lambda *a, **k: None
 deploy.states = lambda max_age=3.0: {}
 
 ADMIN = {"Authorization": "Bearer test-admin-token"}

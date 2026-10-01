@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /srv
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=8 pip install -r requirements.txt
 # Cópias locais das libs JS (mesmas versões de app/builders/common.py) para HTML com offline=true
 COPY fetch_js_libs.py .
 RUN python fetch_js_libs.py /srv/static_libs

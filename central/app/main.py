@@ -11,10 +11,10 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, config, crypto, db
+from . import auth, config, crypto, db, shared
 from . import services as svc
 from .mcp_tools import mcp
-from .routers import access, admin, gateway, internal, memory, remote_mcp, schedules, scim
+from .routers import access, admin, gateway, internal, memory, oauth, remote_mcp, schedules, scim
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("hangar")
@@ -38,20 +38,29 @@ async def lifespan(app):
     if not config.ADMIN_TOKEN or config.ADMIN_TOKEN in ("changeme", "change-me"):
         log.warning("ADMIN_TOKEN vazio ou padrão — defina um valor forte antes de expor a central")
     await run_in_threadpool(db.migrate)
+    await run_in_threadpool(shared.beat)
     await run_in_threadpool(svc.recover_orphans)
     await run_in_threadpool(_write_gateway_files)  # o gateway Docker MCP precisa dos arquivos mesmo sem servidor ativo
     svc.schedules.start()
+    shared.start_heartbeat(housekeeping=svc.jobs.housekeeping)
     try:
         async with mcp.session_manager.run():
             yield
     finally:
         svc.schedules.stop()
+        shared.stop_heartbeat()
 
 
 app = FastAPI(title=config.APP_NAME, version=config.VERSION, lifespan=lifespan)
 
 _GW = re.compile(r"^/gw(?:-stage)?/([^/]+)(?:/|$)")
-OPEN_PREFIXES = ("/ui", "/app", "/downloads/", "/api/health", "/internal", "/api/auth/", "/login", "/favicon.ico")
+OPEN_PREFIXES = ("/ui", "/app", "/downloads/", "/api/health", "/internal", "/api/auth/", "/login", "/favicon.ico",
+                 "/.well-known/", "/oauth/")
+# descoberta e endpoints OAuth do MCP: clientes que rodam no navegador (ex.: MCP Inspector) precisam de CORS
+CORS_PREFIXES = ("/.well-known/", "/oauth/register", "/oauth/token", "/oauth/revoke")
+CORS_HEADERS = [(b"access-control-allow-origin", b"*"), (b"access-control-allow-methods", b"GET, POST, OPTIONS"),
+                (b"access-control-allow-headers", b"authorization, content-type, mcp-protocol-version"),
+                (b"access-control-max-age", b"86400")]
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
 
 
@@ -75,6 +84,16 @@ class AuthMiddleware:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         path = scope["path"]
+        if path.startswith(CORS_PREFIXES):
+            if scope["method"] == "OPTIONS":
+                return await Response(status_code=204, headers={k.decode(): v.decode() for k, v in CORS_HEADERS})(
+                    scope, receive, send)
+
+            async def send_cors(msg):
+                if msg["type"] == "http.response.start":
+                    msg["headers"] = list(msg.get("headers", [])) + CORS_HEADERS
+                await send(msg)
+            return await self.app(scope, receive, send_cors)
         if path == "/" or path.startswith(OPEN_PREFIXES):
             return await self.app(scope, receive, send)
         headers = {k.decode().lower(): v.decode() for k, v in scope["headers"]}
@@ -90,7 +109,12 @@ class AuthMiddleware:
 
         principal = await run_in_threadpool(_auth) if token else None
         if principal is None:
-            return await JSONResponse({"error": "unauthorized"}, 401)(scope, receive, send)
+            headers = {}
+            if path.startswith("/mcp") and config.OAUTH_ENABLED:  # descoberta OAuth do MCP (RFC 9728)
+                headers["WWW-Authenticate"] = f'Bearer resource_metadata="{svc.mcp_oauth.resource_metadata_url()}"'
+            return await JSONResponse({"error": "unauthorized"}, 401, headers=headers)(scope, receive, send)
+        if principal.via == "oauth" and not path.startswith("/mcp"):
+            return await JSONResponse({"error": "forbidden: token OAuth do MCP só vale em /mcp"}, 403)(scope, receive, send)
         if via_cookie and scope["method"] not in SAFE_METHODS:
             csrf = auth.cookie(headers, auth.CSRF_COOKIE)
             if not csrf or not hmac.compare_digest(csrf, headers.get("x-csrf-token", "")):
@@ -117,6 +141,7 @@ app.include_router(admin.router)
 app.include_router(scim.router)
 app.include_router(schedules.router)
 app.include_router(remote_mcp.router)
+app.include_router(oauth.router)
 app.include_router(memory.router)
 app.include_router(internal.router)
 app.include_router(gateway.router)

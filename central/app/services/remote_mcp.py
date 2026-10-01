@@ -11,7 +11,6 @@ import base64
 import hashlib
 import re
 import secrets
-import threading
 import time
 import urllib.parse
 from datetime import UTC, timedelta
@@ -20,7 +19,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import config, crypto
+from .. import config, crypto, shared
 from ..models import McpServer, RemoteMcp, now
 from .access import Access, Forbidden
 from .catalog import upsert_mcp
@@ -28,7 +27,6 @@ from .common import PlatformError, audit, iso
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{1,60}$")
 HTTP = lambda: httpx.Client(timeout=20, follow_redirects=False)  # noqa: E731  (os testes trocam)
-_LOCKS: dict[str, threading.Lock] = {}
 REFRESH_MARGIN_S = 90
 
 
@@ -193,8 +191,8 @@ def finish(db: Session, acc: Access, code: str, state: str, cookie: str) -> Remo
 
 # ------------------------------------------------------------------ token válido (para o proxy)
 def token(db: Session, name: str, force: bool = False) -> tuple[RemoteMcp, str]:
-    lock = _LOCKS.setdefault(name, threading.Lock())
-    with lock:
+    # refresh tokens costumam ser rotativos: duas réplicas renovando juntas invalidariam uma à outra
+    with shared.cluster_lock(f"remote-mcp:{name}"):
         db.expire_all()
         r = db.scalar(select(RemoteMcp).where(RemoteMcp.name == name))
         if not r or r.status == "pending" or not r.access_token:

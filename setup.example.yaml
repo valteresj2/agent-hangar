@@ -20,6 +20,7 @@ target: docker             # docker (uma máquina) | kubernetes (GKE, AKS, EKS o
 #   database: bundled      # bundled (StatefulSet no cluster) | external (Cloud SQL, Azure Database, RDS)
 #   database_url: postgresql+psycopg://hangar:SENHA@host:5432/hangar?sslmode=require   (*) external
 #   allow_private_egress: false           # agentes alcançam IPs privados (gateway de LLM interno)
+#   replicas: 1            # réplicas da central; 2+ = alta disponibilidade (use Postgres gerenciado)
 
 images: published          # published (baixa as imagens prontas, recomendado) | build (constrói deste código)
 port: 8090                 # porta local da central

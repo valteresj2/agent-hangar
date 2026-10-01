@@ -1,6 +1,7 @@
 """Driver Kubernetes (RUNTIME_BACKEND=kubernetes) contra uma API do Kubernetes simulada: nomes DNS, Deployment +
 Service + Secret do agente com o endurecimento de segurança, atualização (409 -> replace), estados, parada, Jobs de
 harness/avaliação com o Secret amarrado ao Job, logs e limpeza."""
+from datetime import UTC, datetime
 from types import SimpleNamespace as NS
 
 import pytest
@@ -61,8 +62,11 @@ class FakeK8s:
     # ---- BatchV1
     def create_namespaced_job(self, ns, body): return self._create("Job", body)
     def delete_namespaced_job(self, name, ns, propagation_policy=""): return self._delete("Job", name)
-    def delete_collection_namespaced_job(self, ns, label_selector="", propagation_policy=""):
-        self.calls.append(("delete_collection", "Job", label_selector))
+    def list_namespaced_job(self, ns, label_selector=""):
+        k, v = label_selector.split("=")
+        old = datetime(2020, 1, 1, tzinfo=UTC)
+        return NS(items=[NS(metadata=NS(name=n, creation_timestamp=old)) for (kind, n), body in self.objs.items()
+                         if kind == "Job" and body["spec"]["template"]["metadata"]["labels"].get(k) == v])
 
 
 def pod(name, labels, waiting=None):
@@ -137,8 +141,11 @@ def test_jobs_secret_owned_by_job(fk):
     assert k8s.job_logs("eval-bot-abc123") == "log de j1"
     k8s.remove_job_container("eval-bot-abc123")
     assert ("Job", "eval-bot-abc123") not in fk.objs
-    k8s.cleanup_job_containers()
-    assert ("delete_collection", "Job", "hangar.dev/role=eval") in fk.calls
+    # limpeza no startup: remove o que sobrou, mas preserva jobs ativos de outras réplicas
+    for n in ("job-7-aaaaaa", "job-8-bbbbbb"):
+        k8s.run_job_container(n, "img/harness-claude-code:1", {"TASK": "x"}, "1g", 1.0)
+    k8s.cleanup_job_containers(keep={"job-8-bbbbbb"}, min_age_s=60)
+    assert ("Job", "job-7-aaaaaa") not in fk.objs and ("Job", "job-8-bbbbbb") in fk.objs
 
 
 def test_wait_healthy_reports_image_errors(fk, monkeypatch):

@@ -539,6 +539,29 @@ function vscodeCard(a) {
       <a href="${esc(deep)}"><button>Abrir no VS Code</button></a></div></div></div>`;
 }
 
+/* ---------- OAuth do MCP: tela de consentimento (Claude.ai, ChatGPT e outros apps) ---------- */
+async function oauthConsentPage() {
+  const params = Object.fromEntries(new URLSearchParams(location.hash.split('?')[1] || ''));
+  const box = body => { main.innerHTML = `<div class="card" style="max-width:640px;margin:40px auto"><h2>Conectar um app</h2>${body}</div>`; };
+  let info;
+  try { info = await api('/oauth/consent?' + new URLSearchParams(params)); }
+  catch (e) { return box(`<div class="bad-text">${esc(e.message)}</div><p class="small">Comece de novo pelo app.</p>`); }
+  if (!info.user) return box('<div class="bad-text">Esta sessão não tem um usuário (sessão de emergência). Entre com a sua conta para conectar o app.</div>');
+  box(`<p><b>${esc(info.client_name)}</b> quer usar o Agent Hangar como <b>${esc(info.user.name || info.user.email)}</b>.</p>
+    <ul class="small"><li>O app poderá usar o MCP da plataforma com os seus times e papéis: listar, criar, testar e publicar agentes que você pode mexer.</li>
+      <li>Depois de autorizar, você volta para <b>${esc(info.redirect_host)}</b>. Se não reconhece este endereço, <b>não autorize</b>.</li>
+      <li>O acesso aparece em <a href="#/keys">Minhas chaves → Apps conectados</a>; revogue quando quiser.</li></ul>
+    <div class="row mt"><button id="oa-ok">Autorizar</button><button class="ghost" id="oa-no">Recusar</button></div><div id="oa-done" class="mt"></div>`);
+  const go = approve => async () => {
+    const r = await api('/oauth/consent', { method: 'POST', body: { params, approve } });
+    history.replaceState(null, '', location.pathname + '#/');  // o pedido não fica no histórico do navegador
+    $('#oa-done').innerHTML = `<span class="small">Voltando para ${esc(info.redirect_host)}…</span>`;
+    location.href = r.redirect;
+  };
+  $('#oa-ok').onclick = e => act(e.target, go(true));
+  $('#oa-no').onclick = e => act(e.target, go(false));
+}
+
 async function vscodeAuthorizePage() {
   const q = new URLSearchParams(location.hash.split('?')[1] || '');
   const challenge = q.get('challenge') || '', state = q.get('state') || '', device = q.get('device') || 'VS Code';

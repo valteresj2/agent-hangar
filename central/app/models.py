@@ -166,6 +166,8 @@ class Job(Base):
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # réplica da central que roda o worker do job (várias réplicas: cada uma só recupera os próprios órfãos)
+    worker: Mapped[str] = mapped_column(String(100), default="")
 
 
 class ApiKey(Base):
@@ -397,3 +399,40 @@ class RemoteMcp(Base):
     last_error: Mapped[str] = mapped_column(Text, default="")
     connected_by: Mapped[str] = mapped_column(String(254), default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+# ------------------------------------------------------------------ estado compartilhado entre réplicas
+class Ephemeral(Base):
+    """Valores curtos com validade (códigos de uso único, sessões de avaliação, tentativas de login). Fica no banco
+    para que várias réplicas da central enxerguem o mesmo estado."""
+    __tablename__ = "ephemeral"
+    key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+# ------------------------------------------------------------------ OAuth do MCP (Claude.ai, ChatGPT e outros)
+class OAuthClient(Base):
+    """App registrado (registro dinâmico, RFC 7591) que pode pedir acesso ao MCP da plataforma em nome de uma pessoa."""
+    __tablename__ = "oauth_clients"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # client_id
+    name: Mapped[str] = mapped_column(String(120), default="")
+    redirect_uris: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OAuthGrant(Base):
+    """Uma autorização (pessoa x app): token de acesso curto + refresh token rotativo. Só os hashes ficam no banco."""
+    __tablename__ = "oauth_grants"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[str] = mapped_column(ForeignKey("oauth_clients.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    access_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    access_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    refresh_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    previous_refresh_hash: Mapped[str] = mapped_column(String(64), default="", index=True)  # detecção de reuso
+    refresh_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -3,7 +3,7 @@ ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 RUN useradd -m -u 10001 agent
 WORKDIR /srv
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=8 pip install -r requirements.txt
 COPY app.py .
 RUN mkdir /data && chown agent /data
 USER agent

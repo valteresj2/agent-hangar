@@ -101,8 +101,8 @@ All three tunnels give HTTPS without opening ports. Each runs as one more contai
 `tailscale`), enabled with a Compose profile. Secure cookies turn on automatically on HTTPS. For a reverse proxy or
 ingress you already run, choose *local* and set `PUBLIC_BASE_URL=https://…` in `.env`.
 
-> **ChatGPT and Claude.ai (web):** their connectors require MCP over public HTTPS **with OAuth 2.1**. That is planned
-> for the next milestones. Until then, use Claude Code or Desktop, Codex, OpenCode, Cursor or VS Code.
+> **ChatGPT and Claude.ai (web):** with a public HTTPS address, paste `https://your-domain/mcp` as a custom connector.
+> The app sends you to the portal to sign in and authorize (OAuth). See [clients.md](clients.md#claudeai-and-chatgpt-web-oauth-no-key-to-paste).
 
 ## Unattended install
 

@@ -36,6 +36,20 @@ Summary; the full model is in [access.md](access.md).
 - **Deactivation takes effect immediately.** Deactivating a user (UI or SCIM) ends their sessions and revokes
   all their keys at once. Losing a team role or a grant revokes the invoke keys that no longer apply.
 
+## OAuth for the platform MCP
+
+Web clients (Claude.ai, ChatGPT) connect to `/mcp` with OAuth 2.1; see [clients.md](clients.md).
+- **PKCE (S256) is mandatory**, and clients are public: there is no client secret to leak.
+- **Redirects are restricted** to `OAUTH_REDIRECT_HOSTS` (plus loopback) at registration. An app registered by a
+  third party cannot send the code elsewhere. Unknown apps or redirects get an error page, never a redirect.
+- The **consent page** shows the app name and the host the browser will return to; codes are signed, live 5 minutes
+  and are single-use across all replicas.
+- **Tokens:** access tokens last 1 hour and only work on `/mcp` (403 elsewhere). Refresh tokens rotate, and a reused
+  refresh token revokes the whole authorization. Only SHA-256 hashes are stored.
+- **Revocation:** the person (Minhas chaves), an admin (block the app), or deactivating the person.
+- Everything is audited: `oauth.register`, `oauth.authorize`, `oauth.token`, `oauth.revoke`, `oauth.block`,
+  `oauth.refresh_reuse`.
+
 ## Remote MCPs with OAuth
 
 - **Storage:** provider tokens (access and refresh) are stored encrypted with Fernet.

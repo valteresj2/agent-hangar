@@ -294,13 +294,22 @@ def remove_job_container(name: str):
             pass
 
 
-def cleanup_job_containers():
-    """Jobs e avaliações que sobraram (a central reiniciou no meio)."""
+def cleanup_job_containers(keep: set[str] | frozenset = frozenset(), min_age_s: float = 0):
+    """Jobs e avaliações que sobraram (a central reiniciou no meio). Preserva `keep` (jobs ativos de outras réplicas)
+    e, com `min_age_s`, as avaliações recentes."""
+    from datetime import UTC, datetime
+    keep_dns = {dns_name(k) for k in keep}
     try:
         _, _, batch = apis()
         for role in ("job", "eval"):
-            batch.delete_collection_namespaced_job(namespace(), label_selector=f"{LBL}/role={role}",
-                                                   propagation_policy="Background")
+            for j in batch.list_namespaced_job(namespace(), label_selector=f"{LBL}/role={role}").items:
+                name = j.metadata.name
+                if name in keep_dns:
+                    continue
+                created = j.metadata.creation_timestamp
+                if role == "eval" and min_age_s and created and (datetime.now(UTC) - created).total_seconds() < min_age_s:
+                    continue
+                remove_job_container(name)
     except Exception:
         pass
 

@@ -344,6 +344,8 @@ def _interactive_k8s(a: dict, prev: dict):
                            pk.get("database", "bundled"))
     if k["database"] == "external":
         k["database_url"] = ask("URL (postgresql+psycopg://usuario:senha@host:5432/hangar?sslmode=require)", "", secret=True, required=True)
+    k["replicas"] = int(ask("Réplicas da central (2+ = alta disponibilidade; recomendado com Postgres gerenciado)",
+                            str(pk.get("replicas", 2 if k["database"] == "external" else 1))) or 1)
     k["allow_private_egress"] = yes("Os agentes precisam alcançar IPs privados (ex.: gateway de LLM dentro da rede)?",
                                     bool(pk.get("allow_private_egress", False)))
     a["kubernetes"] = k
@@ -472,6 +474,9 @@ def validate(a: dict) -> dict:
         k.setdefault("registry", "ghcr.io/valteresj2")
         k.setdefault("exposure", "portforward")
         k.setdefault("database", "bundled")
+        k["replicas"] = int(k.get("replicas") or 1)
+        if not 1 <= k["replicas"] <= 10:
+            errs.append("kubernetes.replicas: de 1 a 10")
         if k["provider"] not in kube.PROVIDERS:
             errs.append(f"kubernetes.provider: {k['provider']} ({', '.join(kube.PROVIDERS)})")
         if k["exposure"] not in kube.EXPOSURES:

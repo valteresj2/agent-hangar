@@ -650,7 +650,12 @@ async function connectPage() {
 url = "${esc(c.mcp_url)}"
 http_headers = { Authorization = "Bearer ${esc(K)}" }</pre></div>
   <div class="card"><h2>OpenCode (opencode.json)</h2><pre>${esc(JSON.stringify({ mcp: { [mcpName]: { type: 'remote', url: c.mcp_url, headers: { Authorization: `Bearer ${K}` } } } }, null, 2))}</pre></div>
-  <div class="card"><h2>ChatGPT / connectors</h2><div>Exige URL HTTPS pública. Publique o hangar atrás de um domínio/túnel e use <code>https://SEU-DOMINIO/mcp</code> como conector MCP.</div></div>
+  <div class="card"><h2>Claude.ai e ChatGPT (web) — sem chave</h2>
+    <div>Cole só a URL <code>${esc(c.mcp_url)}</code>; o app pede para você entrar aqui no portal e autorizar (OAuth).
+      O acesso aparece em <a href="#/keys">Minhas chaves → Apps conectados</a>, onde você revoga quando quiser.</div>
+    <ul class="small mt"><li><b>Claude.ai</b>: Configurações → Conectores → Adicionar conector personalizado → URL acima.</li>
+      <li><b>ChatGPT</b>: Configurações → Apps e conectores → Criar (modo desenvolvedor) → URL acima, autenticação OAuth.</li></ul>
+    ${c.mcp_url.startsWith('https://') ? '' : '<div class="bad-text small">Estes apps exigem um endereço HTTPS público: publique o hangar atrás de um domínio ou túnel (hangar setup → endereço).</div>'}</div>
   <div class="card"><h2>Usar agentes já deployados</h2>
     <h3>LibreChat (librechat.yaml)</h3>
     <div class="mute small">Kit completo (Docker Compose, anexos, workspace por conversa, títulos baratos): <code>integrations/librechat</code> no repositório. De dentro de um container, troque <code>localhost</code> por <code>host.docker.internal</code>.</div>
@@ -696,7 +701,8 @@ hangar ship &lt;slug&gt;</pre></div>
 }
 
 async function keysPage() {
-  const [keys, all] = await Promise.all([api('/keys'), api('/agents')]);
+  const [keys, all, apps, clients] = await Promise.all([api('/keys'), api('/agents'), api('/me/oauth').catch(() => []),
+    ME.is_admin ? api('/oauth/clients').catch(() => []) : Promise.resolve([])]);
   const agents = all.filter(a => can(a, 'consume'));
   main.innerHTML = `<h1>Chaves de API</h1><div class="sub">${ME.is_admin ? 'Todas as chaves da empresa.' : 'Suas chaves.'} <b>user</b>: token pessoal — age como você (CLI <code>hangar</code>, MCP da plataforma no Claude/Codex). <b>invoke</b>: só chama os agentes escolhidos pelo gateway (LibreChat, Slack, SDKs).${ME.is_admin ? ' <b>admin</b>: administra tudo. <b>scim</b>: provisionamento pelo diretório.' : ''} Suas chaves morrem se você perder o acesso.</div>
   <div class="card"><h2>Nova chave</h2><div class="grid g4">
@@ -711,7 +717,19 @@ async function keysPage() {
     <td>${k.scopes.map(s => `<span class="pill ${s === 'admin' || s === 'scim' ? 'warn' : s === 'user' ? 'ok' : 'info'}">${esc(s)}</span>`).join(' ')}</td>
     <td>${k.scopes.includes('admin') ? '<span class="mute">todos</span>' : k.scopes.includes('user') ? '<span class="mute">os seus</span>' : k.scopes.includes('scim') ? '<span class="mute">—</span>' : (k.agents.length ? k.agents.map(s => `<span class="chip">${esc(s)}</span>`).join('') : '<span class="mute">todos</span>')}</td>
     <td class="mute">${ago(k.created_at)}</td><td class="mute">${k.last_used_at ? ago(k.last_used_at) : 'nunca'}</td>
-    <td>${k.revoked ? '<span class="pill bad">revogada</span>' : `<button class="ghost k-rev" data-id="${k.id}" data-n="${esc(k.name)}">Revogar</button>`}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Nenhuma chave ainda</td></tr>'}</table></div>`;
+    <td>${k.revoked ? '<span class="pill bad">revogada</span>' : `<button class="ghost k-rev" data-id="${k.id}" data-n="${esc(k.name)}">Revogar</button>`}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Nenhuma chave ainda</td></tr>'}</table></div>
+  <div class="card mt scroll"><h2>Apps conectados (OAuth)</h2><div class="mute small">Claude.ai, ChatGPT e outros apps que você autorizou a usar o MCP do hangar em seu nome${ME.is_admin ? ' (como admin, você vê os de todos)' : ''}. Revogar desconecta o app na hora.</div>
+    <table><tr><th>App</th>${ME.is_admin ? '<th>Pessoa</th>' : ''}<th>Autorizado</th><th>Último uso</th><th></th></tr>
+    ${apps.map(g => `<tr class="${g.revoked ? 'mute' : ''}"><td><b>${esc(g.client_name)}</b></td>${ME.is_admin ? `<td>${esc(g.user)}</td>` : ''}<td class="mute">${ago(g.created_at)}</td><td class="mute">${g.last_used_at ? ago(g.last_used_at) : 'nunca'}</td>
+      <td>${g.revoked ? '<span class="pill bad">revogado</span>' : `<button class="ghost o-rev" data-id="${g.id}" data-n="${esc(g.client_name)}">Revogar</button>`}</td></tr>`).join('') || `<tr><td colspan="${ME.is_admin ? 5 : 4}" class="empty">Nenhum app conectado. Veja <a href="#/connect">Conectar ferramentas</a>.</td></tr>`}</table></div>
+  ${ME.is_admin ? `<div class="card mt scroll"><h2>Apps registrados</h2><div class="mute small">Apps que se registraram para pedir acesso (registro dinâmico). Bloquear derruba todas as autorizações do app e impede novas. Redirects permitidos: variável <code>OAUTH_REDIRECT_HOSTS</code>.</div>
+    <table><tr><th>App</th><th>Redirect</th><th>Autorizações ativas</th><th>Registrado</th><th></th></tr>
+    ${clients.map(c => `<tr class="${c.blocked ? 'mute' : ''}"><td><b>${esc(c.name)}</b><div class="small mute"><code class="inline">${esc(c.id)}</code></div></td><td class="small">${c.redirect_uris.map(esc).join('<br>')}</td><td>${c.active_grants}</td><td class="mute">${ago(c.created_at)}</td>
+      <td>${c.blocked ? '<span class="pill bad">bloqueado</span>' : `<button class="ghost o-block" data-id="${esc(c.id)}" data-n="${esc(c.name)}">Bloquear</button>`}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">Nenhum app registrado</td></tr>'}</table></div>` : ''}`;
+  document.querySelectorAll('.o-rev').forEach(b => b.onclick = e => confirm(`Desconectar "${b.dataset.n}"?`) &&
+    act(e.target, () => api('/me/oauth/' + b.dataset.id, { method: 'DELETE' }).then(keysPage), 'App desconectado'));
+  document.querySelectorAll('.o-block').forEach(b => b.onclick = e => confirm(`Bloquear o app "${b.dataset.n}"? Todas as pessoas que o conectaram são desconectadas.`) &&
+    act(e.target, () => api('/oauth/clients/' + encodeURIComponent(b.dataset.id), { method: 'DELETE' }).then(keysPage), 'App bloqueado'));
   $('#k-go').onclick = e => act(e.target, async () => {
     const name = $('#k-name').value.trim(); if (!name) throw new Error('Dê um nome à chave');
     const scope = $('#k-scope').value;
@@ -772,7 +790,7 @@ async function route() {
     else if (r === 'teams' && a === 'new') await teamsPage(true);
     else if (r === 'teams' && a) await teamDetail(a);
     else await ({ '': USER_MODE ? homePage : dashboard, agents: agentsPage, templates: templatesPage, keys: keysPage, deployments: deploymentsPage, tests: testsPage, usage: usagePage, catalog: catalogPage, providers: providersPage, connect: connectPage, audit: auditPage,
-      approvals: approvalsPage, teams: teamsPage, users: usersPage, sso: ssoPage, vscode: vscodeAuthorizePage }[r] || dashboard)();
+      approvals: approvalsPage, teams: teamsPage, users: usersPage, sso: ssoPage, vscode: vscodeAuthorizePage, oauth: oauthConsentPage }[r] || dashboard)();
   } catch (e) { if (!(e instanceof AuthError)) main.innerHTML = `<div class="card"><h2>Erro</h2>${esc(e.message)}</div>`; }
 }
 window.addEventListener('hashchange', () => { if (location.hash.startsWith('#/login')) showLogin(); else route(); });
@@ -781,7 +799,7 @@ boot();
 const NO_REFRESH = ['new', 'playground', 'spec', 'access', 'schedules', 'memory'];
 setInterval(() => {
   const parts = location.hash.split('/');
-  if (!ME || document.hidden || ['keys', 'templates', 'catalog', 'providers', 'connect', 'teams', 'users', 'sso', 'login'].includes(parts[1])) return;
+  if (!ME || document.hidden || ['keys', 'templates', 'catalog', 'providers', 'connect', 'teams', 'users', 'sso', 'login', 'oauth', 'vscode'].includes(parts[1])) return;
   if (NO_REFRESH.includes(parts[2]) || NO_REFRESH.includes(parts[3]) || document.activeElement.matches('input,textarea,select')) return;
   route();
 }, 15000);

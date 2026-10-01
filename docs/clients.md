@@ -34,8 +34,28 @@ http_headers = { Authorization = "Bearer <key>" }
   "headers": {"Authorization": "Bearer <key>"}}}}
 ```
 
-**ChatGPT** (connectors / developer mode) requires a public HTTPS URL. Put the hangar behind a domain or tunnel and
-use `https://your-domain/mcp`.
+### Claude.ai and ChatGPT (web): OAuth, no key to paste
+
+Web clients connect with **only the URL** `https://your-domain/mcp`. The hangar implements the MCP authorization spec
+(OAuth 2.1 with PKCE and dynamic client registration):
+
+1. **Claude.ai:** Settings → Connectors → *Add custom connector* → paste the URL.
+   **ChatGPT:** Settings → Apps & Connectors → *Create* (developer mode) → paste the URL, authentication *OAuth*.
+2. The app opens the hangar portal. Sign in (SSO or local account) if needed, then click **Autorizar**.
+3. Done: the app uses the platform MCP **as you**, with your teams and roles.
+
+The app gets a 1-hour access token, renewed with a rotating refresh token (30 days without use and you authorize
+again). The token only works on `/mcp`, not on the rest of the API. You see and revoke connected apps in
+**Minhas chaves → Apps conectados**. Admins see every app there, and **Bloquear** disconnects an app for everyone.
+Deactivating a person disconnects their apps.
+
+Requirements and policy:
+- A **public HTTPS** address (`PUBLIC_BASE_URL`): a domain with TLS or a tunnel (`hangar setup` → address).
+- Apps may only redirect to the hosts in `OAUTH_REDIRECT_HOSTS` (default: `claude.ai`, `claude.com`, `chatgpt.com`,
+  `chat.openai.com`, `platform.openai.com`) or to `localhost`. Add hosts for other web clients, or turn the feature off
+  with `OAUTH_ENABLED=0`.
+- Desktop and CLI clients that support MCP OAuth (for example the MCP Inspector, which redirects to localhost)
+  work the same way; personal tokens keep working for the others.
 
 Then ask, for example: *"Create an agent that triages support tickets into P1–P4 and drafts a reply. Test it and
 ship it."*

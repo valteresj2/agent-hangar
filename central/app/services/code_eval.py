@@ -11,31 +11,38 @@ O caso passa só se o `check` sair com 0 e nenhum arquivo `protected` (ex.: os t
 """
 import json
 import secrets
-import threading
 import time
 import uuid
 
-from .. import config, deploy
+from .. import config, deploy, shared
 from .common import PlatformError
 
-_EVALS: dict[str, dict] = {}
-_LOCK = threading.Lock()
 DEFAULT_TIMEOUT_S = 600
+POLL_S = 0.5
+# sessão e resultado ficam no banco (tabela ephemeral): o sandbox chama /internal/eval/<token>/… e, com várias
+# réplicas, cada chamada pode cair numa réplica diferente da que espera o resultado
 
 
 def session(token: str) -> dict | None:
-    with _LOCK:
-        e = _EVALS.get(token or "")
-    return e if e and e["expires"] > time.monotonic() else None
+    return shared.get(f"eval:{token}") if token else None
 
 
 def complete(token: str, result: dict) -> bool:
     e = session(token)
-    if not e or e["event"].is_set():
+    if not e or not shared.take_once(f"eval-done:{token}", config.JOB_MAX_TIMEOUT_S + 120):
         return False
-    e["result"] = result
-    e["event"].set()
+    shared.put(f"eval-result:{token}", {"result": result}, config.JOB_MAX_TIMEOUT_S + 120)
     return True
+
+
+def _wait_result(token: str, timeout: float) -> dict | None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        r = shared.get(f"eval-result:{token}")
+        if r is not None:
+            return r.get("result") or {}
+        time.sleep(POLL_S)
+    return None
 
 
 def run(slug: str, case: dict, runner=None) -> tuple[bool, str]:
@@ -43,9 +50,7 @@ def run(slug: str, case: dict, runner=None) -> tuple[bool, str]:
     ws = case["workspace"]
     timeout = min(int(case.get("timeout_s") or DEFAULT_TIMEOUT_S), config.JOB_MAX_TIMEOUT_S)
     token = secrets.token_urlsafe(24)
-    entry = {"slug": slug, "event": threading.Event(), "result": None, "expires": time.monotonic() + timeout + 60}
-    with _LOCK:
-        _EVALS[token] = entry
+    shared.put(f"eval:{token}", {"slug": slug}, timeout + 60)
     name = f"eval-{slug[:40]}-{uuid.uuid4().hex[:6]}"
     env = {"EVAL_URL": f"{config.INTERNAL_BASE_URL}/internal/eval/{token}", "EVAL_TASK": case["input"],
            "EVAL_FILES": json.dumps(ws["files"]), "EVAL_CHECK": ws["check"],
@@ -56,16 +61,16 @@ def run(slug: str, case: dict, runner=None) -> tuple[bool, str]:
         else:
             deploy.run_job_container(name, config.harness_image("base"), env, config.JOB_MEM_LIMIT, config.JOB_CPUS,
                                      command=["node", "/srv/eval_runner.js"], labels={"central.eval": slug})
-        got = entry["event"].wait(timeout)
-        if not got:
+        result = _wait_result(token, timeout)
+        if result is None:
             return False, f"tempo esgotado ({timeout}s) sem resultado do sandbox" + (
                 "" if runner else f"\n{deploy.job_logs(name, 20)[-600:]}")
-        return verdict(entry["result"] or {}, ws)
+        return verdict(result, ws)
     except deploy.ImageMissing as e:
         raise PlatformError(str(e)) from None
     finally:
-        with _LOCK:
-            _EVALS.pop(token, None)
+        for k in (f"eval:{token}", f"eval-result:{token}"):
+            shared.pop(k)
         if not runner:
             deploy.remove_job_container(name)
 

@@ -13,7 +13,7 @@ def local(client, uniq):
     assert r.status_code == 200, r.text
     yield name, r.json()
     client.cookies.clear()
-    auth._FAILS.clear()
+    auth.clear_fails(f"pw:{name}")
 
 
 def _login(client, user, pw):

@@ -7,7 +7,7 @@ def _env(name: str, default: str = "") -> str:
 
 
 APP_NAME = "Agent Hangar"
-VERSION = "0.10.0"
+VERSION = "0.11.0"
 
 DATABASE_URL = _env("DATABASE_URL", "sqlite:///./hangar.db")
 
@@ -34,6 +34,18 @@ BOOTSTRAP_ADMIN_EMAILS = {e.strip().lower() for e in _env("BOOTSTRAP_ADMIN_EMAIL
 LOCAL_LOGIN = _env("LOCAL_LOGIN", "1") == "1"
 COOKIE_SECURE = _env("COOKIE_SECURE", "1" if PUBLIC_BASE_URL.startswith("https://") else "0") == "1"
 INTERNAL_BASE_URL = _env("INTERNAL_BASE_URL", "http://central:8080").rstrip("/")
+# Nome desta réplica da central (no Kubernetes, o nome do pod). Com várias réplicas, cada uma só recupera os
+# próprios jobs órfãos ao reiniciar.
+REPLICA_ID = (_env("REPLICA_ID") or _env("HOSTNAME") or "central")[:100]
+
+# OAuth do MCP da plataforma (Claude.ai, ChatGPT e outros clientes web): o cliente se registra sozinho (RFC 7591),
+# a pessoa entra pelo portal e autoriza; o app recebe um token curto + refresh. Redirects só para os hosts abaixo
+# (separados por vírgula; "*" libera qualquer https). localhost/127.0.0.1 valem sempre (clientes locais).
+OAUTH_ENABLED = _env("OAUTH_ENABLED", "1") == "1"
+OAUTH_REDIRECT_HOSTS = [h.strip().lower() for h in _env(
+    "OAUTH_REDIRECT_HOSTS", "claude.ai,claude.com,chatgpt.com,chat.openai.com,platform.openai.com").split(",") if h.strip()]
+OAUTH_ACCESS_TTL_S = int(_env("OAUTH_ACCESS_TTL_S", "3600"))
+OAUTH_REFRESH_TTL_DAYS = int(_env("OAUTH_REFRESH_TTL_DAYS", "30"))
 
 # Imagens. HANGAR_REGISTRY=ghcr.io/<owner> usa as imagens publicadas; o padrão usa os builds locais.
 REGISTRY = _env("HANGAR_REGISTRY", "agent-hangar").rstrip("/")

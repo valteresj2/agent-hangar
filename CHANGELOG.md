@@ -5,6 +5,35 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-10-01
+
+### Added
+- **OAuth for the platform MCP** ([docs/clients.md](docs/clients.md#claudeai-and-chatgpt-web-oauth-no-key-to-paste)):
+  Claude.ai, ChatGPT and other clients connect by pasting only `<base>/mcp`.
+  - Implements the MCP authorization spec: RFC 9728 protected-resource metadata and `WWW-Authenticate` on 401,
+    RFC 8414 server metadata, dynamic client registration (RFC 7591), PKCE S256, revocation (RFC 7009).
+  - Consent page in the portal (`/app/#/oauth`), after SSO or local sign-in.
+  - Tokens: 1-hour access tokens valid only on `/mcp`; rotating refresh tokens with reuse detection.
+  - **Minhas chaves → Apps conectados** to revoke; admins see every app and can block one; deactivating a person
+    disconnects their apps.
+  - Redirect hosts limited by `OAUTH_REDIRECT_HOSTS`; `OAUTH_ENABLED=0` turns it off.
+- **High availability on Kubernetes** ([docs/kubernetes.md](docs/kubernetes.md#high-availability)): run 2+ central
+  replicas.
+  - State that lived in one process now lives in Postgres (table `ephemeral`): job and evaluation callbacks,
+    single-use codes, the login lockout; remote-MCP token refreshes are serialized with a database lock.
+  - Migrations run under an advisory lock.
+  - Jobs record their replica (`worker`); a heartbeat lets surviving replicas close jobs of a replica that died.
+  - Chart: `RollingUpdate` with `preStop`, PodDisruptionBudget, anti-affinity, `REPLICA_ID` from the pod name;
+    installer question for the number of replicas.
+
+### Fixed
+- Image builds retry slow PyPI downloads (`PIP_RETRIES`, `PIP_DEFAULT_TIMEOUT`): the Data Studio CI job failed on a
+  read timeout.
+
+### Upgrading
+- Migration `0010_oauth_ha` runs on start (new tables `ephemeral`, `oauth_clients`, `oauth_grants`; column
+  `jobs.worker`). Nothing changes for existing clients.
+
 ## [0.10.0] — 2026-10-01
 
 ### Upgrading from 0.9.x

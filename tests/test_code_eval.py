@@ -74,7 +74,8 @@ def test_proxy_forwards_to_stage_of_the_evaluated_agent(client, monkeypatch):
         return httpx.Response(200, json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]})
     monkeypatch.setattr(httpx, "post", fake_post)
     token = "t" * 32
-    svc.code_eval._EVALS[token] = {"slug": "dev-bot", "event": threading.Event(), "result": None, "expires": 1e18}
+    from app import shared
+    shared.put(f"eval:{token}", {"slug": "dev-bot"}, 60)
     try:
         r = client.post(f"/internal/eval/{token}/v1/chat/completions", json={"messages": [{"role": "user", "content": "oi"}],
                                                                               "stream": True, "tools": []})
@@ -83,7 +84,7 @@ def test_proxy_forwards_to_stage_of_the_evaluated_agent(client, monkeypatch):
         assert url.endswith("agent-dev-bot-stage:8000/v1/chat/completions")
         assert kw["json"]["stream"] is False and kw["headers"]["X-Channel"] == "code-eval"
     finally:
-        svc.code_eval._EVALS.pop(token, None)
+        shared.pop(f"eval:{token}")
 
 
 def test_run_tests_integration(client, uniq, monkeypatch):

@@ -178,10 +178,18 @@ def remove_job_container(name: str):
         pass
 
 
-def cleanup_job_containers():
-    """Remove containers de job que sobraram (ex.: a central reiniciou no meio de um job)."""
+def cleanup_job_containers(keep: set[str] | frozenset = frozenset(), min_age_s: float = 0):
+    """Remove containers de job que sobraram (ex.: a central reiniciou no meio de um job). Preserva `keep` (jobs
+    ativos de outras réplicas) e, com `min_age_s`, as avaliações recentes (que não ficam no banco)."""
+    from datetime import UTC, datetime
     try:
         for c in client().containers.list(all=True, filters={"label": "central.job"}):
+            if c.name in keep:
+                continue
+            if min_age_s and "central.eval" in (c.labels or {}):
+                created = datetime.fromisoformat(c.attrs.get("Created", "")[:26].rstrip("Z") + "+00:00")
+                if (datetime.now(UTC) - created).total_seconds() < min_age_s:
+                    continue
             c.remove(force=True)
     except Exception:
         pass

@@ -4,8 +4,10 @@ Fluxo: submit_job grava o job (queued) e o entrega a um pool de workers -> o wor
 o container chama /internal/jobs/<id>/callback -> complete_job acorda o worker por um Event em memória
 (sem polling do banco) -> o worker finaliza, registra uso/custo e remove o container.
 
-Estado dos eventos fica no processo da central (1 worker uvicorn). Para várias réplicas, trocar por uma
-fila externa (Redis) — está no roadmap.
+Várias réplicas: o callback pode chegar a qualquer réplica. Ele grava o resultado no banco; o worker (na réplica que
+subiu o container) acorda pelo Event quando é a mesma réplica e, senão, percebe a mudança no banco em até POLL_S.
+Cada job guarda a réplica do worker (`worker`): ao reiniciar, uma réplica só marca como órfãos os próprios jobs, e o
+agendador encerra jobs abandonados por réplicas que sumiram.
 """
 import json
 import logging
@@ -27,6 +29,7 @@ from .usage import record_usage
 log = logging.getLogger("hangar.jobs")
 
 TERMINAL = ("passed", "failed", "timeout", "error", "cancelled")
+POLL_S = 2.0
 _pool = ThreadPoolExecutor(max_workers=config.JOB_WORKERS, thread_name_prefix="job")
 _callback: dict[int, threading.Event] = {}   # container respondeu
 _done: dict[int, threading.Event] = {}       # job finalizado (qualquer estado terminal)
@@ -56,7 +59,7 @@ def submit_job(db: Session, slug: str, task: str, env="stage", timeout_s=None, a
 
     job = Job(agent_id=a.id, version=a.current_version, env=env, harness_id=hconf["harness_id"],
               connection=hconf["connection"], task=task, status="queued", token=secrets.token_hex(24),
-              result="", diff="", logs="", container_name="", duration_ms=0)
+              result="", diff="", logs="", container_name="", duration_ms=0, worker=config.REPLICA_ID)
     db.add(job)
     db.commit()
     job.container_name = deploy.job_container_name(job.id)
@@ -90,21 +93,36 @@ def _execute(job_id: int, image: str, environment: dict, timeout_s: int, actor: 
         except Exception as e:
             job.status, job.result = "error", f"Falha ao iniciar o container do job: {e}"
             return _finish(db, job, t0, actor)
-        got = _callback[job_id].wait(timeout_s)
+        _wait_status(db, job_id, _callback[job_id], timeout_s, ("running",))
         db.expire_all()
         job = db.get(Job, job_id)
-        if not got and job.status == "running":
+        if job.status == "running":
             job.status, job.result = "timeout", f"Job excedeu o limite de {timeout_s}s."
         return _finish(db, job, t0, actor)
+
+
+def _wait_status(db: Session, job_id: int, ev: threading.Event | None, timeout_s: float, waiting: tuple) -> None:
+    """Espera o job sair de `waiting`: pelo Event (mesma réplica) ou consultando o banco (callback em outra réplica)."""
+    deadline = time.monotonic() + timeout_s
+    while (left := deadline - time.monotonic()) > 0:
+        if ev is not None and ev.wait(min(POLL_S, left)):
+            return
+        if ev is None:
+            time.sleep(min(POLL_S, left))
+        db.expire_all()
+        j = db.get(Job, job_id)
+        if j is None or j.status not in waiting:
+            return
 
 
 def _finish(db: Session, job: Job, t0: float, actor: str):
     meta = _meta.pop(job.id, {})
     job.duration_ms = int((time.time() - t0) * 1000)
     prices = meta.get("prices") or (None, None)
-    # preço do catálogo tem prioridade; sem ele, vale a estimativa que o próprio harness reportou
+    # preço do catálogo tem prioridade; sem ele, vale a estimativa que o próprio harness reportou (já gravada pelo
+    # callback em cost_usd, em qualquer réplica)
     job.cost_usd = (cost_usd(job.tokens_in, job.tokens_out, prices) if any(prices)
-                    else round(float(meta.get("reported_cost") or 0), 6))
+                    else round(float(job.cost_usd or 0), 6))
     if not job.logs and job.container_name:
         job.logs = deploy.job_logs(job.container_name, 200)
     job.finished_at = job.finished_at or now()
@@ -128,8 +146,8 @@ def complete_job(db: Session, job: Job, status: str, result: str, diff: str, log
     job.status, job.result, job.diff, job.logs = status, result[:20000], diff[:50000], logs[:20000]
     job.tokens_in = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
     job.tokens_out = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
-    if job.id in _meta and isinstance(usage.get("reported_cost_usd"), (int, float)):
-        _meta[job.id]["reported_cost"] = usage["reported_cost_usd"]
+    if isinstance(usage.get("reported_cost_usd"), (int, float)):
+        job.cost_usd = float(usage["reported_cost_usd"])
     job.finished_at = now()
     db.commit()
     ev = _callback.get(job.id)
@@ -155,11 +173,14 @@ def cancel_job(db: Session, job_id: int, actor="admin") -> Job:
 
 
 def wait_job(job_id: int, timeout_s: float) -> Job:
-    ev = _done.get(job_id)
-    if ev:
-        ev.wait(timeout_s)
     with SessionLocal() as db:
-        return db.get(Job, job_id)
+        _wait_status(db, job_id, _done.get(job_id), timeout_s, ("queued", "running"))
+        job = db.get(Job, job_id)
+        if job and job.status in TERMINAL and job.id in _done:  # terminal no banco, worker ainda fechando: espera ele
+            _done[job.id].wait(30)
+            db.expire_all()
+            job = db.get(Job, job_id)
+        return job
 
 
 def run_harness_job(db: Session, slug: str, task: str, env="stage", timeout_s=None, actor="admin",
@@ -171,18 +192,53 @@ def run_harness_job(db: Session, slug: str, task: str, env="stage", timeout_s=No
 
 
 def recover_orphans():
-    """No startup: jobs que estavam em fila/rodando quando a central caiu não têm mais worker esperando por
-    eles — marca como erro e remove containers de job que sobraram."""
+    """No startup: jobs DESTA réplica que estavam em fila/rodando quando ela caiu não têm mais worker esperando por
+    eles — marca como erro. Remove containers de job que sobraram, menos os de jobs ativos de outras réplicas."""
     from sqlalchemy import select
 
+    from .. import shared
+
     with SessionLocal() as db:
-        orphans = db.scalars(select(Job).where(Job.status.in_(("queued", "running")))).all()
+        active = db.scalars(select(Job).where(Job.status.in_(("queued", "running")))).all()
+        # os meus (reiniciei) e os de réplicas sem heartbeat (sumiram); jobs de réplicas vivas ficam
+        orphans = [j for j in active if j.worker in ("", config.REPLICA_ID) or not shared.replica_alive(j.worker)]
         for j in orphans:
             j.status, j.result, j.finished_at = "error", "Interrompido: a central reiniciou durante o job.", now()
         if orphans:
             db.commit()
             log.warning("%d job(s) órfão(s) marcados como erro", len(orphans))
-    deploy.cleanup_job_containers()
+        keep = {j.container_name for j in db.scalars(select(Job).where(Job.status.in_(("queued", "running"))))}
+    deploy.cleanup_job_containers(keep=keep, min_age_s=config.JOB_MAX_TIMEOUT_S + 180)
+
+
+def sweep_abandoned() -> int:
+    """Jobs cuja réplica sumiu (sem heartbeat) ou presos muito além do limite: encerra como erro."""
+    from datetime import UTC, timedelta
+
+    from sqlalchemy import select
+
+    from .. import shared
+
+    limit = now() - timedelta(seconds=config.JOB_MAX_TIMEOUT_S + 300)
+    grace = now() - timedelta(seconds=shared.HEARTBEAT_TTL_S)
+    with SessionLocal() as db:
+        stale = []
+        for j in db.scalars(select(Job).where(Job.status.in_(("queued", "running")))):
+            created = j.created_at if j.created_at.tzinfo else j.created_at.replace(tzinfo=UTC)
+            if created < limit or (j.worker != config.REPLICA_ID and created < grace and not shared.replica_alive(j.worker)):
+                stale.append(j)
+        for j in stale:
+            j.status, j.finished_at = "error", now()
+            j.result = f"Abandonado: a réplica da central que rodava o job ({j.worker or '?'}) não respondeu mais."
+            db.commit()
+            if j.container_name:
+                deploy.remove_job_container(j.container_name)
+        return len(stale)
+
+
+def housekeeping():
+    if n := sweep_abandoned():
+        log.warning("%d job(s) abandonado(s) por réplicas que sumiram encerrados", n)
 
 
 def job_events(job_id: int, poll=1.0):

@@ -22,10 +22,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import config
-from .models import ApiKey, User, UserSession, now
+from .models import ApiKey, OAuthClient, OAuthGrant, User, UserSession, now
 
 KEY_PREFIX = "ah_"
 SESSION_PREFIX = "ahs_"
+OAUTH_PREFIX = "aho_"  # token de acesso OAuth do MCP (Claude.ai, ChatGPT…): só vale no /mcp
 SCOPES = ("admin", "invoke", "user", "scim")
 SESSION_COOKIE = "hangar_session"
 CSRF_COOKIE = "hangar_csrf"
@@ -39,7 +40,7 @@ class Principal:
     client: str | None = None  # chave de conexão de uma ferramenta: vira o canal padrão das métricas
     user_id: int | None = None
     org_role: str | None = None  # admin | auditor | member — só quando age como usuário
-    via: str = "key"  # key | session | admin-token
+    via: str = "key"  # key | session | admin-token | oauth
 
     @property
     def is_admin(self) -> bool:
@@ -109,7 +110,6 @@ def api_key_dict(k: ApiKey) -> dict:
 # ------------------------------------------------------------------ contas locais (usuário e senha)
 _SCRYPT = {"n": 2 ** 15, "r": 8, "p": 1, "maxmem": 64 * 1024 * 1024, "dklen": 32}
 MIN_PASSWORD = 8
-_FAILS: dict[str, list[float]] = {}
 MAX_FAILS, LOCK_S = 5, 900
 
 
@@ -134,19 +134,20 @@ def verify_password(password: str, stored: str | None) -> bool:
 
 
 def locked_out(key: str) -> bool:
-    """Contra força bruta: 5 erros em 15 min bloqueiam o login daquela conta por 15 min."""
-    now_s = time.monotonic()
-    fails = [t for t in _FAILS.get(key, []) if now_s - t < LOCK_S]
-    _FAILS[key] = fails
-    return len(fails) >= MAX_FAILS
+    """Contra força bruta: 5 erros em 15 min bloqueiam o login daquela conta por 15 min (contagem no banco: vale
+    para todas as réplicas)."""
+    from . import shared
+    return shared.hits(f"loginfail:{key}", LOCK_S) >= MAX_FAILS
 
 
 def register_fail(key: str):
-    _FAILS.setdefault(key, []).append(time.monotonic())
+    from . import shared
+    shared.hits(f"loginfail:{key}", LOCK_S, add=True)
 
 
 def clear_fails(key: str):
-    _FAILS.pop(key, None)
+    from . import shared
+    shared.pop(f"loginfail:{key}")
 
 
 # ------------------------------------------------------------------ sessões da UI
@@ -170,6 +171,8 @@ def end_session(db: Session, raw: str):
 def revoke_user_sessions(db: Session, user_id: int):
     for s in db.scalars(select(UserSession).where(UserSession.user_id == user_id, UserSession.revoked_at.is_(None))):
         s.revoked_at = now()
+    for g in db.scalars(select(OAuthGrant).where(OAuthGrant.user_id == user_id, OAuthGrant.revoked_at.is_(None))):
+        g.revoked_at = now()  # apps conectados por OAuth (Claude.ai, ChatGPT…) caem junto
     db.commit()
     clear_cache()
 
@@ -199,14 +202,23 @@ def authenticate(db: Session, token: str) -> Principal | None:
         return None
     if config.ADMIN_TOKEN and hmac.compare_digest(token, config.ADMIN_TOKEN):
         return ADMIN
-    if not token.startswith((KEY_PREFIX, SESSION_PREFIX)):
+    if not token.startswith((KEY_PREFIX, SESSION_PREFIX, OAUTH_PREFIX)):
         return None
     h = hash_key(token)
     hit = _CACHE.get(h)
     if hit and time.monotonic() - hit[0] < _TTL:
         return hit[1]
     principal = None
-    if token.startswith(SESSION_PREFIX):
+    if token.startswith(OAUTH_PREFIX):
+        g = db.scalar(select(OAuthGrant).where(OAuthGrant.access_hash == h))
+        c = db.get(OAuthClient, g.client_id) if g else None
+        if g and c and g.revoked_at is None and c.revoked_at is None and _aware(g.access_expires_at) > now():
+            u = db.get(User, g.user_id)
+            principal = _user_principal(u, "oauth", f"{u.email} (app:{c.name})") if u else None
+            if principal is not None:
+                g.last_used_at = now()
+                db.commit()
+    elif token.startswith(SESSION_PREFIX):
         s = db.scalar(select(UserSession).where(UserSession.token_hash == h))
         if s and s.revoked_at is None and _aware(s.expires_at) > now():
             if s.user_id:

@@ -10,8 +10,17 @@ image:
 # Endereço pelo qual as pessoas acessam (ingress, túnel). Obrigatório fora de testes: links, OAuth e cookies dependem dele.
 publicUrl: ""
 
+# OAuth do MCP: Claude.ai, ChatGPT e outros clientes web conectam com a URL <publicUrl>/mcp, a pessoa entra e autoriza.
+mcpOAuth:
+  enabled: true
+  redirectHosts: ""                 # vazio = claude.ai, claude.com, chatgpt.com, openai.com; "*" = qualquer https
+
 central:
-  replicas: 1                       # alta disponibilidade (várias réplicas) chega na próxima fase
+  # Alta disponibilidade: 2+ réplicas atrás do Service, atualização sem parada (RollingUpdate), PodDisruptionBudget e
+  # réplicas espalhadas entre nós. O estado compartilhado fica no Postgres — use um banco gerenciado (com HA) em produção.
+  replicas: 1
+  pdb:
+    minAvailable: 1                 # só com replicas > 1
   resources:
     requests: {cpu: 250m, memory: 512Mi}
     limits: {cpu: "2", memory: 2Gi}
