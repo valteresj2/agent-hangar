@@ -2,11 +2,12 @@
 
 # ⌂ Agent Hangar
 
-**The self-hosted control plane for your company's AI agents.**
+**One home for every AI agent your company builds, whatever tool built it.**
 
-Ask Claude, ChatGPT, Codex or OpenCode for an agent. The hangar builds it, tests it in stage and ships it to its
-own container. Then everyone uses it from a portal, a chat UI or any tool, over **OpenAI-compatible, A2A, ACP and
-MCP**.
+People create agents where they already work: Claude, ChatGPT, Cursor, VS Code, Codex, OpenCode. Agent Hangar
+brings them all to one place, runs each one in its own container, and makes them usable from **any** platform,
+over **OpenAI-compatible, MCP, A2A and ACP**. Everyone can find them, talk to them, and combine them into new
+agents.
 
 [![CI](https://github.com/valteresj2/agent-hangar/actions/workflows/ci.yml/badge.svg)](https://github.com/valteresj2/agent-hangar/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -26,6 +27,33 @@ connections and the company catalog."></p>
 
 > **Status: alpha (v0.12).** It works end to end and is covered by tests, but APIs may still change. Run it inside
 > your network until you have read [docs/security.md](docs/security.md).
+
+## Why Agent Hangar
+
+Today every AI tool keeps its own agents. A GPT lives in ChatGPT, a Claude project stays in Claude, a Cursor rule
+stays in Cursor. Nobody else in the company finds them, they can't be reused anywhere else, and no one knows what
+they cost or who approved them. Agent Hangar fixes that:
+
+- **Build anywhere, keep in one place.** Ask Claude, ChatGPT, Cursor, VS Code, Codex or OpenCode for an agent. The
+  tool builds it through the hangar's MCP server, and the agent lands in a single company catalog, versioned and
+  owned by someone.
+- **Platform-agnostic.** An agent built in Claude can be used in ChatGPT, Cursor, VS Code, LibreChat, Open WebUI,
+  Slack-style bots, scripts or another agent. Each agent is a standard endpoint (OpenAI-compatible, MCP, A2A, ACP),
+  not a feature locked inside one vendor.
+- **Everyone can find and talk to them.** The catalog shows every agent, what it does and who owns it. People try
+  agents in the portal's playground, request access, and plug them into their own tools in one click. Access
+  follows teams, roles and approvals.
+- **Agents combine into new agents.** Put existing agents together as a team: a coordinator delegates to
+  specialists (a researcher, an analyst, a writer), each keeping its own instructions, tools and model. The result
+  is a new agent with a different role, reusing work that already exists.
+- **Safe to run in a company.**
+  - Every change is a new version, tested in stage before it reaches production.
+  - Secrets stay encrypted, and the platform is self-hosted (Docker or Kubernetes).
+  - Usage, cost and budgets are tracked per agent and team, with an audit log and SSO.
+- **Agents that remember and work alone.** Long-term memory per agent and per team, schedules for recurring
+  work, and coding agents that edit projects in VS Code.
+
+In short: **your agents stop belonging to a tool and start belonging to your company.**
 
 ---
 

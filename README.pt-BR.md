@@ -2,9 +2,12 @@
 
 # ⌂ Agent Hangar
 
-**O plano de controle self-hosted para agentes de IA.**
-Crie agentes conversando no Claude, ChatGPT, Codex ou OpenCode, teste em stage, publique cada um num container
-isolado e use em qualquer lugar via **OpenAI-compatible, A2A, ACP e MCP**.
+**Um lugar só para todos os agentes de IA da empresa, não importa em qual ferramenta foram criados.**
+
+As pessoas criam agentes onde já trabalham: Claude, ChatGPT, Cursor, VS Code, Codex, OpenCode. O Agent Hangar
+reúne todos num só lugar, roda cada um no seu container e deixa que sejam usados em **qualquer** plataforma, via
+**OpenAI-compatible, MCP, A2A e ACP**. Todos podem encontrar os agentes, conversar com eles e combiná-los em
+agentes novos.
 
 [English](README.md) · [Documentação](docs/) · [Roadmap](ROADMAP.md)
 
@@ -17,6 +20,33 @@ agente, o Playground, a memória do time, o resumo diário agendado, as conexõe
 
 > **Status: alpha (v0.12).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
 > sua rede até ler [docs/security.md](docs/security.md).
+
+## Por que o Agent Hangar
+
+Hoje cada ferramenta de IA guarda os próprios agentes. Um GPT vive no ChatGPT, um projeto do Claude fica no Claude,
+uma regra do Cursor fica no Cursor. Ninguém mais na empresa encontra esses agentes, eles não podem ser reusados em
+outro lugar, e ninguém sabe quanto custam ou quem aprovou. O Agent Hangar resolve isso:
+
+- **Crie em qualquer lugar, guarde num lugar só.** Peça um agente ao Claude, ChatGPT, Cursor, VS Code, Codex ou
+  OpenCode. A ferramenta constrói o agente pelo MCP do hangar, e ele entra num catálogo único da empresa, com
+  versões e um dono.
+- **Agnóstico de plataforma.** Um agente criado no Claude pode ser usado no ChatGPT, Cursor, VS Code, LibreChat,
+  Open WebUI, bots de chat, scripts ou por outro agente. Cada agente é um endpoint padrão (OpenAI-compatible, MCP,
+  A2A, ACP), e não um recurso preso a um fornecedor.
+- **Todos podem conhecer e conversar.** O catálogo mostra cada agente, o que ele faz e quem é o dono. As pessoas
+  testam no playground do portal, pedem acesso e conectam na própria ferramenta em um clique. O acesso segue
+  times, papéis e aprovações.
+- **Agentes se combinam em novos agentes.** Junte agentes que já existem num time: um coordenador delega a
+  especialistas (pesquisador, analista, redator), e cada um mantém as próprias instruções, ferramentas e modelo.
+  O resultado é um agente novo, com outro papel, aproveitando o que já foi feito.
+- **Seguro para usar na empresa.**
+  - Cada mudança vira uma versão nova, testada em stage antes de ir para produção.
+  - Os segredos ficam criptografados, e tudo roda na sua infraestrutura (Docker ou Kubernetes).
+  - Uso, custo e orçamento são registrados por agente e por time, com auditoria e SSO.
+- **Agentes que lembram e trabalham sozinhos.** Memória de longo prazo por agente e por time, agendamentos para
+  tarefas recorrentes, e agentes de código que editam projetos no VS Code.
+
+Em resumo: **seus agentes deixam de pertencer a uma ferramenta e passam a pertencer à sua empresa.**
 
 ## Exemplo: do pedido no Claude ao agente funcionando
 
