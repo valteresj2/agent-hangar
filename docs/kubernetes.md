@@ -154,6 +154,63 @@ The chart generates the secrets on the first install and keeps them on upgrades 
 in [`values.yaml`](../charts/agent-hangar/values.yaml). After installing, register the LLM and the admin in the console
 (`/ui/`, sign in with the emergency token printed by `helm status`) or run `hangar setup --target kubernetes`.
 
+## Secrets in a vault (External Secrets)
+
+With the [External Secrets Operator](https://external-secrets.io), the chart stops generating secrets. The Secret
+`<release>-secrets` then comes from your vault: AWS Secrets Manager, GCP Secret Manager, Azure Key Vault, HashiCorp
+Vault, and others.
+
+```yaml
+externalSecrets:
+  enabled: true
+  secretStoreRef: {name: cofre-da-empresa, kind: ClusterSecretStore}
+  remoteKey: agent-hangar/prod      # one vault secret (JSON) with every key below
+  # apiVersion: external-secrets.io/v1beta1   # operators older than 0.17
+```
+
+Keys:
+- **Always:** `ADMIN_TOKEN`, `HANGAR_SECRET_KEY` (Fernet), `INTERNAL_SECRET`, `DATABASE_URL`.
+- **With the chart's Postgres:** `POSTGRES_PASSWORD`.
+- **With memory:** `MEMORY_TOKEN` and `NEO4J_PASSWORD`/`FALKORDB_PASSWORD`.
+- **With SSO:** `OAUTH_<PROVIDER>_CLIENT_SECRET`.
+- **With the tunnel:** `CLOUDFLARE_TUNNEL_TOKEN`.
+
+Use `data:` instead of `remoteKey` to map key by key. Rotating `HANGAR_SECRET_KEY` makes the stored LLM keys
+unreadable: register them again after a rotation.
+
+## Cloud identity (no keys in the cluster)
+
+The central's ServiceAccount takes the cloud identity:
+
+| Cloud | Values |
+|---|---|
+| GKE | `serviceAccount.annotations: {iam.gke.io/gcp-service-account: hangar@PROJECT.iam.gserviceaccount.com}` |
+| EKS | `serviceAccount.annotations: {eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/agent-hangar}` |
+| AKS | `serviceAccount.annotations: {azure.workload.identity/client-id: <id>}` and `central.podLabels: {azure.workload.identity/use: "true"}` |
+
+On **GKE with Cloud SQL**, `postgresql.cloudSqlProxy` runs the Cloud SQL Auth Proxy next to the central and the backup
+job: no IP allowlist, and with `iamAuth: true` no database password either. Then set
+`postgresql.external.url: postgresql+psycopg://hangar:PASSWORD@127.0.0.1:5432/hangar`.
+
+Agent pods never get the cloud identity (no ServiceAccount token).
+
+## Observability and backup
+
+- **Metrics:** each pod serves `:9100/metrics`. Set `observability.serviceMonitor.enabled` for the Prometheus Operator
+  and `observability.grafanaDashboard.enabled` for the Grafana dashboard.
+- **Logs:** JSON by default.
+- **Traces:** OTLP with `observability.otlp.endpoint`.
+
+See [observability.md](observability.md).
+
+**Backup:** `backup.enabled` gives a daily `pg_dump` to a volume, plus one **before every `helm upgrade`**; if that
+backup fails, the upgrade stops. See [backup.md](backup.md).
+
+## Terraform
+
+[`deploy/terraform`](../deploy/terraform/README.md) creates the whole stack in one `apply`: the cluster, managed Postgres
+with HA and backups, cloud identity, ingress, and the chart with 2 replicas. Then run `hangar setup --configure-only`.
+
 ## High availability
 
 Run two or more central replicas: answer the installer's *replicas* question, or set `central.replicas: 2` (or more).
@@ -172,5 +229,7 @@ continuous traffic with no failed request.
 
 ## Limits of this release
 
-- Tested end to end on k3s; the GKE/AKS/EKS presets follow each provider's documentation. Please report differences.
+- Tested end to end on k3s, including External Secrets (fake provider), backups and metrics. The GKE/AKS/EKS
+  presets, Cloud SQL Auth Proxy, cloud identity and Terraform follow each provider's documentation and pass
+  `helm template`/`terraform validate`, but were not applied to real accounts by the project. Please report differences.
 - Optional Compose extras (Data Studio, Docker MCP catalog, Activepieces) are not part of the chart yet.

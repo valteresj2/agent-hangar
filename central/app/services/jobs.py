@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from sqlalchemy.orm import Session
 
-from .. import config, deploy
+from .. import config, deploy, observability
 from ..db import SessionLocal
 from ..models import Job, now
 from .catalog import cost_usd, resolve_harness
@@ -132,6 +132,7 @@ def _finish(db: Session, job: Job, t0: float, actor: str):
     record_usage(db, job.agent_id, job.env, meta.get("channel", "api"), "harness-job", job.duration_ms,
                  job.status == "passed", tokens_in=job.tokens_in, tokens_out=job.tokens_out, cost=job.cost_usd)
     audit(db, actor, "job.finish", str(job.agent_id), f"#{job.id} [{job.status}] {job.duration_ms}ms")
+    observability.record_job(job.status)
     ev = _done.pop(job.id, None)
     _callback.pop(job.id, None)
     if ev:

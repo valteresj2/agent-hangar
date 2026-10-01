@@ -11,12 +11,13 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, config, crypto, db, shared
+from . import auth, config, crypto, db, observability, shared
 from . import services as svc
 from .mcp_tools import mcp
 from .routers import access, admin, gateway, internal, memory, oauth, remote_mcp, schedules, scim
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+observability.setup_logging()
 log = logging.getLogger("hangar")
 
 mcp_app = mcp.streamable_http_app()
@@ -43,6 +44,7 @@ async def lifespan(app):
     await run_in_threadpool(_write_gateway_files)  # o gateway Docker MCP precisa dos arquivos mesmo sem servidor ativo
     svc.schedules.start()
     shared.start_heartbeat(housekeeping=svc.jobs.housekeeping)
+    observability.start_metrics_server()
     try:
         async with mcp.session_manager.run():
             yield
@@ -136,6 +138,18 @@ class AuthMiddleware:
 
 
 app.add_middleware(AuthMiddleware)
+app.add_middleware(observability.MetricsMiddleware)  # por fora: mede também as respostas 401/403
+observability.setup_tracing(app)
+
+
+@app.get("/api/metrics", include_in_schema=False)
+def metrics(request: Request):
+    """Métricas Prometheus desta réplica, para quem não tem um Prometheus raspando a porta METRICS_PORT."""
+    p = request.scope.get("state", {}).get("principal")
+    if not p or not p.is_auditor:
+        return JSONResponse({"error": "forbidden: só admins e auditores"}, 403)
+    body, ctype = observability.metrics_text()
+    return Response(body, media_type=ctype)
 app.include_router(access.router)
 app.include_router(admin.router)
 app.include_router(scim.router)

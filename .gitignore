@@ -50,3 +50,12 @@ scripts/demo/portal-tour/out/
 # respostas do hangar setup com chaves (use setup.example.yaml como modelo)
 setup.yaml
 .env.bak-*
+
+# Terraform: estado (tem a senha do banco), providers baixados e variáveis reais
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log

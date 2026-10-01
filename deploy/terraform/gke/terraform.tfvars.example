@@ -1,0 +1,14 @@
+project_id   = "minha-empresa-ia"
+region       = "southamerica-east1"
+host         = "hangar.minhaempresa.com"
+admin_emails = ["voce@minhaempresa.com"]
+
+# hangar_version       = "0.12.0"
+# central_replicas     = 2
+# db_tier              = "db-custom-2-7680"
+# db_high_availability = true
+# memory_backend       = "neo4j"   # neo4j | falkordb | none
+# extra_values = <<-YAML
+#   sso:
+#     google: {clientId: "123.apps.googleusercontent.com", allowedDomains: "minhaempresa.com"}
+# YAML

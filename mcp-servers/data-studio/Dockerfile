@@ -6,7 +6,7 @@ FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 MPLBACKEND=Agg
 # LibreOffice (headless) renderiza PPTX/DOCX/XLSX em imagens para preview_file; Carlito/Liberation têm as métricas
 # de Calibri/Arial, então o slide renderizado fica fiel ao que o PowerPoint mostra.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends \
         tesseract-ocr tesseract-ocr-por tesseract-ocr-eng util-linux fonts-dejavu-core \
         libreoffice-impress libreoffice-writer libreoffice-calc fonts-crosextra-carlito fonts-liberation2 \
     && rm -rf /var/lib/apt/lists/*

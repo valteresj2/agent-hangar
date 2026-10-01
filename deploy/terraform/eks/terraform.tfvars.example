@@ -1,0 +1,14 @@
+region              = "sa-east-1"
+host                = "hangar.minhaempresa.com"
+acm_certificate_arn = "arn:aws:acm:sa-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+admin_emails        = ["voce@minhaempresa.com"]
+
+# central_replicas   = 2
+# node_type          = "m6i.xlarge"
+# db_instance_class  = "db.m6g.large"
+# db_multi_az        = true
+# single_nat_gateway = false
+# extra_values = <<-YAML
+#   sso:
+#     oauth2: {clientId: "...", label: "Okta", authorizeUrl: "...", tokenUrl: "...", userinfoUrl: "..."}
+# YAML

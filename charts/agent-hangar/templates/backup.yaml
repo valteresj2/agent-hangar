@@ -1,0 +1,62 @@
+{{- if .Values.backup.enabled }}
+{{- $full := include "hangar.fullname" . -}}
+{{- /* O volume nasce como hook (só se ainda não existir): com StorageClass WaitForFirstConsumer (GKE, EKS, AKS) ele
+fica Pending até o primeiro backup, e como recurso comum travaria o `helm --wait`. Hooks ficam fora do release:
+desinstalar não apaga os backups. */}}
+{{- if not (lookup "v1" "PersistentVolumeClaim" .Release.Namespace (printf "%s-backup" $full)) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $full }}-backup
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.backup.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources: {requests: {storage: {{ .Values.backup.storage }}}}
+---
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $full }}-backup
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        {{- $pod := include "hangar.backupPod" . | fromYaml }}
+        {{- $_ := set (index $pod.spec.containers 0) "env" (append (index $pod.spec.containers 0).env (dict "name" "REASON" "value" "diario")) }}
+        {{- toYaml $pod | nindent 8 }}
+{{- /* só depois que o volume existe: no upgrade que liga o backup, o PVC ainda não foi criado */}}
+{{- if and .Values.backup.beforeUpgrade (lookup "v1" "PersistentVolumeClaim" .Release.Namespace (printf "%s-backup" $full)) }}
+---
+# Antes de cada `helm upgrade` (que pode trazer migrações): backup; se falhar, o upgrade não acontece.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $full }}-backup-pre-upgrade
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 1800
+  template:
+    {{- $pod := include "hangar.backupPod" . | fromYaml }}
+    {{- $_ := set (index $pod.spec.containers 0) "env" (append (index $pod.spec.containers 0).env (dict "name" "REASON" "value" "pre-upgrade")) }}
+    {{- toYaml $pod | nindent 4 }}
+{{- end }}
+{{- end }}

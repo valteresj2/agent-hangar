@@ -15,12 +15,21 @@ mcpOAuth:
   enabled: true
   redirectHosts: ""                 # vazio = claude.ai, claude.com, chatgpt.com, openai.com; "*" = qualquer https
 
+# Identidade da nuvem (workload identity) para a central — sem chave de conta de serviço no cluster:
+#   GKE: {iam.gke.io/gcp-service-account: hangar@PROJETO.iam.gserviceaccount.com}
+#   EKS: {eks.amazonaws.com/role-arn: arn:aws:iam::CONTA:role/agent-hangar}
+#   AKS: {azure.workload.identity/client-id: <client-id>}  (+ central.podLabels {azure.workload.identity/use: "true"})
+serviceAccount:
+  annotations: {}
+
 central:
   # Alta disponibilidade: 2+ réplicas atrás do Service, atualização sem parada (RollingUpdate), PodDisruptionBudget e
   # réplicas espalhadas entre nós. O estado compartilhado fica no Postgres — use um banco gerenciado (com HA) em produção.
   replicas: 1
   pdb:
     minAvailable: 1                 # só com replicas > 1
+  podLabels: {}
+  podAnnotations: {}
   resources:
     requests: {cpu: 250m, memory: 512Mi}
     limits: {cpu: "2", memory: 2Gi}
@@ -49,6 +58,14 @@ postgresql:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 1Gi}
   # Gerenciado (Cloud SQL, Azure Database for PostgreSQL, Amazon RDS/Aurora): enabled=false e um dos dois
+  # GKE + Cloud SQL: o Cloud SQL Auth Proxy roda ao lado da central (sidecar), com a identidade da nuvem (sem senha
+  # de rede, sem IP no allowlist). Use com postgresql.enabled=false e external.url apontando para 127.0.0.1:5432.
+  cloudSqlProxy:
+    enabled: false
+    instance: ""                    # PROJETO:REGIÃO:INSTÂNCIA
+    privateIp: true
+    iamAuth: false                  # login IAM no banco (usuário = conta de serviço, sem senha)
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.1
   external:
     url: ""                         # postgresql+psycopg://usuario:senha@host:5432/hangar?sslmode=require
     existingSecret: ""              # Secret com a chave DATABASE_URL
@@ -115,3 +132,43 @@ networkPolicy:
 
 scheduler:
   enabled: true
+
+# Segredos num cofre da empresa via External Secrets Operator (AWS Secrets Manager, GCP Secret Manager, Azure Key Vault,
+# HashiCorp Vault…). O operador cria o Secret <release>-secrets com as chaves ADMIN_TOKEN, HANGAR_SECRET_KEY,
+# INTERNAL_SECRET, DATABASE_URL (+ POSTGRES_PASSWORD com o Postgres do chart, MEMORY_TOKEN/NEO4J_PASSWORD com memória,
+# OAUTH_*_CLIENT_SECRET com SSO, CLOUDFLARE_TUNNEL_TOKEN com túnel). O chart deixa de gerar segredos.
+externalSecrets:
+  enabled: false
+  secretStoreRef: {name: "", kind: ClusterSecretStore}
+  refreshInterval: 1h
+  apiVersion: external-secrets.io/v1   # operador antigo (< 0.17): external-secrets.io/v1beta1
+  remoteKey: ""                     # um segredo do cofre com todas as chaves (JSON) — o mais simples
+  data: []                          # ou chave a chave: [{secretKey: ADMIN_TOKEN, remoteRef: {key: hangar/admin-token}}]
+
+observability:
+  metrics:
+    enabled: true                   # Prometheus em :9100/metrics (porta fora do Ingress)
+    port: 9100
+  serviceMonitor:                   # Prometheus Operator (kube-prometheus-stack, GKE Managed Prometheus via PodMonitoring…)
+    enabled: false
+    interval: 30s
+    labels: {}
+  grafanaDashboard:                 # ConfigMap com o dashboard; o sidecar do Grafana importa pelo rótulo
+    enabled: false
+    labels: {grafana_dashboard: "1"}
+  logFormat: json                   # json | text
+  otlp:                             # traces OpenTelemetry (Tempo, Jaeger, Langfuse, Datadog, Cloud Trace, X-Ray via collector)
+    endpoint: ""                    # ex.: http://otel-collector.observability:4318
+    sampleRatio: "1.0"
+
+# Backup do Postgres (pg_dump) num volume: diário e, antes de cada `helm upgrade`, automático. Com banco gerenciado,
+# prefira os backups/PITR da nuvem — este job também funciona contra ele, como cópia lógica extra.
+backup:
+  enabled: false
+  schedule: "0 3 * * *"
+  keep: 14                          # quantos arquivos manter
+  beforeUpgrade: true               # hook pre-upgrade: o upgrade só segue se o backup der certo
+  storage: 20Gi
+  storageClass: ""
+  image: postgres:16                # mesma versão principal do servidor (ou mais nova): Cloud SQL/RDS 17 -> postgres:17
+

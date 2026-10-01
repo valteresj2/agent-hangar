@@ -1,0 +1,18 @@
+# Achados do Trivy aceitos de propósito no chart (charts/agent-hangar). Cada um com o motivo; revise a cada release.
+
+# A central publica agentes e roda jobs: precisa criar/apagar Deployments, Jobs, Services e Secrets — e só no próprio
+# namespace (Role, nunca ClusterRole). Os pods dos agentes não recebem token de service account. Ver docs/kubernetes.md.
+AVD-KSV-0056
+KSV048
+KSV113
+
+# K8S_IMAGE_PULL_SECRET guarda o NOME do Secret de pull (ex.: regcred), não um segredo.
+AVD-KSV-0109
+AVD-KSV-01010
+
+# Regras de "registry confiável" dependem da empresa: espelhe as imagens e use image.registry (ver docs/kubernetes.md).
+KSV032
+KSV033
+KSV034
+KSV035
+KSV0125

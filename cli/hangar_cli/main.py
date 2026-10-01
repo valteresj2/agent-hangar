@@ -524,17 +524,36 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-start", action="store_true", help="só gera o .env, sem subir a stack")
     s.add_argument("--yes", action="store_true", help="não pergunta antes de subir")
     s.add_argument("--target", choices=["docker", "kubernetes"], help="onde instalar (padrão: pergunta)")
+    s.add_argument("--configure-only", action="store_true",
+                   help="Kubernetes já instalado (Terraform, GitOps): só cadastra LLM, admin e ferramentas, sem helm")
     s = add(sub, "doctor", cmd_doctor, "diagnóstico da instalação (Docker, central, LLM, memória, túnel, SSO, MCP)")
     s.add_argument("--dir", default=".", help="pasta do repositório")
     s.add_argument("--namespace", help="Kubernetes: namespace da instalação (usa kubectl e um port-forward)")
     s.add_argument("--release", default="agent-hangar", help="Kubernetes: nome do release Helm")
+    s = add(sub, "backup", cmd_backup, "backup do banco (pg_dump) em .hangar/backups/")
+    s.add_argument("--dir", default=".", help="pasta do repositório")
+    s.add_argument("--out", help="pasta de destino (padrão: .hangar/backups)")
+    s.add_argument("--namespace", help="Kubernetes: namespace (Postgres do chart)")
+    s.add_argument("--release", default="agent-hangar")
+    s = add(sub, "restore", cmd_restore, "restaura um backup (faz antes um backup do estado atual)")
+    s.add_argument("file", help="arquivo .dump")
+    s.add_argument("--dir", default=".")
+    s.add_argument("--namespace")
+    s.add_argument("--release", default="agent-hangar")
+    s.add_argument("--yes", action="store_true", help="não perguntar")
+    s = add(sub, "upgrade", cmd_upgrade, "atualiza a instalação Docker: backup, nova versão, sobe e confere")
+    s.add_argument("--version", help="versão das imagens publicadas (ex.: 0.12.0)")
+    s.add_argument("--dir", default=".")
+    s.add_argument("--namespace", help="Kubernetes: mostra o passo a passo do upgrade com Helm")
+    s.add_argument("--yes", action="store_true")
     return p
 
 
 def cmd_setup(a):
     from .setup import SetupError, setup
     try:
-        sys.exit(setup(Path(a.dir), a.answers, start=not a.no_start, assume_yes=a.yes, target=a.target))
+        sys.exit(setup(Path(a.dir), a.answers, start=not a.no_start, assume_yes=a.yes, target=a.target,
+                       configure_only=a.configure_only))
     except SetupError as e:
         raise CliError(str(e)) from None
     except KeyboardInterrupt:
@@ -545,6 +564,33 @@ def cmd_setup(a):
 def cmd_doctor(a):
     from .doctor import doctor
     sys.exit(doctor(Path(a.dir), as_json=getattr(a, "json", False), namespace=a.namespace, release=a.release))
+
+
+def cmd_backup(a):
+    from .backup import backup
+    from .setup import SetupError
+    try:
+        backup(Path(a.dir), a.out, a.namespace, a.release)
+    except SetupError as e:
+        raise CliError(str(e)) from None
+
+
+def cmd_restore(a):
+    from .backup import restore
+    from .setup import SetupError
+    try:
+        sys.exit(restore(Path(a.dir), a.file, a.namespace, a.release, a.yes))
+    except SetupError as e:
+        raise CliError(str(e)) from None
+
+
+def cmd_upgrade(a):
+    from .backup import upgrade
+    from .setup import SetupError
+    try:
+        sys.exit(upgrade(Path(a.dir), a.version, a.yes, a.namespace))
+    except SetupError as e:
+        raise CliError(str(e)) from None
 
 
 def main(argv=None):

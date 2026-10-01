@@ -4,6 +4,7 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import observability
 from ..models import Agent, TestRun, UsageEvent, now
 from .common import iso
 
@@ -27,13 +28,17 @@ def find_usage(obj) -> dict:
 def record_usage(db: Session, agent_id: int, env: str, channel: str, protocol: str, latency_ms: int, ok: bool,
                  payload=None, tokens_in=None, tokens_out=None, cost=None, user_id: int | None = None):
     u = find_usage(payload) if payload else {}
-    db.add(UsageEvent(
+    ev = UsageEvent(
         agent_id=agent_id, env=env, channel=(channel or "api")[:50], protocol=protocol,
         tokens_in=int(tokens_in if tokens_in is not None else u.get("prompt_tokens", 0) or 0),
         tokens_out=int(tokens_out if tokens_out is not None else u.get("completion_tokens", 0) or 0),
         cost_usd=float(cost if cost is not None else u.get("cost_usd", 0) or 0),
-        latency_ms=latency_ms, ok=ok, user_id=user_id))
+        latency_ms=latency_ms, ok=ok, user_id=user_id)
+    db.add(ev)
     db.commit()
+    a = db.get(Agent, agent_id)
+    observability.record_invocation(a.slug if a else str(agent_id), env, ev.channel, protocol, ok, latency_ms,
+                                    ev.tokens_in, ev.tokens_out, ev.cost_usd)
 
 
 def _series(rows, days):

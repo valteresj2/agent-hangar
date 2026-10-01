@@ -1,4 +1,6 @@
 FROM python:3.12-slim
+# correções de segurança do Debian publicadas depois da imagem base (o Trivy do CI acusa as que faltarem)
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 RUN useradd -m -u 10001 agent
 WORKDIR /srv

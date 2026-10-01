@@ -43,6 +43,33 @@ jobs:
             helm template t charts/agent-hangar -f charts/agent-hangar/values-$p.yaml               --set publicUrl=https://h.example.com --set ingress.host=h.example.com --set memory.enabled=true > /dev/null
           done
 
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive deploy/terraform
+      - name: Validate GKE, AKS and EKS
+        run: |
+          for d in gke aks eks; do
+            (cd deploy/terraform/$d && terraform init -backend=false -input=false >/dev/null && terraform validate)
+          done
+
+  vulnerabilities:
+    # relatório (não bloqueia): CVEs críticas/altas com correção na imagem da central e configuração insegura no chart
+    needs: lint-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the central image
+        run: docker build -q -t hangar-central:ci -f central/Dockerfile .
+      - name: Scan the image (Trivy)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.1 image             --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --no-progress hangar-central:ci
+      - name: Scan the Helm chart (Trivy misconfiguration)
+        run: |
+          docker run --rm -v "$PWD:/src" aquasec/trivy:0.58.1 config --severity CRITICAL,HIGH --ignorefile /src/.trivyignore --exit-code 1 /src/charts/agent-hangar
+
   vscode-extension:
     runs-on: ubuntu-latest
     defaults:

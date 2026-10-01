@@ -1,6 +1,8 @@
 # Memória dos agentes: Graphiti (grafo de conhecimento temporal) sobre Neo4j ou FalkorDB (MEMORY_BACKEND).
 # Embeddings locais (fastembed/ONNX): o modelo é baixado no build, então nada sai da rede para gerar vetores.
 FROM python:3.12-slim
+# correções de segurança do Debian publicadas depois da imagem base (o Trivy do CI acusa as que faltarem)
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 FASTEMBED_CACHE_PATH=/srv/models HF_HUB_OFFLINE=0
 WORKDIR /srv
 COPY requirements.txt .

@@ -1,0 +1,27 @@
+{{- $full := include "hangar.fullname" . -}}
+{{- if and .Values.observability.metrics.enabled .Values.observability.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $full }}-central
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+    {{- with .Values.observability.serviceMonitor.labels }}{{ toYaml . | nindent 4 }}{{ end }}
+spec:
+  selector:
+    matchLabels: {{- include "hangar.selector" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.observability.serviceMonitor.interval }}
+{{- end }}
+{{- if .Values.observability.grafanaDashboard.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-dashboard
+  labels: {{- include "hangar.labels" . | nindent 4 }}
+    {{- with .Values.observability.grafanaDashboard.labels }}{{ toYaml . | nindent 4 }}{{ end }}
+data:
+  agent-hangar.json: |- {{- .Files.Get "dashboards/agent-hangar.json" | nindent 4 }}
+{{- end }}

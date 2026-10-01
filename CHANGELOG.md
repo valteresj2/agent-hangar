@@ -5,6 +5,40 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-10-01
+
+### Upgrading from 0.11.x
+- No migration. New optional chart values (`observability`, `backup`, `externalSecrets`, `serviceAccount`, `postgresql.cloudSqlProxy`); defaults keep the current behavior, except JSON logs and the metrics port in the chart.
+
+### Added
+- **Observability** ([docs/observability.md](docs/observability.md)):
+  - Prometheus metrics: agent calls, latency, tokens, LLM cost, jobs, HTTP by declared route, one series per replica.
+    Served on a separate port (`METRICS_PORT`; `:9100` in the chart) and at `GET /api/metrics` for admins and auditors.
+  - JSON logs (`LOG_FORMAT=json`, the chart default) with `trace_id`.
+  - OpenTelemetry traces over OTLP (`OTEL_EXPORTER_OTLP_ENDPOINT`): requests, outgoing HTTP calls, and `traceparent`
+    propagated to agents.
+  - Chart: metrics port, ServiceMonitor, and a Grafana dashboard (ConfigMap for the sidecar).
+- **Backup and upgrade** ([docs/backup.md](docs/backup.md)):
+  - `hangar backup` and `hangar restore` (Docker, or the chart's Postgres); restore saves the current state first.
+  - `hangar upgrade --version`: backup, new images, start, `hangar doctor`.
+  - Chart: a daily `pg_dump` CronJob to a volume kept on uninstall, plus a **pre-upgrade backup hook**; if the backup
+    fails, the upgrade does not happen.
+- **Vault secrets:** `externalSecrets` in the chart (External Secrets Operator: AWS Secrets Manager, GCP Secret
+  Manager, Azure Key Vault, Vault). The chart then generates nothing.
+- **Cloud identity:** `serviceAccount.annotations` and `central.podLabels` for GKE Workload Identity, EKS IRSA and
+  AKS Workload Identity; the **Cloud SQL Auth Proxy** as a native sidecar (`postgresql.cloudSqlProxy`).
+- **Terraform** for GKE, AKS and EKS ([deploy/terraform](deploy/terraform/README.md)): cluster with NetworkPolicy,
+  managed Postgres 16 (private, HA, 14-day backups), cloud identity, ingress with TLS, and the chart with 2 replicas.
+  `hangar setup --configure-only` finishes the setup without touching the Helm release.
+- **Supply chain** ([docs/supply-chain.md](docs/supply-chain.md)):
+  - images and chart signed with cosign (keyless), with SBOM and SLSA provenance;
+  - CI runs Trivy (image CVEs and chart misconfiguration; the chart scan blocks on CRITICAL/HIGH) and validates the
+    Terraform.
+
+### Changed
+- Python images apply Debian security updates at build time (the central image goes from 7 HIGH CVEs to 0).
+- The chart's Postgres runs with `runAsNonRoot` and a read-only root filesystem.
+
 ## [0.11.0] — 2026-10-01
 
 ### Added

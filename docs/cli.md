@@ -41,6 +41,10 @@ hangar setup --answers setup.yaml        # unattended (see setup.example.yaml); 
 hangar doctor                            # checks the installation; --json for monitoring
 hangar setup --target kubernetes         # install / upgrade on a cluster with Helm (docs/kubernetes.md)
 hangar doctor --namespace agent-hangar   # pods + every check above, via a temporary port-forward
+hangar setup --configure-only            # cluster installed by Terraform/GitOps: only LLM, admin and AI tools (no helm)
+hangar backup                            # pg_dump to .hangar/backups/ (--namespace for the chart's Postgres)
+hangar restore <file.dump>               # restores (saves the current state first)
+hangar upgrade --version 0.12.0          # Docker: backup, new images, start, doctor (docs/backup.md)
 ```
 
 See [install.md](install.md).

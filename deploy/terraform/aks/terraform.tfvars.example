@@ -1,0 +1,13 @@
+subscription_id = "00000000-0000-0000-0000-000000000000"
+location        = "brazilsouth"
+host            = "hangar.minhaempresa.com"
+admin_emails    = ["voce@minhaempresa.com"]
+
+# cert_manager_issuer  = "letsencrypt"   # instale o cert-manager e crie o ClusterIssuer antes
+# central_replicas     = 2
+# db_sku               = "GP_Standard_D2ds_v5"
+# db_high_availability = true
+# extra_values = <<-YAML
+#   sso:
+#     microsoft: {clientId: "<app-id>", tenant: "minhaempresa.onmicrosoft.com"}
+# YAML

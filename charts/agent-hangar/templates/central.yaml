@@ -1,5 +1,5 @@
 {{- $full := include "hangar.fullname" . -}}
-{{- if and (not .Values.postgresql.enabled) (not .Values.postgresql.external.url) (not .Values.postgresql.external.existingSecret) (not .Values.secrets.existingSecret) }}
+{{- if and (not .Values.postgresql.enabled) (not .Values.postgresql.external.url) (not .Values.postgresql.external.existingSecret) (not .Values.secrets.existingSecret) (not .Values.externalSecrets.enabled) }}
 {{- fail "banco: use postgresql.enabled=true, postgresql.external.url, postgresql.external.existingSecret ou secrets.existingSecret com DATABASE_URL" }}
 {{- end }}
 apiVersion: v1
@@ -25,6 +25,16 @@ data:
   BOOTSTRAP_ADMIN_EMAILS: {{ .Values.sso.bootstrapAdminEmails | quote }}
   SCHEDULER_ENABLED: {{ ternary "1" "0" .Values.scheduler.enabled | quote }}
   OAUTH_ENABLED: {{ ternary "1" "0" .Values.mcpOAuth.enabled | quote }}
+  LOG_FORMAT: {{ .Values.observability.logFormat | quote }}
+  {{- if .Values.observability.metrics.enabled }}
+  METRICS_PORT: {{ .Values.observability.metrics.port | quote }}
+  {{- end }}
+  {{- with .Values.observability.otlp }}{{ if .endpoint }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .endpoint | quote }}
+  OTEL_SERVICE_NAME: "agent-hangar"
+  OTEL_TRACES_SAMPLER: parentbased_traceidratio
+  OTEL_TRACES_SAMPLER_ARG: {{ .sampleRatio | quote }}
+  {{- end }}{{ end }}
   {{- with .Values.mcpOAuth.redirectHosts }}
   OAUTH_REDIRECT_HOSTS: {{ . | quote }}
   {{- end }}
@@ -79,17 +89,26 @@ spec:
     metadata:
       labels: {{- include "hangar.selector" . | nindent 8 }}
         app.kubernetes.io/component: central
+        {{- with .Values.central.podLabels }}{{ toYaml . | nindent 8 }}{{ end }}
       annotations:
         checksum/config: {{ toJson .Values | sha256sum | trunc 16 }}
+        {{- with .Values.central.podAnnotations }}{{ toYaml . | nindent 8 }}{{ end }}
     spec:
       serviceAccountName: {{ $full }}-central
       securityContext: {{- include "hangar.podSecurity" . | nindent 8 }}
       {{- include "hangar.pullSecrets" . | nindent 6 }}
+      {{- if .Values.postgresql.cloudSqlProxy.enabled }}
+      initContainers: {{- include "hangar.cloudSqlProxy" . | nindent 8 }}
+      {{- end }}
       containers:
         - name: central
           image: {{ include "hangar.image" (dict "ctx" . "name" "central") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          ports: [{containerPort: 8080, name: http}]
+          ports:
+            - {containerPort: 8080, name: http}
+            {{- if .Values.observability.metrics.enabled }}
+            - {containerPort: {{ .Values.observability.metrics.port }}, name: metrics}
+            {{- end }}
           env:
             - name: REPLICA_ID  # cada réplica recupera só os próprios jobs ao reiniciar
               valueFrom: {fieldRef: {fieldPath: metadata.name}}
@@ -145,7 +164,11 @@ metadata:
 spec:
   selector: {{- include "hangar.selector" . | nindent 4 }}
     app.kubernetes.io/component: central
-  ports: [{name: http, port: 8080, targetPort: 8080}]
+  ports:
+    - {name: http, port: 8080, targetPort: 8080}
+    {{- if .Values.observability.metrics.enabled }}
+    - {name: metrics, port: {{ .Values.observability.metrics.port }}, targetPort: metrics}
+    {{- end }}
 {{- if gt (int .Values.central.replicas) 1 }}
 ---
 apiVersion: policy/v1

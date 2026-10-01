@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write   # assinatura keyless (cosign + OIDC do GitHub): sem chave privada para guardar
 
 jobs:
   images:
@@ -41,7 +42,9 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
-      - uses: docker/build-push-action@v6
+      - uses: sigstore/cosign-installer@v3
+      - id: build
+        uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
@@ -51,6 +54,12 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          sbom: true                # SBOM (SPDX) e proveniência SLSA anexados à imagem no registry
+          provenance: mode=max
+      - name: Sign the image (cosign keyless)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}@${DIGEST}"
 
   chart:
     if: startsWith(github.ref, 'refs/tags/')
@@ -58,9 +67,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: azure/setup-helm@v4
-      - name: Package and push the Helm chart (OCI)
+      - uses: sigstore/cosign-installer@v3
+      - name: Package, push and sign the Helm chart (OCI)
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           helm package charts/agent-hangar --version "$VERSION" --app-version "$VERSION"
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
-          helm push "agent-hangar-$VERSION.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts"
+          echo "${{ secrets.GITHUB_TOKEN }}" | cosign login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm push "agent-hangar-$VERSION.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts" 2>&1 | tee push.log
+          DIGEST=$(grep -o 'sha256:[0-9a-f]\{64\}' push.log | head -1)
+          cosign sign --yes "ghcr.io/${{ github.repository_owner }}/charts/agent-hangar@${DIGEST}"

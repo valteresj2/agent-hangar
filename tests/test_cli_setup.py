@@ -39,16 +39,16 @@ def test_public_url_profiles_and_env():
                              "allowed_domains": "acme.com"}, "admin": {"username": "admin", "email": "ti@acme.com"}})
     assert st.public_url(a) == "https://acme.ngrok-free.app"
     assert st.compose_profiles(a) == ["memory-falkordb", "data-studio", "tunnel-ngrok"]
-    u = st.env_updates(a, {}, "0.11.0")
+    u = st.env_updates(a, {}, "0.12.0")
     assert u["PUBLIC_BASE_URL"] == "https://acme.ngrok-free.app" and u["COMPOSE_PROFILES"] == "memory-falkordb,data-studio,tunnel-ngrok"
-    assert u["HANGAR_REGISTRY"] == "ghcr.io/valteresj2" and u["HANGAR_VERSION"] == "0.11.0"
+    assert u["HANGAR_REGISTRY"] == "ghcr.io/valteresj2" and u["HANGAR_VERSION"] == "0.12.0"
     assert u["MEMORY_BACKEND"] == "falkordb" and u["MEMORY_LLM_CONNECTION"] == "openrouter" and u["MEMORY_URL"] == "http://memory:8000"
     assert u["NGROK_DOMAIN"] == "acme.ngrok-free.app" and u["OAUTH_MICROSOFT_TENANT"] == "acme.onmicrosoft.com"
     assert u["OAUTH_MICROSOFT_ALLOWED_DOMAINS"] == "acme.com" and u["BOOTSTRAP_ADMIN_EMAILS"] == "ti@acme.com"
     local = st.validate({"memory": "none", "images": "build",
                          "exposure": {"mode": "tailscale", "hostname": "hangar", "tailnet": "acme.ts.net", "authkey": "x"}})
-    lu = st.env_updates(local, {}, "0.11.0")
-    keep = st.env_updates(st.validate({"memory": "neo4j"}), {}, "0.11.0")
+    lu = st.env_updates(local, {}, "0.12.0")
+    keep = st.env_updates(st.validate({"memory": "neo4j"}), {}, "0.12.0")
     assert "MEMORY_LLM_CONNECTION" not in keep  # sem LLM agora: não apaga a conexão que a memória já usa
     assert lu["MEMORY_URL"] == "" and "HANGAR_REGISTRY" not in lu and lu["PUBLIC_BASE_URL"] == "https://hangar.acme.ts.net"
     assert lu["COMPOSE_PROFILES"] == "tunnel-tailscale"
@@ -139,7 +139,7 @@ def test_doctor_checks(tmp_path):
     (tmp_path / ".env").write_text("ADMIN_TOKEN=t\nCENTRAL_PORT=8090\nPUBLIC_BASE_URL=http://localhost:8090\nMEMORY_URL=http://memory:8000\n",
                                    encoding="utf-8")
     routes = {
-        ("GET", "/api/health"): httpx.Response(200, json={"version": "0.11.0"}),
+        ("GET", "/api/health"): httpx.Response(200, json={"version": "0.12.0"}),
         ("GET", "/api/me"): httpx.Response(200, json={"is_admin": True}),
         ("GET", "/api/catalog"): httpx.Response(200, json={"llm_connections": [{"name": "boa"}, {"name": "ruim"}]}),
         ("POST", "/api/catalog/llm/boa/test"): httpx.Response(200, json={"ok": True, "detail": "m respondeu em 300 ms"}),
@@ -151,7 +151,7 @@ def test_doctor_checks(tmp_path):
         ("GET", "/api/overview"): httpx.Response(200, json={"agents_total": 4, "running_prod": 2, "running_stage": 3}),
     }
     checks = {c.name: c for c in dr.diagnose(tmp_path, http=_fake(routes), docker=False)}
-    assert checks["Central"].status == dr.OK and "0.11.0" in checks["Central"].detail
+    assert checks["Central"].status == dr.OK and "0.12.0" in checks["Central"].detail
     assert checks["LLM boa"].status == dr.OK and checks["LLM ruim"].status == dr.FAIL and checks["LLM ruim"].hint
     assert checks["Memória"].status == dr.OK and "neo4j" in checks["Memória"].detail
     assert checks["Login"].detail == "Google, usuário e senha"
@@ -169,7 +169,7 @@ def test_doctor_central_down_and_bad_token(tmp_path):
 
 
 def test_doctor_public_url_unreachable():
-    checks = dr.check_public(_fake({}), "https://hangar.acme.com", "0.11.0")
+    checks = dr.check_public(_fake({}), "https://hangar.acme.com", "0.12.0")
     assert checks[0].status == dr.FAIL and "túnel" in checks[0].hint
 
 
@@ -193,8 +193,8 @@ def test_k8s_validate_and_values():
                                     "database": "external", "database_url": "postgresql+psycopg://u:SENHA@db:5432/h"},
                      "sso": {"provider": "microsoft", "client_id": "cid", "client_secret": "CS", "tenant": "acme.onmicrosoft.com"}})
     assert a["extras"] == []  # extras do Docker não existem no chart
-    v, s = kube.build_values(a, "0.11.0")
-    assert v["publicUrl"] == "https://hangar.acme.com" and v["image"] == {"registry": "ghcr.io/valteresj2", "tag": "0.11.0"}
+    v, s = kube.build_values(a, "0.12.0")
+    assert v["publicUrl"] == "https://hangar.acme.com" and v["image"] == {"registry": "ghcr.io/valteresj2", "tag": "0.12.0"}
     assert v["ingress"] == {"enabled": True, "host": "hangar.acme.com", "annotations": {"cert-manager.io/cluster-issuer": "letsencrypt"}}
     assert v["postgresql"] == {"enabled": False} and s["postgresql"]["external"]["url"].endswith("/h")
     assert v["memory"] == {"enabled": True, "backend": "falkordb", "llmConnection": "openrouter"}
@@ -224,3 +224,26 @@ def test_k8s_helm_command_and_names(tmp_path):
     assert kube.fullname("agent-hangar") == "agent-hangar" and kube.fullname("hangar") == "hangar-agent-hangar"
     assert kube.public_url({"exposure": "cloudflare", "hostname": "h.acme.com"}) == "https://h.acme.com"
     assert kube.public_url({"exposure": "portforward"}) == "http://localhost:18090"
+
+
+def test_k8s_configure_only_skips_helm(tmp_path, monkeypatch):
+    """Instalação feita por Terraform: só configura pela API, com o token do Secret do cluster, sem rodar o helm."""
+    import contextlib
+    monkeypatch.setattr(kube, "preflight", lambda: [])
+    monkeypatch.setattr(kube, "current_context", lambda: "gke_x")
+    monkeypatch.setattr(kube, "admin_token_from_cluster", lambda ns, rel: "tok-do-cluster" if ns == "ia" else "")
+    monkeypatch.setattr(kube, "port_forward", contextlib.contextmanager(lambda ns, rel: (yield "http://localhost:1234")))
+    monkeypatch.setattr(st, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("não pode rodar helm")))
+    seen = {}
+
+    def fake_configure(api, a, local):
+        seen.update(token=api.h["Authorization"], local=local)
+        return {"client_token": "ah_x"}
+    monkeypatch.setattr(st, "configure", fake_configure)
+    ans = tmp_path / "a.yaml"
+    ans.write_text("kubernetes: {namespace: ia, release: agent-hangar, exposure: ingress, host: h.acme.com}\nclients: [claude-code]\n")
+    assert st.setup(tmp_path, str(ans), configure_only=True) == 0
+    assert seen == {"token": "Bearer tok-do-cluster", "local": "http://localhost:1234"}
+    assert "https://h.acme.com/mcp" in (tmp_path / ".hangar" / "clients" / "claude-code.sh").read_text()
+    ans.write_text("kubernetes: {namespace: outro}\n")
+    assert st.setup(tmp_path, str(ans), configure_only=True) == 1  # Secret não encontrado

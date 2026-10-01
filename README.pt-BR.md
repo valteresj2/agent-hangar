@@ -15,7 +15,7 @@ Claude um Assistente Comercial, que é criado, testado e publicado pelo MCP do H
 agente, o Playground, a memória do time, o resumo diário agendado, as conexões e o catálogo da empresa"></p>
 <p align="center"><sub>O portal do usuário, gravado numa instalação local · <a href="docs/assets/portal-tour.mp4">versão MP4</a></sub></p>
 
-> **Status: alpha (v0.11).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
+> **Status: alpha (v0.12).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
 > sua rede até ler [docs/security.md](docs/security.md).
 
 ## Exemplo: do pedido no Claude ao agente funcionando
@@ -92,7 +92,8 @@ harness um Job, isolados por NetworkPolicies. Guia completo: [docs/kubernetes.md
 4. **Confira:** `hangar doctor --namespace agent-hangar`.
 
 Para alta disponibilidade, use 2+ réplicas da central com Postgres gerenciado: atualização sem parada e estado
-compartilhado no banco.
+compartilhado no banco. Para criar tudo (cluster, Postgres gerenciado, identidade da nuvem, ingress) num
+`terraform apply`, use [`deploy/terraform`](deploy/terraform/README.md) para GKE, AKS ou EKS.
 
 Para instalar sem perguntas, use `./scripts/install.sh --answers setup.yaml`, com o
 [`setup.example.yaml`](setup.example.yaml) como modelo. Para mudar alguma escolha ou atualizar, faça `git pull` e rode

@@ -302,8 +302,19 @@ def client_configs(base: str, key: str, clients: list[str]) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------- perguntas
-def interactive(prev: dict, env: dict, target: str | None = None) -> dict:
+def interactive(prev: dict, env: dict, target: str | None = None, configure_only: bool = False) -> dict:
     a: dict = {}
+    if configure_only:
+        pk = prev.get("kubernetes") or {}
+        title("Instalação existente (Terraform, GitOps…)")
+        a["target"] = "kubernetes"
+        a["kubernetes"] = {"namespace": ask("Namespace", pk.get("namespace", "agent-hangar")),
+                           "release": ask("Nome do release Helm", pk.get("release", "agent-hangar"))}
+        host = ask("Host público (vazio = sem; acesso por port-forward)", pk.get("host", ""))
+        if host:
+            a["kubernetes"].update(exposure="ingress", host=host)
+        _interactive_common(a, prev)
+        return a
     title("Onde instalar")
     a["target"] = target or choose("Onde o Agent Hangar vai rodar?", {
         "docker": "Docker nesta máquina (notebook, VM, servidor)",
@@ -641,7 +652,7 @@ def personal_token(base: str, username: str, password: str) -> str:
 
 # ---------------------------------------------------------------- orquestração
 def setup(root: Path, answers_file: str | None = None, start: bool = True, assume_yes: bool = False,
-          target: str | None = None) -> int:
+          target: str | None = None, configure_only: bool = False) -> int:
     try:  # as mensagens saem na ordem certa, intercaladas com a saída do docker compose
         sys.stdout.reconfigure(line_buffering=True)
     except (AttributeError, ValueError):
@@ -654,15 +665,17 @@ def setup(root: Path, answers_file: str | None = None, start: bool = True, assum
     prev = yaml.safe_load((state / "setup.yaml").read_text(encoding="utf-8")) if (state / "setup.yaml").exists() else {}
 
     print(_c("1", "\n⌂ Agent Hangar — instalação guiada"))
+    if configure_only:  # instalação feita por Terraform/GitOps: só configura (LLM, admin, ferramentas), sem helm
+        target = "kubernetes"
     if answers_file:
         raw = yaml.safe_load(Path(answers_file).read_text(encoding="utf-8")) or {}
         if target:
             raw["target"] = target
         a = validate(raw)
     else:
-        a = validate(interactive(prev or {}, env, target))
+        a = validate(interactive(prev or {}, env, target, configure_only))
     if a["target"] == "kubernetes":
-        return setup_kubernetes(root, state, a, start)
+        return setup_kubernetes(root, state, a, start, configure_only)
     title("Pré-requisitos")
     problems = preflight(root, a["port"])
     for p in problems:
@@ -728,9 +741,11 @@ def setup(root: Path, answers_file: str | None = None, start: bool = True, assum
     return 0
 
 
-def setup_kubernetes(root: Path, state: Path, a: dict, start: bool) -> int:
+def setup_kubernetes(root: Path, state: Path, a: dict, start: bool, configure_only: bool = False) -> int:
     from . import kube
     k = a["kubernetes"]
+    if configure_only:
+        return _configure_existing(state, a)
     title("Pré-requisitos")
     problems = kube.preflight()
     for p in problems:
@@ -759,9 +774,34 @@ def setup_kubernetes(root: Path, state: Path, a: dict, start: bool) -> int:
         return 1
     ok(f"release {k['release']} no ar no namespace {k['namespace']}")
 
+    return _configure_and_finish(state, a, secret_values["secrets"]["adminToken"])
+
+
+def _configure_existing(state: Path, a: dict) -> int:
+    from . import kube
+    k = a["kubernetes"]
+    title("Pré-requisitos")
+    problems = kube.preflight()
+    for p in problems:
+        fail(p)
+    if problems:
+        return 2
+    token = kube.admin_token_from_cluster(k["namespace"], k["release"])
+    if not token:
+        fail(f"não achei o Secret {kube.fullname(k['release'])}-secrets no namespace {k['namespace']} "
+             "(confira o contexto do kubectl, o namespace e o release)")
+        return 1
+    ok(f"instalação encontrada · contexto: {kube.current_context()} · namespace {k['namespace']}")
+    (state / "setup.yaml").write_text(yaml.safe_dump(public_answers(a), allow_unicode=True, sort_keys=False), encoding="utf-8")
+    return _configure_and_finish(state, a, token)
+
+
+def _configure_and_finish(state: Path, a: dict, admin_token: str) -> int:
+    from . import kube
+    k = a["kubernetes"]
     title("Configurando")
     with kube.port_forward(k["namespace"], k["release"]) as local:
-        result = configure(Api(local, secret_values["secrets"]["adminToken"]), a, local)
+        result = configure(Api(local, admin_token), a, local)
     base = kube.public_url(k)
     if result.get("client_token"):
         cdir = state / "clients"

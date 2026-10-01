@@ -24,7 +24,7 @@ MCP. Then come her Início page, the agent, a Playground answer, the team memory
 connections and the company catalog."></p>
 <p align="center"><sub>The user portal, recorded on a local install · <a href="docs/assets/portal-tour.mp4">MP4 version</a></sub></p>
 
-> **Status: alpha (v0.11).** It works end to end and is covered by tests, but APIs may still change. Run it inside
+> **Status: alpha (v0.12).** It works end to end and is covered by tests, but APIs may still change. Run it inside
 > your network until you have read [docs/security.md](docs/security.md).
 
 ---
@@ -135,7 +135,8 @@ Jobs, isolated by NetworkPolicies. Full guide: [docs/kubernetes.md](docs/kuberne
 4. **Check:** `hangar doctor --namespace agent-hangar`.
 
 For high availability, run 2+ central replicas with a managed Postgres: rolling updates without downtime, and
-shared state in the database.
+shared state in the database. To create everything (cluster, managed Postgres, cloud identity, ingress) in one
+`terraform apply`, use [`deploy/terraform`](deploy/terraform/README.md) for GKE, AKS or EKS.
 
 Plain Helm works too: `helm upgrade --install agent-hangar charts/agent-hangar -n agent-hangar --create-namespace
 -f charts/agent-hangar/values-gke.yaml -f my-values.yaml`.
@@ -324,13 +325,14 @@ hangar jobs run code-fixer "Add input validation to parse_date()" --follow
 | [Access, teams, SSO and the portal](docs/access.md) | Roles, approvals, budgets, OAuth2/SCIM, where each person lands |
 | [Memory](docs/memory.md) · [MCP catalog](docs/mcp-catalog.md) · [Remote MCPs + Activepieces](docs/remote-mcp.md) | What agents can know and use |
 | [Harnesses](docs/harnesses.md) | Claude Code, Codex, Hermes and DeepSeek Harness as agents |
+| [Kubernetes](docs/kubernetes.md) · [Terraform](deploy/terraform/README.md) | GKE, AKS, EKS: chart, high availability, vault secrets, cloud identity, one-`apply` stacks |
+| [Observability](docs/observability.md) · [Backup and upgrade](docs/backup.md) · [Supply chain](docs/supply-chain.md) | Metrics, logs, traces; `hangar backup`/`upgrade`; signed images and SBOM |
 | [API](docs/api.md) · [CLI](docs/cli.md) · [Security](docs/security.md) | Reference and hardening |
 
 ## Project status and roadmap
 
-v0.11 adds OAuth on the platform MCP (Claude.ai and ChatGPT on the web connect with just the URL) and high availability on Kubernetes (several central replicas). v0.10 added the guided installer (`hangar setup` / `hangar doctor`), tunnels (Cloudflare, ngrok, Tailscale) and Kubernetes (Helm chart, runtime driver, GKE/AKS/EKS presets). Earlier releases added code evaluations and code governance (v0.9), coding agents in VS Code (v0.8), the user portal (v0.7), long-term memory (v0.6), the MCP catalog with OAuth MCPs and
-Activepieces (v0.5), schedules and edit-after-ship (v0.4), and teams with SSO (v0.3). Next up: external secrets and cloud identity,
-OpenTelemetry + Langfuse traces, Slack/Teams adapters and egress allowlists for jobs. See
+v0.12 adds observability (Prometheus, JSON logs, OpenTelemetry), backup and upgrade (`hangar backup`/`upgrade`, pre-upgrade backups in the chart), vault secrets, cloud identity, signed images with SBOM, and Terraform for GKE, AKS and EKS. v0.11 added OAuth on the platform MCP (Claude.ai and ChatGPT on the web connect with just the URL) and high availability on Kubernetes (several central replicas). v0.10 added the guided installer (`hangar setup` / `hangar doctor`), tunnels (Cloudflare, ngrok, Tailscale) and Kubernetes (Helm chart, runtime driver, GKE/AKS/EKS presets). Earlier releases added code evaluations and code governance (v0.9), coding agents in VS Code (v0.8), the user portal (v0.7), long-term memory (v0.6), the MCP catalog with OAuth MCPs and
+Activepieces (v0.5), schedules and edit-after-ship (v0.4), and teams with SSO (v0.3). Next up: Slack/Teams adapters and egress allowlists for jobs. See
 [ROADMAP.md](ROADMAP.md), the [CHANGELOG](CHANGELOG.md) and the issues.
 
 ## Contributing

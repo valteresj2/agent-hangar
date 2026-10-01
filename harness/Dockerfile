@@ -12,7 +12,7 @@ ARG HERMES_COMMIT=8c9fe9640
 
 FROM node:22-slim AS base
 # python3 + pytest: projetos Python nos jobs e nas avaliações de código (eval_runner.js)
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 python3-pytest \
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends git ca-certificates python3 python3-pytest \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -m -u 10001 harness \
     && mkdir -p /workspace /srv && chown -R harness:harness /workspace /srv

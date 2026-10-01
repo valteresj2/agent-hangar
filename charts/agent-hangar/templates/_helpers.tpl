@@ -56,3 +56,73 @@ imagePullSecrets:
 {{- end }}
 {{- end }}
 {{- end -}}
+
+{{/* Cloud SQL Auth Proxy como sidecar nativo (initContainer com restartPolicy Always, Kubernetes 1.29+) */}}
+{{- define "hangar.cloudSqlProxy" -}}
+{{- with .Values.postgresql.cloudSqlProxy }}{{ if .enabled }}
+- name: cloud-sql-proxy
+  image: {{ .image }}
+  restartPolicy: Always
+  args:
+    - "--structured-logs"
+    - "--health-check"
+    - "--http-address=0.0.0.0"
+    - "--port=5432"
+    {{- if .privateIp }}
+    - "--private-ip"
+    {{- end }}
+    {{- if .iamAuth }}
+    - "--auto-iam-authn"
+    {{- end }}
+    - {{ required "postgresql.cloudSqlProxy.instance é obrigatório (PROJETO:REGIÃO:INSTÂNCIA)" .instance | quote }}
+  securityContext: {runAsNonRoot: true, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+  resources: {requests: {cpu: 50m, memory: 64Mi}}
+  startupProbe:  # o container principal só começa com o proxy pronto
+    httpGet: {path: /startup, port: 9090}
+    periodSeconds: 1
+    failureThreshold: 60
+{{- end }}{{ end }}
+{{- end -}}
+
+{{/* pod do pg_dump (CronJob diário e hook pre-upgrade) */}}
+{{- define "hangar.backupPod" -}}
+{{- $full := include "hangar.fullname" . -}}
+metadata:
+  labels: {{- include "hangar.selector" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ $full }}-central
+  securityContext: {runAsNonRoot: true, runAsUser: 999, runAsGroup: 999, fsGroup: 999, seccompProfile: {type: RuntimeDefault}}
+  {{- include "hangar.pullSecrets" . | nindent 2 }}
+  {{- if .Values.postgresql.cloudSqlProxy.enabled }}
+  initContainers: {{- include "hangar.cloudSqlProxy" . | nindent 4 }}
+  {{- end }}
+  containers:
+    - name: pg-dump
+      image: {{ .Values.backup.image }}
+      command: ["/bin/bash", "-ec"]
+      args:
+        - |
+          url="${DATABASE_URL/+psycopg/}"
+          # a NetworkPolicy leva alguns segundos para reconhecer um pod novo: espera o banco responder
+          for i in $(seq 1 30); do pg_isready -q -d "$url" && break; sleep 2; done
+          f="/backup/hangar-$(date -u +%Y%m%d-%H%M%S)-${REASON}.dump"
+          pg_dump --format=custom --no-owner --dbname="$url" --file="$f.tmp"
+          mv "$f.tmp" "$f"
+          echo "backup: $f ($(du -h "$f" | cut -f1))"
+          ls -1t /backup/hangar-*.dump | tail -n +$(( {{ .Values.backup.keep }} + 1 )) | xargs -r rm -f
+          echo "mantidos: $(ls /backup/hangar-*.dump | wc -l)"
+      env:
+        - name: DATABASE_URL
+          valueFrom: {secretKeyRef: {name: {{ include "hangar.secretName" . }}, key: DATABASE_URL}}
+      securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+      volumeMounts:
+        - {name: backup, mountPath: /backup}
+        - {name: tmp, mountPath: /tmp}
+  volumes:
+    - name: backup
+      persistentVolumeClaim: {claimName: {{ $full }}-backup}
+    - name: tmp
+      emptyDir: {}
+{{- end -}}

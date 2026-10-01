@@ -36,6 +36,11 @@ Summary; the full model is in [access.md](access.md).
 - **Deactivation takes effect immediately.** Deactivating a user (UI or SCIM) ends their sessions and revokes
   all their keys at once. Losing a team role or a grant revokes the invoke keys that no longer apply.
 
+## Supply chain
+
+Images and the chart are signed with cosign (keyless) and carry an SBOM and SLSA provenance; CI scans images and the
+chart with Trivy. How to verify before deploying: [supply-chain.md](supply-chain.md).
+
 ## OAuth for the platform MCP
 
 Web clients (Claude.ai, ChatGPT) connect to `/mcp` with OAuth 2.1; see [clients.md](clients.md).

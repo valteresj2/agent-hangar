@@ -7,7 +7,7 @@ def _env(name: str, default: str = "") -> str:
 
 
 APP_NAME = "Agent Hangar"
-VERSION = "0.11.0"
+VERSION = "0.12.0"
 
 DATABASE_URL = _env("DATABASE_URL", "sqlite:///./hangar.db")
 
@@ -105,3 +105,11 @@ MEMORY_EMBEDDING_MODEL = _env("MEMORY_EMBEDDING_MODEL")
 
 TEMPLATES_DIR =_env("TEMPLATES_DIR", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                                                   "templates"))
+
+# Observabilidade (ver observability.py): métricas Prometheus numa porta separada (0 = desligada; o chart usa 9100),
+# logs em JSON e traces OpenTelemetry (ligados pelas variáveis OTEL_* padrão, a começar por OTEL_EXPORTER_OTLP_ENDPOINT).
+METRICS_PORT = int(_env("METRICS_PORT", "0") or 0)
+LOG_FORMAT = _env("LOG_FORMAT", "text").lower()
+LOG_LEVEL = _env("LOG_LEVEL", "INFO").upper()
+OTEL_ENDPOINT = _env("OTEL_EXPORTER_OTLP_ENDPOINT") or _env("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+OTEL_SERVICE_NAME = _env("OTEL_SERVICE_NAME", "agent-hangar")
