@@ -52,13 +52,17 @@ def _check_refs(db: Session, slug: str, spec: dict):
         get_agent(db, s)
 
 
-def _commit_version(db: Session, a: Agent, spec: dict, actor: str, action: str, detail: str) -> Agent:
-    """Valida, e só cria uma versão nova se a spec realmente mudou."""
+def _commit_version(db: Session, a: Agent, spec: dict, actor: str, action: str, detail: str, acc=None) -> Agent:
+    """Valida, e só cria uma versão nova se a spec realmente mudou. Com `acc`, um sub_agent novo exige permissão de
+    uso sobre ele (agente de outro time: pedido de acesso aprovado)."""
     try:
         spec = specmod.validate(spec)
     except specmod.SpecError as e:
         raise PlatformError(str(e)) from None
     _check_refs(db, a.slug, spec)
+    if acc is not None:
+        from .composer import check_sub_agents
+        check_sub_agents(db, acc, specmod.normalize_legacy(spec_of(a)), spec)
     a.kind = "multi" if spec.get("sub_agents") else "single"
     if spec == specmod.normalize_legacy(spec_of(a)):
         db.commit()
@@ -71,7 +75,7 @@ def _commit_version(db: Session, a: Agent, spec: dict, actor: str, action: str, 
     return a
 
 
-def design_agent(db: Session, slug: str, patch: dict, actor="admin") -> Agent:
+def design_agent(db: Session, slug: str, patch: dict, actor="admin", acc=None) -> Agent:
     """Aplica `patch` como JSON Merge Patch (RFC 7396) sobre a spec atual: objetos mesclam, listas e valores
     substituem, e null apaga (ex.: {"llm": {"model": null}} volta ao modelo padrão da conexão)."""
     a = get_agent(db, slug)
@@ -83,12 +87,12 @@ def design_agent(db: Session, slug: str, patch: dict, actor="admin") -> Agent:
             setattr(a, k, patch[k])
     spec_patch = {k: v for k, v in patch.items() if k in specmod.SPEC_KEYS}
     merged = specmod.merge_patch(specmod.normalize_legacy(spec_of(a)), spec_patch)
-    return _commit_version(db, a, merged, actor, "agent.design", f"campos {sorted(patch)}")
+    return _commit_version(db, a, merged, actor, "agent.design", f"campos {sorted(patch)}", acc)
 
 
-def replace_spec(db: Session, slug: str, spec: dict, actor="admin") -> Agent:
+def replace_spec(db: Session, slug: str, spec: dict, actor="admin", acc=None) -> Agent:
     """Substitui a spec inteira (editor da UI e GitOps/apply)."""
-    return _commit_version(db, get_agent(db, slug), spec or {}, actor, "agent.spec", "spec substituída")
+    return _commit_version(db, get_agent(db, slug), spec or {}, actor, "agent.spec", "spec substituída", acc)
 
 
 def rollback_agent(db: Session, slug: str, version: int, actor="admin") -> Agent:

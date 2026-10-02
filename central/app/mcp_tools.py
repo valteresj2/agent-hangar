@@ -41,13 +41,31 @@ multiagente?" por padrão:
 Ao final, diga qual tipo escolheu e por quê, numa frase. Só pergunte se o objetivo for ambíguo, ou se for
 usar HARNESS (avise que executa ações de verdade), a não ser que o usuário já tenha pedido explicitamente.
 
+REUSAR ANTES DE CONSTRUIR (sempre, antes de criar qualquer agente)
+- plan_agent(request, capabilities=[...]): passe o pedido e quebre-o em 2–6 capacidades curtas ("lembrar o histórico
+  de cada cliente", "escrever o e-mail de follow-up"). O Hangar devolve, do catálogo da empresa: agentes parecidos
+  (só os que a pessoa pode ver, em produção), skills, MCPs e templates, como cada um pode entrar no agente NOVO
+  (specialist = chamado como está; base = cópia das instruções/skills/testes como ponto de partida; use_as_is = já
+  faz o pedido) e as LACUNAS de habilidade, com perguntas.
+- Mostre ao usuário o que encontrou e o porquê (campo why), e decida com ele. Se um agente já faz exatamente o
+  pedido (use_as_is), ofereça usá-lo como está (connect_agent / request_agent_access) antes de construir outro.
+- SKILLS: para cada lacuna, faça a pergunta do plano (no máximo 3 perguntas no total, e só se forem necessárias). Se
+  o usuário descrever um procedimento/padrão, ele vira uma skill NOVA (new_skills em compose_agent, com um teste);
+  se uma skill do catálogo servir, ofereça-a.
+- compose_agent(...): cria o agente NOVO com as peças escolhidas — specialists, base, skills, new_skills, mcps — e
+  escreva em `instructions` e `tests` SÓ o que é novo (as peças já trazem o resto: isso economiza tokens).
+- REGRA: os agentes do catálogo são SÓ LEITURA. Nunca edite (design_agent/edit_agent) um agente existente para
+  atender um pedido novo: monte um agente novo a partir dele. Agente de outro time como especialista exige acesso
+  (access="request_access" no plano -> request_agent_access).
+- Nada parecido no catálogo? Siga o fluxo abaixo (do zero), ou compose_agent sem peças.
+
 FLUXO
 1. Entenda o pedido. Se faltar algo essencial, PERGUNTE: nome, objetivo, saída final esperada,
    sistemas/dados que acessa, riscos (ações destrutivas, dados sensíveis).
-2. list_templates -> se um template já resolve o pedido, use apply_template (e ajuste com design_agent).
-3. list_catalog -> REUTILIZE skills, MCPs e conexões de LLM. Sem conexão de LLM: pergunte ao usuário
+2. plan_agent (acima). Se um template resolve o pedido, use apply_template (e ajuste com design_agent).
+3. list_catalog -> conexões de LLM disponíveis. Sem conexão de LLM: pergunte ao usuário
    url, model_name e api key e registre com register_llm_connection (ou siga em mock/echo para testar).
-4. register_agent(name, objective, final_output) -> devolve o slug.
+4. compose_agent (com peças) ou register_agent(name, objective, final_output) -> devolve o slug.
 5. design_agent(slug, ...) define o comportamento. É um JSON Merge Patch: objetos mesclam, listas e
    valores substituem, e null (ou o parâmetro `remove`) APAGA o campo. Ex.: trocar de conexão e voltar
    ao modelo padrão dela = llm={"connection": "x", "model": null}. Veja o formato completo em
@@ -161,7 +179,8 @@ async def whoami(ctx: Context) -> dict:
 async def list_catalog(ctx: Context) -> dict:
     """Skills, MCP servers e conexões de LLM disponíveis para reutilizar (sem expor as api keys)."""
     def go(db, acc):
-        return {"skills": [{"name": s.name, "description": s.description} for s in db.scalars(select(Skill))],
+        return {"skills": [{"name": s.name, "description": s.description, "version": s.version, "has_test": bool(s.test)}
+                           for s in db.scalars(select(Skill))],
                 "mcp_servers": [{"name": m.name, "url": m.url, "description": m.description}
                                 for m in db.scalars(select(McpServer))],
                 "llm_connections": [svc.llm_connection_dict(c) for c in db.scalars(select(LlmConnection))],
@@ -189,11 +208,19 @@ async def register_llm_connection(ctx: Context, name: str, base_url: str, model_
 
 
 @mcp.tool()
-async def register_skill(ctx: Context, name: str, description: str, content: str) -> dict:
-    """(Admin) Registra (ou atualiza) uma skill reutilizável: instruções/procedimento/conhecimento em markdown."""
+async def register_skill(ctx: Context, name: str, description: str, content: str, examples: str = "",
+                         test: dict | None = None, team: str = "") -> dict:
+    """Registra uma skill reutilizável (peça de montar agentes): procedimento/conhecimento em markdown, exemplos e um
+    teste próprio ({name, input, judge|expect_contains}) que entra nos testes de quem a usar. Developers criam skills
+    NOVAS para o time; só admins alteram uma existente (nova versão)."""
     def go(db, acc):
-        _admin(acc)
-        return {"registered": svc.upsert_skill(db, name, description, content, acc.p.name).name}
+        if acc.p.is_admin:
+            s = svc.upsert_skill(db, name, description, content, acc.p.name, examples, test)
+        else:
+            t = acc.team_for_new_agent(team or None)
+            s = svc.upsert_skill(db, name, description, content, acc.p.name, examples, test, team_id=t.id,
+                                 create_only=True)
+        return {"registered": s.name, "version": s.version, "has_test": bool(s.test)}
     return await _run(ctx, go)
 
 
@@ -259,10 +286,45 @@ async def design_agent(ctx: Context, slug: str, instructions: str | None = None,
 
     def go(db, acc):
         _agent(db, acc, slug, "edit")
-        a = svc.design_agent(db, slug, patch, acc.p.name)
+        a = svc.design_agent(db, slug, patch, acc.p.name, acc=acc)
         return {"slug": a.slug, "version": a.current_version, "status": a.status, "kind": a.kind,
                 "next": "ship_agent (testa em stage e promove) ou run_tests"}
     return await _run(ctx, go)
+
+
+@mcp.tool()
+async def plan_agent(ctx: Context, request: str, capabilities: list[str] | None = None, limit: int = 5) -> dict:
+    """Reusar antes de construir: procura no catálogo (só o que você pode ver; agentes só na versão em produção) os
+    agentes, skills, MCPs e templates parecidos com o pedido; diz como cada agente pode entrar num agente NOVO
+    (use_as_is | specialist | base), se você tem acesso, e quais habilidades faltam (gaps + questions, no máximo 3).
+    `capabilities`: o pedido quebrado em 2–6 capacidades curtas (melhora muito a busca). Não altera nada."""
+    return await _run(ctx, lambda db, acc: svc.composer.plan(db, acc, request, capabilities, max(1, min(limit, 10))))
+
+
+@mcp.tool()
+async def compose_agent(ctx: Context, name: str, objective: str, final_output: str, instructions: str = "",
+                        specialists: list[str] | None = None, base: str = "", skills: list[str] | None = None,
+                        new_skills: list[dict] | None = None, mcps: list[str] | None = None,
+                        tools: list | None = None, tests: list[dict] | None = None,
+                        copy_tests_from: list[str] | None = None, copy_base_tests: bool = True,
+                        include_skill_tests: bool = True, llm: dict | None = None, memory: dict | None = None,
+                        team: str = "", visibility: str = "", plan_id: str = "") -> dict:
+    """Cria um agente NOVO montado a partir de peças do catálogo — os agentes de origem NUNCA são alterados.
+    specialists: slugs (em produção) que o novo chama como estão (sub_agents, via A2A; outro time exige acesso).
+    base: slug cujas instruções, skills, ferramentas e testes (versão em produção) são COPIADOS para o novo.
+    skills: nomes do catálogo. new_skills: [{name, description, content, examples?, test?}] — skills novas do time.
+    instructions/tests: SÓ o que é novo (o resto vem das peças). copy_tests_from: copia os testes de outros agentes.
+    Os testes das skills entram automaticamente. Depois: ship_agent(slug)."""
+    return await _run(ctx, lambda db, acc: svc.composer.compose(
+        db, acc, name, objective, final_output, instructions, team, visibility, specialists, base, skills, new_skills,
+        mcps, tools, tests, copy_tests_from, copy_base_tests, include_skill_tests, llm, memory, plan_id))
+
+
+@mcp.tool()
+async def agent_lineage(ctx: Context, slug: str) -> dict:
+    """De quais agentes este foi montado (base e especialistas, e se eles ganharam versão nova desde então) e quem
+    usa este agente como peça."""
+    return await _run(ctx, lambda db, acc: svc.composer.lineage(db, acc, slug))
 
 
 @mcp.tool()

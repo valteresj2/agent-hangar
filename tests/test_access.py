@@ -215,7 +215,14 @@ def test_mcp_acts_as_the_user(client, org_setup, uniq):
     pat = {"Authorization": "Bearer " + client.post("/api/keys", headers=h["dev"],
                                                     json={"name": "mcp", "scopes": ["user"]}).json()["key"]}
     assert "Time A" in str(_mcp(client, pat, "whoami", {}))
-    assert _mcp(client, pat, "register_skill", {"name": "x", "description": "d", "content": "c"})["isError"]
+    # developer cria skill NOVA para o time, mas não altera uma existente (quem a usa não muda sem querer)
+    sk = uniq("skill-dev")
+    assert not _mcp(client, pat, "register_skill", {"name": sk, "description": "d", "content": "c"})["isError"]
+    assert _mcp(client, pat, "register_skill", {"name": sk, "description": "d2", "content": "outra"})["isError"]
+    # consumer não cria skill
+    cons_pat = {"Authorization": "Bearer " + client.post("/api/keys", headers=h["cons"],
+                                                         json={"name": "mcp-c", "scopes": ["user"]}).json()["key"]}
+    assert _mcp(client, cons_pat, "register_skill", {"name": uniq("sk-c"), "description": "d", "content": "c"})["isError"]
     r = _mcp(client, pat, "register_agent", {"name": uniq("Via MCP"), "objective": "o", "final_output": "f"})
     assert not r["isError"] and org_setup["ta"] in str(r)
     # consumer via MCP não cria agente

@@ -163,22 +163,25 @@ def run_tests(db: Session, slug: str, actor="admin") -> TestRun:
         c = httpx.get(base + "/.well-known/agent.json", timeout=5).json()
         return bool(c.get("name") and c.get("url") and c.get("skills")), "Agent Card A2A"
 
+    # multiagente encadeia chamadas (especialistas, memória): mais tempo para os smokes que passam pelo LLM
+    smoke_timeout = 300 if spec.get("sub_agents") else 120
+
     def t_openai():
-        out = _post(base + "/v1/chat/completions", {"messages": [{"role": "user", "content": "ping"}]})
+        out = _post(base + "/v1/chat/completions", {"messages": [{"role": "user", "content": "ping"}]}, smoke_timeout)
         text = out["choices"][0]["message"]["content"]
         return bool(text.strip()), text[:120] or "resposta vazia"
 
     def t_a2a():
         r = _post(base + "/a2a", {"jsonrpc": "2.0", "id": "1", "method": "message/send", "params": {
             "message": {"kind": "message", "role": "user", "messageId": str(uuid.uuid4()),
-                        "parts": [{"kind": "text", "text": "ping"}]}}})
+                        "parts": [{"kind": "text", "text": "ping"}]}}}, smoke_timeout)
         if "result" not in r:
             return False, str(r.get("error"))
         return True, r["result"]["parts"][0]["text"][:120]
 
     def t_acp():
         r = _post(base + "/acp/runs", {"agent_name": slug, "input": [
-            {"role": "user", "parts": [{"content_type": "text/plain", "content": "ping"}]}]})
+            {"role": "user", "parts": [{"content_type": "text/plain", "content": "ping"}]}]}, smoke_timeout)
         return r["status"] == "completed", r["output"][0]["parts"][0]["content"][:120]
 
     def t_mcp():

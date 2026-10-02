@@ -5,6 +5,44 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-10-02
+
+### Added
+- **Reuse before you build** ([docs/composer.md](docs/composer.md)): new agents are built from existing ones, and
+  the existing ones are never changed.
+  - `plan_agent` (MCP) / `POST /api/compose/plan` searches the catalog for similar agents, skills, MCPs and templates.
+    - It only shows what the person can see, and only agents with a version in production.
+    - It says how each agent can enter the new one (`use_as_is`, `specialist` or `base` copy) and whether access is
+      needed.
+    - It lists the missing skills, with at most 3 questions for the user.
+    - Similarity uses the memory service's local multilingual embeddings (cached in the database), with a lexical
+      fallback when memory is off.
+  - `compose_agent` / `POST /api/compose` creates the new agent from the chosen pieces.
+    - Pieces: specialists called as they are, a base copied into the new agent, catalog skills and MCPs, and new
+      skills created from the user's answers.
+    - The instructions and tests carry only what is new; tests come in from the base and from skills.
+    - It records the lineage (`agent_lineage`) and an estimate of tokens reused.
+  - Portal: **Novo agente → Reusar antes de construir**, plus "Construído a partir de" and "Usado por" on the agent
+    page.
+  - Metrics: `GET /api/compose/stats`.
+- **Skills as building blocks:** skills now have `examples`, a `test` that runs in the stage tests of every agent
+  composed with them, a `version` (raised on every change), a team and an author. Developers can create new skills
+  (MCP `register_skill`); only admins change an existing one.
+- The memory service exposes `POST /admin/embed` (central only) for the catalog search.
+
+### Fixed
+- **Shipping a multi-agent no longer changes its specialists when they are pieces of a composed agent.** Before,
+  `ship_agent` re-ran the sub-agents' tests and could publish a sub-agent's unreleased version. Specialists of a
+  composed agent are now read-only: they are called on their production version, and they are never tested or
+  deployed by the composed agent.
+- **Adding a sub-agent requires being allowed to use it** (`design_agent`, `edit_agent`, `PATCH/PUT` on the API).
+  Before, a developer could add any visible agent of another team without an approved access request.
+- Smoke checks for multi-agents allow 300 s per call; composed agents answer simple questions without calling their
+  specialists.
+
+### Upgrading
+- Migration `0011_composer` runs on start: new table `agent_lineage`, new columns on `skills`.
+
 ## [0.12.0] — 2026-10-01
 
 ### Upgrading from 0.11.x

@@ -64,5 +64,7 @@ crash.log
 scripts/demo/product-tour/*.txt
 scripts/demo/product-tour/transcript.jsonl
 scripts/demo/product-tour/chats.jsonl
+scripts/demo/product-tour/compose_state.json
+scripts/demo/product-tour/*_out.json
 scripts/demo/product-tour/shots/
 !scripts/demo/product-tour/prompt.txt

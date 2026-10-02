@@ -55,6 +55,8 @@ class SkillBody(BaseModel):
     name: str
     description: str = ""
     content: str = ""
+    examples: str | None = None
+    test: dict | None = None
 
 
 class McpBody(BaseModel):
@@ -152,15 +154,73 @@ def agent(slug: str, request: Request, db=Depends(db_dep)):
 def patch_agent(slug: str, patch: dict, request: Request, db=Depends(db_dep)):
     """JSON Merge Patch (RFC 7396) sobre a spec (e name/objective/final_output/owner). null apaga."""
     _agent(request, db, slug, "edit")
-    return guard(lambda: svc.agent_dict(db, svc.design_agent(db, slug, patch, actor(request)), detail=True,
-                                        acc=acc(request, db)))
+    return guard(lambda: svc.agent_dict(db, svc.design_agent(db, slug, patch, actor(request), acc=acc(request, db)),
+                                        detail=True, acc=acc(request, db)))
 
 
 @router.put("/agents/{slug}/spec")
 def put_spec(slug: str, spec: dict, request: Request, db=Depends(db_dep)):
     _agent(request, db, slug, "edit")
-    return guard(lambda: svc.agent_dict(db, svc.replace_spec(db, slug, spec, actor(request)), detail=True,
-                                        acc=acc(request, db)))
+    return guard(lambda: svc.agent_dict(db, svc.replace_spec(db, slug, spec, actor(request), acc=acc(request, db)),
+                                        detail=True, acc=acc(request, db)))
+
+
+# ------------------------------------------------------------------ montar a partir do catálogo
+class PlanBody(BaseModel):
+    request: str
+    capabilities: list[str] = []
+    limit: int = 5
+
+
+class ComposeBody(BaseModel):
+    name: str
+    objective: str
+    final_output: str
+    instructions: str = ""
+    team: str = ""
+    visibility: str = ""
+    specialists: list[str] = []
+    base: str = ""
+    skills: list[str] = []
+    new_skills: list[dict] = []
+    mcps: list[str] = []
+    tools: list = []
+    tests: list[dict] = []
+    copy_tests_from: list[str] = []
+    copy_base_tests: bool = True
+    include_skill_tests: bool = True
+    llm: dict | None = None
+    memory: dict | None = None
+    plan_id: str = ""
+
+
+@router.post("/compose/plan")
+def compose_plan(body: PlanBody, request: Request, db=Depends(db_dep)):
+    """Agentes, skills, MCPs e templates do catálogo parecidos com o pedido (só leitura)."""
+    return guard(lambda: svc.composer.plan(db, acc(request, db), body.request, body.capabilities,
+                                           max(1, min(body.limit, 10))))
+
+
+@router.post("/compose")
+def compose_new(body: ComposeBody, request: Request, db=Depends(db_dep)):
+    """Cria um agente NOVO a partir de peças do catálogo; os agentes de origem não são alterados."""
+    b = body
+    return guard(lambda: svc.composer.compose(
+        db, acc(request, db), b.name, b.objective, b.final_output, b.instructions, b.team, b.visibility,
+        b.specialists, b.base, b.skills, b.new_skills, b.mcps, b.tools, b.tests, b.copy_tests_from,
+        b.copy_base_tests, b.include_skill_tests, b.llm, b.memory, b.plan_id))
+
+
+@router.get("/compose/stats")
+def compose_stats(request: Request, db=Depends(db_dep)):
+    if not principal(request).is_auditor:
+        raise HTTPException(403, "só admins e auditores")
+    return svc.composer.stats(db)
+
+
+@router.get("/agents/{slug}/lineage")
+def agent_lineage(slug: str, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.composer.lineage(db, acc(request, db), slug))
 
 
 @router.post("/agents/{slug}/rollback")
@@ -299,7 +359,8 @@ async def job_events(job_id: int, request: Request):
 # ------------------------------------------------------------------ catálogo (leitura: todos; escrita: admin)
 @router.get("/catalog")
 def catalog(db=Depends(db_dep)):
-    return {"skills": [{"name": s.name, "description": s.description, "content": s.content}
+    return {"skills": [{"name": s.name, "description": s.description, "content": s.content, "examples": s.examples,
+                        "test": s.test, "version": s.version, "team_id": s.team_id, "created_by": s.created_by}
                        for s in db.scalars(select(Skill))],
             "mcp_servers": [{"name": m.name, "url": m.url, "description": m.description, "tool_prefix": m.tool_prefix}
                             for m in db.scalars(select(McpServer))],
@@ -309,8 +370,8 @@ def catalog(db=Depends(db_dep)):
 
 @router.post("/catalog/skills", dependencies=[Depends(require_admin)])
 def add_skill(b: SkillBody, request: Request, db=Depends(db_dep)):
-    svc.upsert_skill(db, b.name, b.description, b.content, actor(request))
-    return {"ok": True}
+    s = guard(lambda: svc.upsert_skill(db, b.name, b.description, b.content, actor(request), b.examples, b.test))
+    return {"ok": True, "version": s.version}
 
 
 @router.post("/catalog/mcps", dependencies=[Depends(require_admin)])

@@ -18,7 +18,7 @@ Claude um Assistente Comercial, que é criado, testado e publicado pelo MCP do H
 agente, o Playground, a memória do time, o resumo diário agendado, as conexões e o catálogo da empresa"></p>
 <p align="center"><sub>O portal do usuário, gravado numa instalação local · <a href="docs/assets/portal-tour.mp4">versão MP4</a></sub></p>
 
-> **Status: alpha (v0.12).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
+> **Status: alpha (v0.13).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
 > sua rede até ler [docs/security.md](docs/security.md).
 
 ## Por que o Agent Hangar
@@ -39,6 +39,10 @@ outro lugar, e ninguém sabe quanto custam ou quem aprovou. O Agent Hangar resol
 - **Agentes se combinam em novos agentes.** Junte agentes que já existem num time: um coordenador delega a
   especialistas (pesquisador, analista, redator), e cada um mantém as próprias instruções, ferramentas e modelo.
   O resultado é um agente novo, com outro papel, aproveitando o que já foi feito.
+- **Reusar antes de construir.** Antes de criar um agente, o hangar procura no catálogo (busca semântica, em
+  qualquer idioma) agentes, skills e MCPs que já fazem parte do trabalho. Ele monta o agente novo com essas peças e
+  pergunta só as habilidades que faltam. As peças são só de leitura: nada nelas muda.
+  [docs/composer.md](docs/composer.md)
 - **Seguro para usar na empresa.**
   - Cada mudança vira uma versão nova, testada em stage antes de ir para produção.
   - Os segredos ficam criptografados, e tudo roda na sua infraestrutura (Docker ou Kubernetes).

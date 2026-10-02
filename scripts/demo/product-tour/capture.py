@@ -81,7 +81,7 @@ def run(group: str):
             pg.wait_for_function("document.querySelector('#cn-out') && document.querySelector('#cn-out').innerText.length > 40", timeout=30000)
             pg.wait_for_timeout(800)
             pg.evaluate("""() => { const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-                let n; while ((n = w.nextNode())) n.nodeValue = n.nodeValue.replace(/ah_[A-Za-z0-9_-]{8,}/g, 'ah_••••••••••••'); 
+                let n; while ((n = w.nextNode())) n.nodeValue = n.nodeValue.replace(/ah_[A-Za-z0-9_-]{8,}/g, 'ah_••••••••••••');
                 document.querySelectorAll('input,textarea').forEach(i => { i.value = i.value.replace(/ah_[A-Za-z0-9_-]{8,}/g, 'ah_••••••••••••'); }); }""")
             pg.eval_on_selector("#cn-out", "o => o.scrollIntoView({block: 'start'})")
             pg.evaluate("window.scrollBy(0, -200)")

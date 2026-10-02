@@ -36,6 +36,17 @@ Summary; the full model is in [access.md](access.md).
 - **Deactivation takes effect immediately.** Deactivating a user (UI or SCIM) ends their sessions and revokes
   all their keys at once. Losing a team role or a grant revokes the invoke keys that no longer apply.
 
+## Composing agents from existing ones
+
+- `plan_agent` and `compose_agent` only create. Source agents (specialists, bases) are never edited, versioned,
+  tested, promoted or redeployed because of a composed agent. A composed agent always calls its specialists'
+  production version, and the deploy stops if a specialist is not running in production.
+- Using an agent as a sub-agent requires being allowed to use it: for another team's agent, an approved access
+  request. This applies to `compose_agent`, `design_agent`, `edit_agent` and `PATCH/PUT` on the API. Before 0.13, a
+  developer could add any visible agent as a sub-agent.
+- Copying an agent as a base requires seeing its spec; skills created during composition never overwrite an
+  existing skill. See [composer.md](composer.md).
+
 ## Supply chain
 
 Images and the chart are signed with cosign (keyless) and carry an SBOM and SLSA provenance; CI scans images and the

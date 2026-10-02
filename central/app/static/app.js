@@ -172,6 +172,14 @@ async function newAgentPage() {
   const opt = (list, empty) => `<option value="">${empty}</option>` + list.map(x => `<option value="${esc(x.name)}">${esc(x.name)} · ${esc(x.protocol)} · ${esc(x.model_name)}</option>`).join('');
   main.innerHTML = `<a href="#/agents" class="mute small">← Agentes</a><h1>Novo agente</h1>
   <div class="sub">O jeito principal é pedir pelo chat (MCP) — este formulário cobre o básico; depois refine na aba <b>Spec</b>.</div>
+  <div class="card"><h2>1. Reusar antes de construir</h2>
+    <div class="mute small">Descreva o agente: o hangar procura no catálogo da empresa (só o que você vê, só versões em produção) agentes, skills e MCPs parecidos.
+      Escolha as peças — os agentes existentes <b>não são alterados</b>: o novo agente chama os especialistas como estão ou começa de uma <b>cópia</b> da base.</div>
+    <label class="mt">O que o agente deve fazer<textarea id="pl-req" rows="3" placeholder="ex.: um agente para os executivos de contas que lembra o histórico de cada cliente e escreve o e-mail de follow-up antes das reuniões"></textarea></label>
+    <label class="mt">Capacidades (opcional, uma por linha — melhora a busca)<textarea id="pl-caps" rows="3" placeholder="lembrar o histórico de cada cliente&#10;escrever o e-mail de follow-up&#10;aprovar descontos pela política comercial"></textarea></label>
+    <div class="row mt"><button id="pl-go" class="ghost">Procurar peças no catálogo</button><span class="mute small" id="pl-mode"></span></div>
+    <div id="pl-out"></div></div>
+  <h2 class="mt">2. O agente novo</h2>
   <div class="card"><div class="grid g2">
     <label>Nome<input id="na-name" placeholder="ex.: Triagem de chamados"></label>
     <label>Contato<input id="na-owner" placeholder="pessoa ou canal para dúvidas (opcional)"></label></div>
@@ -188,10 +196,59 @@ async function newAgentPage() {
         <option value="claude-code">Harness claude-code</option><option value="codex">Harness codex</option>
         <option value="hermes">Harness hermes</option><option value="deepseek-harness">Harness deepseek-harness</option></select></label>
       <label>Conexão de LLM<select id="na-conn">${opt(conns, 'nenhuma (mock — só para testar o fluxo)')}</select></label></div>
-    <div class="row mt"><button id="na-go">Criar</button><label class="row small"><input type="checkbox" id="na-ship" style="width:auto"> testar e shipar em seguida</label></div></div>`;
+    <div class="row mt"><button id="na-go">Criar</button><label class="row small"><input type="checkbox" id="na-ship" style="width:auto"> testar e shipar em seguida</label></div>
+    <div class="mute small mt" id="na-hint">Escolhendo peças no passo 1, o botão vira <b>Montar agente</b>: as instruções acima viram só a parte nova.</div></div>`;
+  let PLAN = null;
+  const picked = () => {
+    if (!PLAN) return null;
+    const specialists = [...document.querySelectorAll('.pl-spec:checked')].map(x => x.value);
+    const base = (document.querySelector('.pl-base:checked') || {}).value || '';
+    const skills = [...document.querySelectorAll('.pl-skill:checked')].map(x => x.value);
+    const mcps = [...document.querySelectorAll('.pl-mcp:checked')].map(x => x.value);
+    const new_skills = [...document.querySelectorAll('.pl-gap')].map(g => ({ name: g.querySelector('.g-name').value.trim(), description: g.dataset.cap,
+      content: g.querySelector('.g-content').value.trim() })).filter(x => x.name && x.content);
+    return { specialists, base, skills, mcps, new_skills };
+  };
+  const refreshBtn = () => { const p = picked(); const any = p && (p.specialists.length || p.base || p.skills.length || p.mcps.length || p.new_skills.length);
+    $('#na-go').textContent = any ? 'Montar agente' : 'Criar'; };
+  const accessPillPl = x => x.access === 'ok' ? '<span class="pill ok">você pode usar</span>' : x.access === 'request_access' ? '<span class="pill warn">pedir acesso</span>' : '<span class="pill bad">sem acesso</span>';
+  $('#pl-go').onclick = e => act(e.target, async () => {
+    const request = $('#pl-req').value.trim();
+    if (!request) throw new Error('Descreva o agente');
+    const capabilities = $('#pl-caps').value.split('\n').map(x => x.trim()).filter(Boolean);
+    PLAN = await api('/compose/plan', { method: 'POST', body: { request, capabilities } });
+    $('#pl-mode').textContent = PLAN.similarity === 'semantic' ? 'busca semântica (embeddings locais da memória)' : 'busca por palavras (ligue a memória para busca semântica)';
+    const ag = PLAN.agents.map(x => `<tr><td><b>${esc(x.name)}</b> ${x.match === 'strong' ? '<span class="pill ok">muito parecido</span>' : '<span class="pill info">parecido</span>'}
+        <div class="mute small">${x.why.map(esc).join(' · ')}</div></td><td>${accessPillPl(x)}</td>
+      <td class="nowrap"><label class="row small"><input type="checkbox" class="pl-spec" value="${esc(x.slug)}" style="width:auto" ${x.access !== 'ok' ? 'disabled' : ''}> especialista</label>
+        ${x.modes.includes('base') ? `<label class="row small"><input type="radio" name="pl-base" class="pl-base" value="${esc(x.slug)}" style="width:auto"> base (cópia)</label>` : ''}
+        ${x.modes.includes('use_as_is') ? `<a class="small" href="#/agents/${esc(x.slug)}">já faz isso — usar como está</a>` : ''}</td></tr>`).join('');
+    const sk = PLAN.skills.map(x => `<label class="row small"><input type="checkbox" class="pl-skill" value="${esc(x.name)}" style="width:auto" ${x.match === 'strong' ? 'checked' : ''}> <b>${esc(x.name)}</b> v${x.version} <span class="mute">${esc(x.description)}${x.has_test ? ' · tem teste' : ''}</span></label>`).join('');
+    const mc = PLAN.mcps.map(x => `<label class="row small"><input type="checkbox" class="pl-mcp" value="${esc(x.name)}" style="width:auto" ${x.match === 'strong' ? 'checked' : ''}> <b>${esc(x.name)}</b> <span class="mute">${esc(x.description)}</span></label>`).join('');
+    const gaps = PLAN.gaps.map(g => `<div class="card mt pl-gap" data-cap="${esc(g.capability)}"><b>Falta: ${esc(g.capability)}</b><div class="mute small">${esc(g.question)}</div>
+      <div class="grid g2 mt"><input class="g-name" placeholder="nome da skill nova (ex.: politica-de-descontos)"><span class="mute small">deixe em branco se não precisar</span></div>
+      <textarea class="g-content mt" rows="3" placeholder="o procedimento ou padrão que o agente deve seguir"></textarea></div>`).join('');
+    $('#pl-out').innerHTML = `<div class="card mt ${PLAN.agents.length ? '' : 'warn-card'}"><b>Recomendação:</b> ${esc(PLAN.recommendation)}</div>
+      ${PLAN.agents.length ? `<h3 class="mt">Agentes parecidos</h3><div class="scroll"><table><tr><th>Agente</th><th>Acesso</th><th>Usar como</th></tr>${ag}</table></div>` : ''}
+      ${sk ? `<h3 class="mt">Skills do catálogo</h3>${sk}` : ''}${mc ? `<h3 class="mt">MCPs</h3>${mc}` : ''}
+      ${gaps ? `<h3 class="mt">Habilidades que faltam</h3>${gaps}` : ''}`;
+    $('#pl-out').querySelectorAll('input,textarea').forEach(x => x.addEventListener('change', refreshBtn));
+    refreshBtn();
+  });
   $('#na-go').onclick = e => act(e.target, async () => {
     const body = { name: $('#na-name').value.trim(), objective: $('#na-obj').value.trim(), final_output: $('#na-out').value.trim(), owner: $('#na-owner').value.trim(), team: $('#na-team').value, visibility: $('#na-vis').value || null };
     if (!body.name || !body.objective || !body.final_output) throw new Error('Nome, objetivo e saída final são obrigatórios');
+    const p = picked();
+    if (p && (p.specialists.length || p.base || p.skills.length || p.mcps.length || p.new_skills.length)) {
+      const conn = $('#na-conn').value;
+      const r = await api('/compose', { method: 'POST', body: { name: body.name, objective: body.objective, final_output: body.final_output,
+        team: body.team, visibility: body.visibility || '', instructions: $('#na-ins').value, ...p, plan_id: PLAN.plan_id,
+        ...(conn ? { llm: { connection: conn } } : {}) } });
+      toast(`Agente montado: ${r.tests_copied} teste(s) reaproveitado(s), ~${r.reused_tokens_estimate} tokens que não precisaram ser escritos`);
+      if ($('#na-ship').checked) shipResult(await api(`/agents/${r.slug}/ship`, { method: 'POST' }));
+      location.hash = '#/agents/' + r.slug;
+      return;
+    }
     const a = await api('/agents', { method: 'POST', body });
     const kind = $('#na-kind').value, conn = $('#na-conn').value;
     const patch = { instructions: $('#na-ins').value };
@@ -345,7 +402,28 @@ function overview(t, a) {
     <div class="card"><h2>Endpoints (produção)</h2><div class="mute small">Header <code>Authorization: Bearer &lt;chave invoke&gt;</code> (gere em <a href="#/keys">Chaves de API</a>); opcional <code>X-Channel: slack</code> para métricas por canal.
       ${a.harness ? ' Agente com harness: cada chamada (OpenAI, A2A, ACP ou MCP) vira um job num container efêmero.' : ''}</div>
       ${Object.entries(a.endpoints).map(([k, v]) => `<h3>${k}</h3>${copyable(v)}`).join('')}
-      <h3>Stage</h3>${copyable(a.endpoints.openai.replace('/gw/', '/gw-stage/'))}</div></div>`;
+      <h3>Stage</h3>${copyable(a.endpoints.openai.replace('/gw/', '/gw-stage/'))}</div></div><div id="lineage"></div>`;
+  lineageCard(a.slug);
+}
+
+async function lineageCard(slug) {
+  const box = $('#lineage');
+  let l;
+  try { l = await api(`/agents/${slug}/lineage`); } catch { return; }
+  if (!box || (!l.built_from && !l.used_by.length)) return;
+  const ref = r => r.visible === false ? `<span class="chip">${esc(r.slug)}</span>` : `<a href="#/agents/${esc(r.slug)}">${esc(r.name)}</a> <span class="mute small">v${r.version_at_composition}</span>${r.updated_since ? ` <span class="pill warn" title="O dono publicou uma versão nova desde a montagem; este agente não mudou. Rode os testes para conferir.">especialista agora em v${r.prod_version_now}</span>` : ''}`;
+  const b = l.built_from;
+  const modeTxt = { specialists: 'chama especialistas', base: 'cópia de uma base', mixed: 'base + especialistas', parts: 'peças do catálogo', scratch: 'do zero' };
+  box.innerHTML = `<div class="grid g2 mt">${b ? `<div class="card"><h2>Construído a partir de</h2><dl class="kv">
+      <dt>Como</dt><dd>${esc(modeTxt[b.mode] || b.mode)}</dd>
+      ${b.based_on ? `<dt>Base copiada</dt><dd>${ref(b.based_on)}</dd>` : ''}
+      ${b.specialists.length ? `<dt>Especialistas</dt><dd>${b.specialists.map(ref).join('<br>')}</dd>` : ''}
+      ${b.skills.length ? `<dt>Skills do catálogo</dt><dd>${b.skills.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</dd>` : ''}
+      ${b.new_skills.length ? `<dt>Skills criadas</dt><dd>${b.new_skills.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</dd>` : ''}
+      <dt>Reaproveitado</dt><dd>${b.tests_copied} teste(s) · ~${fmt(b.reused_tokens_estimate)} tokens</dd></dl>
+      <div class="mute small mt">Os agentes de origem não foram alterados; mudanças futuras deles não mudam este agente sem um novo teste.</div></div>` : ''}
+    ${l.used_by.length ? `<div class="card"><h2>Usado por</h2><div class="mute small">Agentes montados a partir deste — ele continua igual; estes o chamam (especialista) ou começaram de uma cópia dele (base).</div>
+      <table class="mt">${l.used_by.map(u => `<tr><td><a href="#/agents/${esc(u.slug)}">${esc(u.name)}</a></td><td><span class="pill info">${u.as === 'base' ? 'cópia (base)' : 'especialista'}</span></td></tr>`).join('')}</table></div>` : ''}</div>`;
 }
 
 async function topology(t, a) {

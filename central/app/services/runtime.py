@@ -38,17 +38,27 @@ def resolve_spec(db: Session, agent: Agent, env: str, version: int | None = None
         # sempre pela central, que confere o agente e impõe os grupos de memória (o agente não escolhe)
         mcps.append({"name": "memory", "url": f"{config.INTERNAL_BASE_URL}/internal/memory/mcp"})
     subs = []
-    gw = "gw" if env == "prod" else "gw-stage"
+    pieces = read_only_pieces(db, agent)
     for s in spec.get("sub_agents", []):
         sub = get_agent(db, s)
         # Via central, nunca direto no container do vizinho: é o único jeito de alcançar um sub-agente com
-        # harness (sem container fixo), e a central confere o token interno de quem chama.
+        # harness (sem container fixo), e a central confere o token interno de quem chama. Peças só de leitura
+        # (especialistas de um agente montado) são sempre chamadas na versão de PRODUÇÃO, a aprovada pelo dono.
+        gw = "gw" if env == "prod" or sub.slug in pieces else "gw-stage"
         subs.append({"slug": sub.slug, "name": sub.name, "objective": sub.objective,
                      "url": f"{config.INTERNAL_BASE_URL}/internal/{gw}/{sub.slug}"})
     spec.update(skills_resolved=skills, mcps=mcps, sub_agents_resolved=subs, slug=agent.slug,
                 name=agent.name, objective=agent.objective, final_output=agent.final_output,
                 version=version or agent.current_version)
     return spec
+
+
+def read_only_pieces(db: Session, agent: Agent) -> set[str]:
+    """Especialistas que um agente montado (compose_agent) usa como peça: nunca são testados, publicados nem
+    redeployados por causa dele — o agente novo chama a versão deles em produção, como está."""
+    from ..models import AgentLineage
+    row = db.scalar(select(AgentLineage).where(AgentLineage.agent_id == agent.id))
+    return {x["slug"] for x in (row.specialists or [])} if row else set()
 
 
 def active_deployment(agent: Agent, env: str) -> Deployment | None:
@@ -112,9 +122,15 @@ def deploy_env(db: Session, slug: str, env: str, actor="admin", _stack=()) -> De
                 f"Promoção bloqueada: v{a.current_version} não tem teste aprovado em stage. Rode run_tests antes.")
     if spec_of(a).get("harness"):
         return _deploy_harness_marker(db, a, env, actor)
+    pieces = read_only_pieces(db, a)
     for sub in spec_of(a).get("sub_agents", []):
         sa = get_agent(db, sub)
         refresh_deployments(db, [sa])
+        if sub in pieces:  # peça só de leitura: precisa estar no ar em produção; nunca é (re)deployada daqui
+            if not active_deployment(sa, "prod"):
+                raise PlatformError(f"o especialista '{sub}' não está no ar em produção — ele é uma peça só de leitura "
+                                    f"deste agente; o time dono precisa publicá-lo")
+            continue
         dep = active_deployment(sa, env)
         if not dep or dep.version != sa.current_version:
             deploy_env(db, sub, env, actor, _stack + (slug,))
@@ -176,7 +192,14 @@ def ship(db: Session, slug: str, actor="admin", _seen=None, promote_prod: bool =
     _seen.add(slug)
     a = get_agent(db, slug)
     steps = []
+    pieces = read_only_pieces(db, a)
     for sub in spec_of(a).get("sub_agents", []):
+        if sub in pieces:  # especialista de um agente montado: usado como está (versão em produção), sem testes/deploy
+            sa = get_agent(db, sub)
+            dep = active_deployment(sa, "prod")
+            steps.append({"agent": sub, "step": "piece", "status": f"em produção v{dep.version} (não alterado)"
+                          if dep else "fora do ar em produção"})
+            continue
         steps += ship(db, sub, actor, _seen, promote_prod)
     run = run_tests(db, slug, actor)
     steps.append({"agent": slug, "step": "tests", "status": run.status, "summary": run.summary})

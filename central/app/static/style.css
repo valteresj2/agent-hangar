@@ -241,3 +241,4 @@ h3.up{font:600 12px/1.2 var(--f-ui);text-transform:uppercase;letter-spacing:.06e
 .msg.md code{font:13px var(--f-mono);background:var(--panel-2);padding:1px 4px;border-radius:4px}
 .msg.md{white-space:normal}
 .msg.run-out{max-width:none;margin-top:8px}
+.nowrap { white-space: nowrap; }

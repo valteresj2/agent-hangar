@@ -128,3 +128,21 @@ def forget_agent(slug: str):
             _call("DELETE", f"/admin/groups/{group}")
         except PlatformError:
             pass
+
+
+def embed(texts: list[str]) -> list[list[float]] | None:
+    """Vetores do modelo de embeddings da memória; None se a memória estiver desligada ou indisponível (quem chama
+    cai na busca por palavras)."""
+    if not enabled() or not texts:
+        return None
+    try:
+        with HTTP() as http:
+            r = http.post(config.MEMORY_URL + "/admin/embed", json={"texts": texts}, timeout=60,
+                          headers={"Authorization": f"Bearer {config.MEMORY_TOKEN}"})
+        if r.status_code >= 400:
+            return None
+        v = r.json().get("vectors") or []
+        return v if len(v) == len(texts) else None
+    except (httpx.HTTPError, ValueError):
+        return None
+

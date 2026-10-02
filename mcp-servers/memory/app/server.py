@@ -314,6 +314,21 @@ async def admin_status(request: Request):
                          "failed": S.failed, "last_error": S.last_error, "last_ok_at": S.last_ok_at})
 
 
+@mcp.custom_route("/admin/embed", methods=["POST"])
+async def admin_embed(request: Request):
+    """Vetores do mesmo modelo de embeddings da memória (local, multilíngue): a central usa para achar agentes,
+    skills e MCPs parecidos com um pedido. {"texts": [...]} -> {"vectors": [[...], ...], "model": "..."}."""
+    if not _auth_ok(request):
+        return JSONResponse({"error": "não autorizado"}, 401)
+    body = await request.json()
+    texts = [str(t)[:4000] for t in (body.get("texts") or [])][:256]
+    if not texts:
+        return JSONResponse({"vectors": [], "model": S.config.get("embedding_model", "")})
+    g = await graphiti()
+    vectors = await g.embedder.create_batch(texts)
+    return JSONResponse({"vectors": [list(map(float, v)) for v in vectors], "model": S.config.get("embedding_model", "")})
+
+
 @mcp.custom_route("/admin/facts", methods=["GET"])
 async def admin_facts(request: Request):
     """Fatos de um grupo: com q, os mais relevantes; sem q, os mais recentes (inclui substituídos)."""

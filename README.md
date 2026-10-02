@@ -25,7 +25,7 @@ MCP. Then come her Início page, the agent, a Playground answer, the team memory
 connections and the company catalog."></p>
 <p align="center"><sub>The user portal, recorded on a local install · <a href="docs/assets/portal-tour.mp4">MP4 version</a></sub></p>
 
-> **Status: alpha (v0.12).** It works end to end and is covered by tests, but APIs may still change. Run it inside
+> **Status: alpha (v0.13).** It works end to end and is covered by tests, but APIs may still change. Run it inside
 > your network until you have read [docs/security.md](docs/security.md).
 
 ## Why Agent Hangar
@@ -46,6 +46,10 @@ they cost or who approved them. Agent Hangar fixes that:
 - **Agents combine into new agents.** Put existing agents together as a team: a coordinator delegates to
   specialists (a researcher, an analyst, a writer), each keeping its own instructions, tools and model. The result
   is a new agent with a different role, reusing work that already exists.
+- **Reuse before you build.** Before creating an agent, the hangar searches the catalog (semantically, across
+  languages) for agents, skills and MCPs that already do part of the job. It builds the new agent from those pieces
+  and asks only for the skills that are missing. The pieces are read-only: nothing in them ever changes.
+  [docs/composer.md](docs/composer.md)
 - **Safe to run in a company.**
   - Every change is a new version, tested in stage before it reaches production.
   - Secrets stay encrypted, and the platform is self-hosted (Docker or Kubernetes).
@@ -353,13 +357,14 @@ hangar jobs run code-fixer "Add input validation to parse_date()" --follow
 | [Access, teams, SSO and the portal](docs/access.md) | Roles, approvals, budgets, OAuth2/SCIM, where each person lands |
 | [Memory](docs/memory.md) · [MCP catalog](docs/mcp-catalog.md) · [Remote MCPs + Activepieces](docs/remote-mcp.md) | What agents can know and use |
 | [Harnesses](docs/harnesses.md) | Claude Code, Codex, Hermes and DeepSeek Harness as agents |
+| [Reuse before you build](docs/composer.md) | New agents from existing ones: plan, pieces, skills, read-only rules |
 | [Kubernetes](docs/kubernetes.md) · [Terraform](deploy/terraform/README.md) | GKE, AKS, EKS: chart, high availability, vault secrets, cloud identity, one-`apply` stacks |
 | [Observability](docs/observability.md) · [Backup and upgrade](docs/backup.md) · [Supply chain](docs/supply-chain.md) | Metrics, logs, traces; `hangar backup`/`upgrade`; signed images and SBOM |
 | [API](docs/api.md) · [CLI](docs/cli.md) · [Security](docs/security.md) | Reference and hardening |
 
 ## Project status and roadmap
 
-v0.12 adds observability (Prometheus, JSON logs, OpenTelemetry), backup and upgrade (`hangar backup`/`upgrade`, pre-upgrade backups in the chart), vault secrets, cloud identity, signed images with SBOM, and Terraform for GKE, AKS and EKS. v0.11 added OAuth on the platform MCP (Claude.ai and ChatGPT on the web connect with just the URL) and high availability on Kubernetes (several central replicas). v0.10 added the guided installer (`hangar setup` / `hangar doctor`), tunnels (Cloudflare, ngrok, Tailscale) and Kubernetes (Helm chart, runtime driver, GKE/AKS/EKS presets). Earlier releases added code evaluations and code governance (v0.9), coding agents in VS Code (v0.8), the user portal (v0.7), long-term memory (v0.6), the MCP catalog with OAuth MCPs and
+v0.13 adds “reuse before you build”: new agents are composed from existing ones (semantic catalog search, read-only pieces, skills with their own tests). v0.12 added observability (Prometheus, JSON logs, OpenTelemetry), backup and upgrade (`hangar backup`/`upgrade`, pre-upgrade backups in the chart), vault secrets, cloud identity, signed images with SBOM, and Terraform for GKE, AKS and EKS. v0.11 added OAuth on the platform MCP (Claude.ai and ChatGPT on the web connect with just the URL) and high availability on Kubernetes (several central replicas). v0.10 added the guided installer (`hangar setup` / `hangar doctor`), tunnels (Cloudflare, ngrok, Tailscale) and Kubernetes (Helm chart, runtime driver, GKE/AKS/EKS presets). Earlier releases added code evaluations and code governance (v0.9), coding agents in VS Code (v0.8), the user portal (v0.7), long-term memory (v0.6), the MCP catalog with OAuth MCPs and
 Activepieces (v0.5), schedules and edit-after-ship (v0.4), and teams with SSO (v0.3). Next up: Slack/Teams adapters and egress allowlists for jobs. See
 [ROADMAP.md](ROADMAP.md), the [CHANGELOG](CHANGELOG.md) and the issues.
 

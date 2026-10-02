@@ -32,3 +32,15 @@ Put `maya_token.txt` and `maya_session.txt` in this folder. They are secrets: gi
 docker run --rm --network hangar_agents -v "$PWD:/demo" agent-hangar/central:latest python /demo/run_calls.py
 docker run --rm --network hangar_agents -v "$PWD:/demo" mcr.microsoft.com/playwright/python:v1.63.0-noble   sh -c "pip install -q playwright==1.63.0 && python /demo/capture.py main"
 ```
+
+## Live test of "reuse before you build"
+
+`compose_live.py` runs the composer for real as Maya, and `verify_live.py` checks the result:
+- `compose_live.py`: `plan_agent` with a Portuguese request against English agents, then `compose_agent` with the
+  suggested specialists and two new skills from the gap answers. It fingerprints the source agents before and after.
+- `verify_live.py`: after the new agent is shipped, approved and used, it checks that the pieces are unchanged and
+  prints the lineage and metrics.
+- `ui_check.py`: drives the portal screens with Playwright.
+
+The scripts need `admin_token.txt`, the ADMIN_TOKEN copied from `.env`. It is git-ignored; delete it after running.
+

@@ -647,7 +647,7 @@ def edit_agent(db: Session, acc: Access, slug: str, patch: dict, test: bool = Tr
     old_spec = copy.deepcopy(spec_of(a))
     old_meta = {k: getattr(a, k) for k in META_KEYS}
     if patch:
-        design_agent(db, slug, patch, acc.p.name)
+        design_agent(db, slug, patch, acc.p.name, acc=acc)
     changes = [{"path": k, "change": "changed", "from": old_meta[k], "to": getattr(a, k)}
                for k in META_KEYS if getattr(a, k) != old_meta[k]]
     changes += spec_diff(old_spec, spec_of(a))

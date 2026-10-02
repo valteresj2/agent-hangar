@@ -98,6 +98,17 @@ Discovery and token endpoints are open (CORS enabled); the consent and managemen
 | GET / DELETE | `/api/me/oauth[/{id}]` | Connected apps of the caller (admins: everyone's) / revoke one |
 | GET / DELETE | `/api/oauth/clients[/{client_id}]` | Admin: registered apps / block an app and all its authorizations |
 
+## Reuse before you build (`/api/compose`)
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/compose/plan` | `{request, capabilities?, limit?}` → similar agents (only visible, only in production), skills, MCPs, templates, access per piece, gaps and questions, `compose_hint` |
+| POST | `/api/compose` | Creates a NEW agent from pieces: `specialists`, `base`, `skills`, `new_skills`, `mcps`, `copy_tests_from`, plus only the new `instructions`/`tests`. Source agents are never changed |
+| GET | `/api/agents/{slug}/lineage` | `built_from` (base, specialists with versions and whether they changed since) and `used_by` |
+| GET | `/api/compose/stats` | Admins and auditors: plans, composed agents, reuse rate, tokens reused vs written |
+
+See [composer.md](composer.md). MCP tools: `plan_agent`, `compose_agent`, `agent_lineage`.
+
 ## User portal
 
 | Method | Path | Description |

@@ -16,12 +16,34 @@ HARNESS_PROTOCOL = {"claude-code": "anthropic", "codex": "openai", "hermes": "op
 
 
 # ------------------------------------------------------------------ skills e MCPs
-def upsert_skill(db: Session, name, description, content, actor="admin"):
-    s = db.scalar(select(Skill).where(Skill.name == name)) or Skill(name=name)
+def upsert_skill(db: Session, name, description, content, actor="admin", examples: str | None = None,
+                 test: dict | None = None, team_id: int | None = None, create_only: bool = False):
+    """Cria ou (admin) atualiza uma skill. `create_only`: nunca altera uma existente — quem usa a skill não muda sem
+    querer. Cada alteração sobe a versão; o teste da skill entra nos testes dos agentes montados com ela."""
+    from .. import spec as specmod
+    s = db.scalar(select(Skill).where(Skill.name == name))
+    if s and create_only:
+        raise PlatformError(f"Já existe a skill '{name}' (v{s.version}) — use-a como está ou escolha outro nome")
+    if test:
+        try:
+            test = specmod.TestCase(**test).model_dump(exclude_none=True)
+        except Exception as e:
+            raise PlatformError(f"teste da skill inválido: {e}") from None
+    if s is None:
+        s = Skill(name=name, version=1, team_id=team_id, created_by=actor)
+    else:
+        changed = (s.description, s.content, s.examples or "", s.test) != (
+            description or "", content or "", examples if examples is not None else (s.examples or ""),
+            test if test is not None else s.test)
+        s.version = (s.version or 1) + (1 if changed else 0)
     s.description, s.content = description or "", content or ""
+    if examples is not None:
+        s.examples = examples
+    if test is not None:
+        s.test = test
     db.add(s)
     db.commit()
-    audit(db, actor, "skill.upsert", name)
+    audit(db, actor, "skill.upsert", name, f"v{s.version}")
     return s
 
 

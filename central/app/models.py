@@ -105,11 +105,18 @@ class AuditLog(Base):
 
 
 class Skill(Base):
+    """Habilidade reutilizável (peça de montar agentes): procedimento/conhecimento em markdown, com exemplos e um
+    teste próprio que entra nos testes de quem a usa. `version` sobe a cada alteração."""
     __tablename__ = "skills"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)
     description: Mapped[str] = mapped_column(Text, default="")
     content: Mapped[str] = mapped_column(Text, default="")
+    examples: Mapped[str] = mapped_column(Text, default="")
+    test: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # um TestCase da spec ({name, input, judge…})
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(200), default="")
 
 
 class McpServer(Base):
@@ -436,3 +443,24 @@ class OAuthGrant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+# ------------------------------------------------------------------ montagem a partir do catálogo
+class AgentLineage(Base):
+    """De onde um agente montado veio: o plano, a base copiada e os especialistas que ele chama, com as versões em
+    produção no momento da montagem. Só registra — os agentes de origem nunca são alterados."""
+    __tablename__ = "agent_lineage"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), unique=True, index=True)
+    plan_id: Mapped[str] = mapped_column(String(40), default="")
+    mode: Mapped[str] = mapped_column(String(20), default="scratch")  # specialists | base | mixed | parts | scratch
+    based_on: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {slug, version}
+    specialists: Mapped[list] = mapped_column(JSON, default=list)  # [{slug, version}]
+    skills: Mapped[list] = mapped_column(JSON, default=list)  # nomes reutilizados do catálogo
+    new_skills: Mapped[list] = mapped_column(JSON, default=list)  # nomes criados na montagem
+    tests_copied: Mapped[int] = mapped_column(Integer, default=0)
+    reused_chars: Mapped[int] = mapped_column(Integer, default=0)  # texto aproveitado (≈ tokens × 4) que o LLM não gerou
+    written_chars: Mapped[int] = mapped_column(Integer, default=0)  # texto novo que veio do pedido
+    created_by: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
