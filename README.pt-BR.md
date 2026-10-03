@@ -122,6 +122,13 @@ admin e gera as configurações das ferramentas de IA. O guia completo está em 
 5. **Confira com `hangar doctor`:** ele testa Docker, a central, cada LLM, a memória, o endereço público e o TLS, o
    login, o MCP e a extensão do VS Code, e diz como corrigir o que falhar.
 
+### Numa VM na nuvem (AWS, Azure, Google Cloud)
+
+Uma VM com Docker roda a mesma stack: crie uma VM Ubuntu 24.04 com SSH aberto só para você, instale o Docker
+Engine, rode o instalador e escolha um túnel para o HTTPS (sem abrir portas). Os comandos passo a passo para EC2,
+Azure Virtual Machines e Compute Engine, cada um com o link da documentação oficial do provedor, estão em
+[docs/cloud-vm.md](docs/cloud-vm.md).
+
 ### No Kubernetes (GKE, AKS, EKS)
 
 O mesmo instalador implanta o chart Helm (`charts/agent-hangar`): cada agente vira um Deployment e cada execução de

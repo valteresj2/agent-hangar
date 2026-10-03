@@ -5,6 +5,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- [docs/cloud-vm.md](docs/cloud-vm.md): install on a cloud VM with Docker on AWS (EC2), Azure (Virtual Machines)
+  and Google Cloud (Compute Engine). It covers the VM with SSH open only to you, Docker Engine, the installer and a
+  tunnel for HTTPS. Each step links to the provider's documentation.
+
 ## [0.14.1] — 2026-10-03
 
 ### Added

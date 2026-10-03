@@ -155,6 +155,12 @@ To install without questions (automation, VM images), use `./scripts/install.sh 
 [`setup.example.yaml`](setup.example.yaml) as the model. To change an answer or upgrade, `git pull` and run
 `hangar setup` again: previous answers are the defaults and secrets are kept.
 
+### On a cloud VM (AWS, Azure, Google Cloud)
+
+One VM with Docker runs the same stack: create an Ubuntu 24.04 VM with SSH open only to you, install Docker Engine,
+run the installer and pick a tunnel for HTTPS (no inbound ports). Step-by-step commands for EC2, Azure Virtual
+Machines and Compute Engine, each linked to the provider's documentation: [docs/cloud-vm.md](docs/cloud-vm.md).
+
 ### On Kubernetes (GKE, AKS, EKS)
 
 The same installer deploys the Helm chart (`charts/agent-hangar`); agents become Deployments and harness runs become

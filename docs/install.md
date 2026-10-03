@@ -9,7 +9,8 @@ The guided installer, `hangar setup`, asks a few questions and does everything e
 - generates the configuration of your AI tools.
 
 `hangar doctor` checks the result and tells you how to fix each problem. This guide covers **Docker** on one machine:
-a laptop, a VM or an on-premises server. For a cluster (GKE, AKS, EKS), see [kubernetes.md](kubernetes.md).
+a laptop, a VM or an on-premises server. For a VM on AWS, Azure or Google Cloud, see [cloud-vm.md](cloud-vm.md) (create
+the VM, install Docker, then this guide). For a cluster (GKE, AKS, EKS), see [kubernetes.md](kubernetes.md).
 
 ## 1. Requirements
 
