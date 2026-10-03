@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-10-03
+
 ### Added
 - **English portal and console.** Both web apps are now available in English and Portuguese.
   - The first visit follows the browser's language; the **PT · EN** switch (sidebar footer and sign-in page) changes
@@ -19,6 +21,8 @@ All notable changes to this project are documented here. The format follows
   stale socket left on the volume (`unlink-early`).
 
 ### Changed
+- Issue forms ask for the install method and the client involved, and a new form covers integration requests
+  (clients, harnesses, LLM providers, MCP servers, templates).
 - The published images on ghcr.io are now public, except `harness-claude-code`: Claude Code's license does not allow
   redistributing it. `hangar setup` builds that image locally when the coding-harness extra is chosen with published
   images. See [docs/harnesses.md](docs/harnesses.md#the-claude-code-image-is-not-published).
