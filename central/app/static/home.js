@@ -83,7 +83,7 @@ async function homePage() {
 
     <div class="card"><div class="row between"><h2>No catálogo da empresa</h2><a href="#/agents/catalog" class="small">Ver catálogo →</a></div>
       ${h.catalog_news.length ? h.catalog_news.map(a => `<div class="row between li"><span><a href="#/agents/${esc(a.slug)}"><b>${esc(a.name)}</b></a>
-          <div class="mute small one-line" style="max-width:360px" title="${esc(a.objective)}">${esc(a.team || '')} · ${esc(a.objective)}</div></span>
+          <div class="mute small one-line" data-noi18n style="max-width:360px" title="${esc(a.objective)}">${esc(a.team || '')} · ${esc(a.objective)}</div></span>
           ${a.access === 'viewer' ? `<button class="ghost ar-go" data-s="${esc(a.slug)}">Pedir acesso</button>` : '<span class="pill info">pode usar</span>'}</div>`).join('')
         : '<div class="mute small">Nenhum agente de outros times publicado para você ainda.</div>'}</div>
   </div>`;
@@ -97,7 +97,7 @@ function homeAgentCard(a) {
   const env = `<span class="dot ${a.stage ? 'on' : ''}"></span>stage &nbsp;<span class="dot ${a.prod ? 'on' : ''}"></span>prod${a.prod_version ? ` v${a.prod_version}` : ''}`;
   return `<div class="card agent-card">
     <div class="row between"><a href="#/agents/${esc(a.slug)}"><b>${esc(a.name)}</b></a>${pill(a.status)}</div>
-    <div class="mute small one-line" title="${esc(a.objective)}">${esc(a.objective)}</div>
+    <div class="mute small one-line" data-noi18n title="${esc(a.objective)}">${esc(a.objective)}</div>
     <div class="small mt">${env}</div>
     <div class="row small mt" style="gap:6px;flex-wrap:wrap">${a.team ? `<span class="chip">${icon('team')}${esc(a.team)}</span>` : ''}
       <span class="pill">${esc(HOME_ACCESS[a.access] || a.access || '')}</span>

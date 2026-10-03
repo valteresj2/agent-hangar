@@ -242,3 +242,10 @@ h3.up{font:600 12px/1.2 var(--f-ui);text-transform:uppercase;letter-spacing:.06e
 .msg.md{white-space:normal}
 .msg.run-out{max-width:none;margin-top:8px}
 .nowrap { white-space: nowrap; }
+
+/* seletor de idioma */
+.lang-sw{font-size:11px;letter-spacing:.04em;padding:3px 7px;min-height:28px;white-space:nowrap}
+.side-foot .row{flex-wrap:nowrap;gap:6px}.side-foot .row button{white-space:nowrap;padding:4px 7px}.side-foot .row #ver{margin-right:auto}
+.lang-sw b{font-weight:700}
+.lang-float{display:none;position:fixed;top:14px;right:16px;z-index:50}
+body.login-mode .lang-float{display:inline-flex}

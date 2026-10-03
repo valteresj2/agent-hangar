@@ -1,0 +1,37 @@
+name: Integration request
+description: Connect a new client, harness, LLM provider or MCP server
+labels: [enhancement, integration]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of integration?
+      options:
+        - Client (a chat app or IDE that should use hangar agents)
+        - Coding harness (a CLI agent that runs in a job container)
+        - LLM provider (a new connection protocol or gateway)
+        - MCP server (catalog entry or remote MCP with OAuth)
+        - Agent template
+        - Other
+    validations: {required: true}
+  - type: input
+    id: name
+    attributes:
+      label: Name and link
+      placeholder: "e.g. Zed editor — https://zed.dev"
+    validations: {required: true}
+  - type: textarea
+    id: how
+    attributes:
+      label: How does it connect today?
+      description: >-
+        Protocol (MCP Streamable HTTP, OpenAI-compatible, A2A, ACP…), auth method, and links to its docs. Say whether
+        you tried it already with the hangar's MCP or OpenAI-compatible endpoint, and what broke.
+    validations: {required: true}
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contribution
+      options:
+        - label: I can test a pull request against this integration.
+        - label: I would like to write the pull request (see CONTRIBUTING.md).

@@ -1,5 +1,11 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Documentation
+    url: https://github.com/valteresj2/agent-hangar/tree/main/docs
+    about: Install, concepts, access model, clients, Kubernetes and the API.
+  - name: Interactive demo
+    url: https://valteresj2.github.io/agent-hangar/demo/
+    about: A 12-step tour of the portal, no install needed.
   - name: Security vulnerability
     url: https://github.com/valteresj2/agent-hangar/security/advisories/new
     about: Please report security issues privately.

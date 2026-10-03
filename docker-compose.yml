@@ -251,7 +251,8 @@ services:
   mcp-gateway-shim:
     profiles: [mcp-gateway]
     image: alpine/socat:1.8.0.3
-    command: UNIX-LISTEN:/sock/docker.sock,fork,mode=660 TCP:mcp-gateway-docker:2375
+    # unlink-early: se o Docker caiu sem desligar limpo, o socket antigo fica no volume e o socat recusaria subir
+    command: UNIX-LISTEN:/sock/docker.sock,fork,mode=660,unlink-early TCP:mcp-gateway-docker:2375
     depends_on: [mcp-gateway-docker]
     volumes:
       - mcp_gateway_sock:/sock

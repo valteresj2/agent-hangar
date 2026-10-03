@@ -18,12 +18,29 @@ body:
     id: version
     attributes:
       label: Version
-      placeholder: "0.1.0 (see the UI sidebar or GET /api/health)"
+      placeholder: "0.13.0 (sidebar footer of the portal, or GET /api/health)"
+    validations: {required: true}
+  - type: dropdown
+    id: install
+    attributes:
+      label: How is it installed?
+      options:
+        - Docker Compose (hangar setup)
+        - Docker Compose (manual)
+        - Kubernetes (Helm chart)
+        - Kubernetes (Terraform module)
+        - Other
+    validations: {required: true}
   - type: input
     id: env
     attributes:
       label: Environment
-      placeholder: "Docker Desktop 4.x on Windows / Docker Engine on Ubuntu 24.04"
+      placeholder: "Docker Desktop 4.x on Windows / Docker Engine on Ubuntu 24.04 / GKE 1.33"
+  - type: input
+    id: client
+    attributes:
+      label: Client or harness involved (if any)
+      placeholder: "Claude.ai (OAuth), Claude Code, ChatGPT, Codex, VS Code, LibreChat, harness codex…"
   - type: textarea
     id: logs
     attributes:

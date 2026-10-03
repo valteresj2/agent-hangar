@@ -174,7 +174,7 @@ async function teamsPage(openForm) {
       <label class="row small" style="align-self:end"><input type="checkbox" id="tm-appr" checked style="width:auto"> Produção exige aprovação de outro mantenedor</label></div>
     <div class="row mt"><button id="tm-go">Criar time</button><button id="tm-cancel" class="ghost">Cancelar</button><span class="mute small">Crie quantos times quiser; depois adicione os membros em cada um.</span></div></div>` : ''}
   <div class="grid g3 mt">${list.map(t => `<div class="card click-card" onclick="location.hash='#/teams/${t.slug}'"><div class="row between"><h2>${esc(t.name)}</h2>${t.my_role ? `<span class="pill ok">${esc(ROLE_LABEL[t.my_role])}</span>` : ''}</div>
-    <div class="mute small">${esc(t.description) || '&nbsp;'}</div><div class="row mt small"><span class="chip">${icon('team')}${t.members} membros</span><span class="chip">${icon('bot')}${t.agents} agentes</span>${t.require_approval ? '<span class="chip">aprovação p/ produção</span>' : ''}</div>
+    <div class="mute small" data-noi18n>${esc(t.description) || '&nbsp;'}</div><div class="row mt small"><span class="chip">${icon('team')}${t.members} membros</span><span class="chip">${icon('bot')}${t.agents} agentes</span>${t.require_approval ? '<span class="chip">aprovação p/ produção</span>' : ''}</div>
     <div class="mt">${budgetBar(t)}</div></div>`).join('')}</div>`;
   const form = $('#tm-form');
   if (!form) return;
@@ -420,7 +420,7 @@ async function gatewayCatalog(box, q = '') {
     <div class="grid g3 mt">${(cat.servers || []).map(s => `<div class="card gw-item">
       <div class="row between"><b>${esc(s.title)}</b>${s.enabled ? '<span class="pill ok">ativo</span>' : ''}</div>
       <div class="mute small"><code>${esc(s.name)}</code>${s.secrets.length ? ` · precisa de ${s.secrets.length} segredo(s)` : ''}</div>
-      <div class="small mt one-line" style="white-space:normal;max-height:4.5em" title="${esc(s.description)}">${esc(s.description)}</div>
+      <div class="small mt one-line" data-noi18n style="white-space:normal;max-height:4.5em" title="${esc(s.description)}">${esc(s.description)}</div>
       ${s.enabled && tools[s.name] ? `<div class="mute small mt">${tools[s.name].length} ferramentas: ${esc(tools[s.name].slice(0, 6).join(', '))}${tools[s.name].length > 6 ? '…' : ''}</div>` : ''}
       <div class="gw-form" data-n="${esc(s.name)}" hidden>${s.secrets.map(x => `<label class="mt">${esc(x.name)}<input type="password" data-secret="${esc(x.name)}" placeholder="${s.enabled ? '•••••• (salvo — vazio mantém)' : esc(x.example || 'valor')}" autocomplete="new-password"></label>`).join('')}
         ${s.config.map(x => `<label class="mt">${esc(x.name)}<input data-config="${esc(x.name)}" placeholder="${esc(x.description || x.type)}"></label>`).join('')}</div>
@@ -483,7 +483,7 @@ async function remoteMcps(box) {
 
 /* ---------- agente: aba Memória (Graphiti) ---------- */
 const MEM_SCOPE = { agent: 'só este agente', team: 'compartilhada com o time', org: 'compartilhada com a empresa' };
-const memDate = iso => iso ? new Date(iso).toLocaleDateString('pt-BR') : '—';
+const memDate = iso => iso ? new Date(iso).toLocaleDateString(window.LOCALE || 'pt-BR') : '—';
 
 async function agentMemory(t, a, env = 'prod', q = '') {
   const mem = a.spec && a.spec.memory;

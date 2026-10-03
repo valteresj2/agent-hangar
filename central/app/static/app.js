@@ -11,7 +11,7 @@ if (typeof icon !== 'function' || typeof boot !== 'function' || (USER_MODE && ty
 const $ = (s, r = document) => r.querySelector(s);
 const main = $('#main');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const fmt = n => n == null ? '—' : Number(n).toLocaleString('pt-BR');
+const fmt = n => n == null ? '—' : Number(n).toLocaleString(window.LOCALE || 'pt-BR');
 const ago = iso => {
   if (!iso) return '—';
   const s = (Date.now() - new Date(iso)) / 1000;
@@ -133,13 +133,13 @@ async function agentsPage(view) {
     const rows = shown.filter(a => (a.name + a.slug + a.objective).toLowerCase().includes(q) && (!tf || (a.team && a.team.name === tf)));
     $('#rows').innerHTML = rows.length ? rows.map(a => catalogView ? `
       <tr class="click strip st-${a.status}" onclick="location.hash='#/agents/${a.slug}'">
-        <td class="agent-cell"><b>${esc(a.name)}</b><div class="mute small one-line" title="${esc(a.objective)}">${esc(a.objective)}</div></td>
+        <td class="agent-cell"><b>${esc(a.name)}</b><div class="mute small one-line" data-noi18n title="${esc(a.objective)}">${esc(a.objective)}</div></td>
         <td>${esc(a.team ? a.team.name : '—')}</td><td>${kindPill(a.kind)} ${harnessPill(a.harness)}</td>
         <td>${a.prod ? '<span class="pill ok">em produção</span>' : pill(a.status)}</td>
         <td>${a.last_test ? pill(a.last_test.status) : '<span class="mute">—</span>'}</td><td>${visPill(a.visibility)}</td><td>${accessPill(a.access)}</td>
         <td>${a.access === 'viewer' ? `<button class="ghost ar-go" data-s="${a.slug}" onclick="event.stopPropagation()">Solicitar acesso</button>` : ''}</td></tr>` : `
       <tr class="click strip st-${a.status}" onclick="location.hash='#/agents/${a.slug}'">
-        <td class="agent-cell"><b>${esc(a.name)}</b><div class="mute small one-line" title="${esc(a.objective)}"><code>${esc(a.slug)}</code> ${esc(a.objective)}</div></td>
+        <td class="agent-cell"><b>${esc(a.name)}</b><div class="mute small one-line" data-noi18n title="${esc(a.objective)}"><code>${esc(a.slug)}</code> ${esc(a.objective)}</div></td>
         <td>${esc(a.team ? a.team.name : '—')}<div>${accessPill(a.access)}</div></td>
         <td>${kindPill(a.kind)} ${harnessPill(a.harness)}</td><td>${pill(a.status)}${a.pending_promotion ? ' <span class="pill warn">aguarda aprovação</span>' : ''}</td><td>v${a.version}</td>
         <td><span class="dot ${a.stage ? 'on' : ''}"></span>stage &nbsp;<span class="dot ${a.prod ? 'on' : ''}"></span>prod</td>
@@ -275,7 +275,7 @@ async function agentDetail(slug, tab = 'overview') {
   main.innerHTML = `
   <div class="row between"><div><a href="#/agents${['viewer'].includes(a.access) ? '/catalog' : ''}" class="mute small">← Agentes</a>
     <h1>${esc(a.name)} ${kindPill(a.kind)} ${harnessPill(a.harness)} ${pill(a.status)}</h1>
-    <div class="sub">${esc(a.objective)}</div><div class="row small" style="margin:-10px 0 4px"><span class="chip" title="Time dono">${icon('team')}${esc(a.team ? a.team.name : '—')}</span>${visPill(a.visibility)}${accessPill(a.access) ? `<span class="mute">Seu acesso</span>${accessPill(a.access)}` : ''}</div></div>
+    <div class="sub" data-noi18n>${esc(a.objective)}</div><div class="row small" style="margin:-10px 0 4px"><span class="chip" title="Time dono">${icon('team')}${esc(a.team ? a.team.name : '—')}</span>${visPill(a.visibility)}${accessPill(a.access) ? `<span class="mute">Seu acesso</span>${accessPill(a.access)}` : ''}</div></div>
     <div class="row">
       ${can(a, 'edit') ? `<button id="b-test" class="ghost">Rodar testes</button>
       <button id="b-stage" class="ghost">Deploy stage</button>
@@ -333,7 +333,7 @@ async function agentConnect(t, a) {
   $('#cn-test').onclick = e => act(e.target, async () => {
     const r = await api(`/agents/${a.slug}/connections/test`, { method: 'POST', body: { env: $('#cn-tenv').value } });
     $('#cn-tres').innerHTML = `<div class="mt">${r.ok ? '<span class="pill ok">conexão funcionando</span>' : '<span class="pill bad">falhou</span>'}
-      <ul class="list mt">${r.steps.map(s => `<li><span>${s.ok ? '✓' : '✗'} ${esc(s.name)}<div class="mute small">${esc(s.detail)}</div></span><span class="mute small">${s.ms != null ? s.ms + ' ms' : ''}</span></li>`).join('')}</ul></div>`;
+      <ul class="list mt">${r.steps.map(s => `<li><span>${s.ok ? '✓' : '✗'} ${esc(s.name)}<div class="mute small" data-noi18n>${esc(s.detail)}</div></span><span class="mute small">${s.ms != null ? s.ms + ' ms' : ''}</span></li>`).join('')}</ul></div>`;
   });
   t.querySelectorAll('.cn-go').forEach(b => b.onclick = e => act(e.target, async () => {
     const r = await api(`/agents/${a.slug}/connections`, { method: 'POST', body: { client: b.dataset.c, mode: b.dataset.m } });
@@ -445,9 +445,9 @@ function versions(t, a) {
 }
 
 function testCard(r) {
-  return `<div class="card mt"><div class="row between"><div>${pill(r.status)} <b>v${r.version}</b> · ${esc(r.env)} · ${esc(r.summary)}</div>
+  return `<div class="card mt"><div class="row between"><div>${pill(r.status)} <b>v${r.version}</b> · ${esc(r.env)} · <span data-noi18n>${esc(r.summary)}</span></div>
     <span class="mute small">${ago(r.created_at)} atrás · ${r.duration_ms}ms</span></div>
-    <table>${r.results.map(x => `<tr><td style="width:24px">${x.passed ? `${icon('check', 'ok-ic')}` : `${icon('x', 'bad-ic')}`}</td><td>${esc(x.name)}</td><td class="mute small">${esc(x.detail)}</td><td class="mute small">${x.latency_ms}ms</td></tr>`).join('')}</table></div>`;
+    <table>${r.results.map(x => `<tr><td style="width:24px">${x.passed ? `${icon('check', 'ok-ic')}` : `${icon('x', 'bad-ic')}`}</td><td data-noi18n>${esc(x.name)}</td><td class="mute small" data-noi18n>${esc(x.detail)}</td><td class="mute small">${x.latency_ms}ms</td></tr>`).join('')}</table></div>`;
 }
 function tests(t, a) {
   t.innerHTML = a.tests.length ? a.tests.map(testCard).join('') : '<div class="empty">Nenhum teste registrado. Clique em “Rodar testes”.</div>';
@@ -456,7 +456,7 @@ function tests(t, a) {
 function jobCard(j) {
   return `<div class="card mt"><div class="row between"><div>${pill(j.status)} <b>#${j.id}</b> · v${j.version} · ${esc(j.env)} · ${esc(j.harness_id)}${j.connection ? ' · ' + esc(j.connection) : ' · mock'}</div>
     <span class="mute small">${ago(j.created_at)} atrás · ${fmt(j.duration_ms)}ms · ${fmt((j.tokens_in || 0) + (j.tokens_out || 0))} tokens · ${usd(j.cost_usd)}</span></div>
-    <div class="mt"><b>Tarefa:</b> ${esc(j.task)}</div>
+    <div class="mt"><b>Tarefa:</b> <span data-noi18n>${esc(j.task)}</span></div>
     <div class="mt"><b>Resultado:</b><pre>${esc(j.result) || '(vazio)'}</pre></div>
     ${j.diff ? `<details class="mt"><summary>Diff</summary><pre>${esc(j.diff)}</pre></details>` : ''}
     ${j.logs ? `<details class="mt"><summary>Logs</summary><pre>${esc(j.logs)}</pre></details>` : ''}</div>`;
@@ -611,7 +611,7 @@ async function catalogPage() {
         <input id="lc-pin" type="number" step="0.01" min="0" placeholder="US$ por 1M tokens de entrada">
         <input id="lc-pout" type="number" step="0.01" min="0" placeholder="US$ por 1M tokens de saída"></div>
       <input id="lc-desc" placeholder="descrição (opcional)" class="mt"><button id="lc-add" class="mt">Salvar conexão</button></details></div>
-  <div class="grid g2 mt"><div class="card"><h2>Skills (${c.skills.length})</h2>${c.skills.map(s => `<div class="mt"><b>${esc(s.name)}</b><div class="mute small">${esc(s.description)}</div><details><summary>conteúdo</summary><pre>${esc(s.content)}</pre></details></div>`).join('') || '<div class="mute">Nenhuma — registre pelo chat (<code>register_skill</code>) ou abaixo</div>'}
+  <div class="grid g2 mt"><div class="card"><h2>Skills (${c.skills.length})</h2>${c.skills.map(s => `<div class="mt"><b>${esc(s.name)}</b><div class="mute small" data-noi18n>${esc(s.description)}</div><details><summary>conteúdo</summary><pre>${esc(s.content)}</pre></details></div>`).join('') || '<div class="mute">Nenhuma — registre pelo chat (<code>register_skill</code>) ou abaixo</div>'}
     <details class="mt"><summary>Adicionar skill</summary><input id="sk-name" placeholder="nome" class="mt"><input id="sk-desc" placeholder="descrição" class="mt"><textarea id="sk-content" placeholder="conteúdo (markdown)" rows="4" class="mt"></textarea><button id="sk-add" class="mt">Salvar skill</button></details></div>
   <div class="card"><h2>MCP servers (${c.mcp_servers.length})</h2>${c.mcp_servers.map(m => `<div class="mt"><b>${esc(m.name)}</b>${m.tool_prefix ? ' <span class="chip">catálogo Docker</span>' : ''}<div>${copyable(m.url)}</div><div class="mute small">${esc(m.description)}</div></div>`).join('') || '<div class="mute">Nenhum</div>'}
     <details class="mt"><summary>Adicionar MCP server</summary><input id="mc-name" placeholder="nome" class="mt"><input id="mc-url" placeholder="url (Streamable HTTP)" class="mt"><input id="mc-desc" placeholder="descrição" class="mt"><button id="mc-add" class="mt">Salvar MCP</button></details></div></div>
@@ -829,7 +829,7 @@ async function templatesPage() {
   main.innerHTML = `<h1>Templates</h1><div class="sub">Agentes prontos para aplicar, testar e shipar. Sem conexão de LLM eles nascem em modo mock (bom para ver o fluxo).</div>
   ${myTeams.length ? `<div class="card row"><b>Aplicar no time</b><select id="tp-team" style="width:auto">${myTeams.map(t => `<option value="${esc(t.slug)}">${esc(t.name)}</option>`).join('')}</select></div>` : '<div class="card warn-card">Só developers e maintainers de um time aplicam templates.</div>'}<div class="mt"></div>
   <div class="grid g2">${list.map(t => `<div class="card tpl"><div class="row between"><h2>${esc(t.title)}</h2>${t.harness ? harnessPill({ id: t.harness }) : t.agents.length > 1 ? kindPill('multi') : kindPill('single')}</div>
-    <div>${esc(t.description)}</div><div class="mt">${t.tags.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div>
+    <div data-noi18n>${esc(t.description)}</div><div class="mt">${t.tags.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div>
     <div class="mute small mt">Agentes: ${t.agents.map(esc).join(', ')}<br>Precisa de: ${esc(t.needs)}</div>
     <div class="grid g2 mt">${t.harness
       ? `<select id="tp-${t.id}-h">${opts(HP[t.harness], `conexão ${HP[t.harness]} (vazio = mock)`)}</select>`
@@ -851,7 +851,7 @@ async function templatesPage() {
 async function auditPage() {
   const l = await api('/audit');
   main.innerHTML = `<h1>Auditoria</h1><div class="sub">Tudo que foi criado, alterado, testado e deployado</div><div class="card"><table><tr><th>Quando</th><th>Ator</th><th>Ação</th><th>Alvo</th><th>Detalhe</th></tr>
-  ${l.map(r => `<tr><td class="mute">${ago(r.at)}</td><td>${esc(r.actor)}</td><td><code class="inline">${esc(r.action)}</code></td><td>${esc(r.target)}</td><td class="mute small">${esc(r.detail)}</td></tr>`).join('')}</table></div>`;
+  ${l.map(r => `<tr><td class="mute">${ago(r.at)}</td><td>${esc(r.actor)}</td><td><code class="inline">${esc(r.action)}</code></td><td data-noi18n>${esc(r.target)}</td><td class="mute small" data-noi18n>${esc(r.detail)}</td></tr>`).join('')}</table></div>`;
 }
 
 /* ---------- roteamento ---------- */

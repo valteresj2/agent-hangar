@@ -90,6 +90,10 @@ reproduzem a demo estão em [scripts/demo/portal-tour](scripts/demo/portal-tour/
   pedidos, as chaves e os times.
 - **`/ui/`** é o console de administração, só para admins.
 - O login é o mesmo, e cada pessoa cai no lugar certo.
+- Os dois apps estão em **português e inglês**. Na primeira visita vale o idioma do navegador; o seletor **PT · EN**
+  (rodapé do menu e tela de login) troca, e a escolha fica guardada naquele navegador. O que pessoas e agentes
+  escreveram (nomes, descrições, conversas, saídas de teste, auditoria) aparece como foi escrito. Mensagens geradas
+  pelo servidor (erros da API, instruções do MCP, recomendação do composer) continuam em português.
 
 ## Instalação (passo a passo)
 
