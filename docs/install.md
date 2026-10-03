@@ -19,6 +19,11 @@ a laptop, a VM or an on-premises server. For a cluster (GKE, AKS, EKS), see [kub
 | Python | **3.10+**, used only to run the installer |
 | Machine | 4 vCPU / 8 GB RAM for the base stack; add 2–4 GB for memory (Neo4j) and Data Studio |
 | Network | Outbound HTTPS to your LLM provider and to `ghcr.io` (published images) |
+| CPU | **x86-64 (amd64) or ARM64**: the published images are multi-architecture since 0.14.1 (Apple Silicon Macs, AWS Graviton, Azure Ampere, GKE T2A) |
+
+One install per Docker host: the stack uses fixed network and volume names (`hangar_agents`, `hangar_jobs`…), so a
+second copy on the same machine would share them. For a second environment, use another machine, a VM or Kubernetes
+(one namespace each).
 
 ## 2. Run the installer
 

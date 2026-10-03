@@ -368,12 +368,15 @@ async def build_multi_agent(ctx: Context, name: str, objective: str, final_outpu
 @mcp.tool()
 async def list_agents(ctx: Context) -> list:
     """Agentes que você pode ver: os dos seus times e os do catálogo da empresa (com o seu nível de acesso),
-    status, versão, onde rodam e uso dos últimos 7 dias."""
+    status, versão, onde rodam e uso dos últimos 7 dias. `status`/`version` são da versão mais nova (pode ser um
+    rascunho); `stage_version`/`prod_version` dizem qual versão está rodando em cada ambiente (null = parado)."""
     def go(db, acc):
         keep = ("slug", "name", "kind", "status", "version", "model", "requests_7d", "cost_7d", "visibility",
                 "access")
-        return [{k: a.get(k) for k in keep} | {"team": (a.get("team") or {}).get("slug"), "stage": bool(a["stage"]),
-                                             "prod": bool(a["prod"])} for a in svc.list_agents(db, acc)]
+        return [{k: a.get(k) for k in keep} | {"team": (a.get("team") or {}).get("slug"),
+                                             "stage_version": (a["stage"] or {}).get("version"),
+                                             "prod_version": (a["prod"] or {}).get("version")}
+                for a in svc.list_agents(db, acc)]
     return await _run(ctx, go)
 
 

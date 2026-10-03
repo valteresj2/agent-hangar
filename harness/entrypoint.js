@@ -9,6 +9,9 @@ const path = require('node:path');
 
 const env = process.env;
 const WORKDIR = '/workspace';
+// No Kubernetes o volume do workspace pertence a outro uid (emptyDir de root): sem isto o git recusa o repositório
+// ("dubious ownership") e o diff do job sai vazio. Vai pelo ambiente, então vale também para os CLIs dos harnesses.
+if (!env.GIT_CONFIG_COUNT) Object.assign(env, { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'safe.directory', GIT_CONFIG_VALUE_0: '*' });
 const REAL_HARNESS_ID = env.HARNESS_ID || env.MODE || 'claude-code'; // MODE: compat. com versão anterior
 const TASK = env.TASK || '';
 const SYSTEM_PROMPT = env.SYSTEM_PROMPT || '';

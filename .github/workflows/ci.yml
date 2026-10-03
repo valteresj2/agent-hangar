@@ -31,6 +31,22 @@ jobs:
           node --check harness/entrypoint.js
           node --check harness/eval_runner.js
 
+  # Instalador e CLI no macOS (Apple Silicon): ferramentas BSD, venv, `hangar setup --answers` até o .env.
+  # O runner não tem Docker; a subida da stack é coberta pelo job e2e (Linux).
+  installer-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Installer (setup.sh, install.sh, hangar setup --no-start)
+        run: sh .github/ci/macos_install_check.sh
+      - name: CLI tests (and the central's dependencies on macOS arm64)
+        run: |
+          pip install -q -r central/requirements.txt pytest -e ./cli
+          pytest -q tests/test_cli_setup.py tests/test_cli_backup.py
+
   helm-chart:
     runs-on: ubuntu-latest
     steps:
@@ -113,6 +129,8 @@ jobs:
         run: |
           pip install httpx
           HANGAR_TOKEN=$(grep '^ADMIN_TOKEN=' .env | cut -d= -f2-) SMOKE_DATA_STUDIO=1 python tests/e2e/smoke.py
+      - name: Harness job with a workspace owned by another user (Kubernetes emptyDir)
+        run: sh harness/tests/workspace_owner_check.sh agent-hangar/harness-base:latest
       - name: Logs on failure
         if: failure()
         run: docker compose logs --tail 200 central

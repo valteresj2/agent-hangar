@@ -5,6 +5,31 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.14.1] — 2026-10-03
+
+### Added
+- **ARM64 images.** Every published image is now multi-architecture (amd64 and arm64), built on native runners:
+  Apple Silicon Macs run without emulation, and Kubernetes clusters with ARM nodes (AWS Graviton, Azure Ampere,
+  GKE T2A) work.
+- `list_agents` (MCP) returns `stage_version` and `prod_version`: the version running in each environment. `status`
+  and `version` are the newest version, which can be a draft while production keeps running an older one.
+- CI:
+  - the installer and the CLI are tested on macOS;
+  - a regression check runs a harness job with a workspace owned by another user, as on Kubernetes;
+  - responses with a 4xx status on `/mcp` are logged with the JSON-RPC method, the protocol version and the error,
+    to diagnose clients without reproducing.
+
+### Fixed
+- **Harness jobs on Kubernetes returned no diff.** The workspace volume belongs to root there, and git refused it
+  ("dubious ownership"). The harness entrypoint now trusts the workspace for git and for the harness CLIs.
+
+### Verified
+- A clean install from the published 0.14.0 images (`install.sh --answers`, inside an isolated Docker) passed the
+  end-to-end smoke test (19 checks). This includes the coding-harness extra, which builds the Claude Code image
+  locally.
+- The 0.14.0 chart, installed from `oci://ghcr.io/valteresj2/charts` on k3s with images pulled anonymously from
+  ghcr.io, passed the same smoke test once the fix above was applied.
+
 ## [0.14.0] — 2026-10-03
 
 ### Added

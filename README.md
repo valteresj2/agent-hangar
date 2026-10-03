@@ -122,7 +122,8 @@ A guided installer asks a few questions and does the rest: it writes `.env`, sta
 your LLM, creates the admin and generates the configuration of your AI tools. Full guide:
 [docs/install.md](docs/install.md).
 
-**1. Requirements.** Docker (Desktop or Engine) with Compose 2.20+, and Python 3.10+ to run the installer.
+**1. Requirements.** Docker (Desktop or Engine) with Compose 2.20+, and Python 3.10+ to run the installer. Intel/AMD
+and ARM64 (Apple Silicon, Graviton) are both supported.
 
 **2. Run the installer.**
 

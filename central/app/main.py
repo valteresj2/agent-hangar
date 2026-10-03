@@ -134,7 +134,37 @@ class AuthMiddleware:
             return await JSONResponse({"error": "forbidden: a credencial não tem permissão para este recurso"},
                                       403)(scope, receive, send)
         scope.setdefault("state", {})["principal"] = principal
+        if path.startswith("/mcp"):
+            return await _mcp_logging(self.app, scope, receive, send, headers)
         return await self.app(scope, receive, send)
+
+
+_RPC_METHOD = re.compile(rb'"method"\s*:\s*"([\w/.-]{1,60})"')
+
+
+async def _mcp_logging(app_, scope, receive, send, headers):
+    """Registra o motivo das respostas 4xx do /mcp (método JSON-RPC, versão do protocolo, Accept e o erro
+    devolvido), para diagnosticar clientes (Claude.ai, ChatGPT…) sem precisar reproduzir. Nunca o token nem o
+    corpo da requisição."""
+    seen = {"method": b"", "status": 0}
+
+    async def recv():
+        msg = await receive()
+        if msg.get("type") == "http.request" and not seen["method"]:
+            m = _RPC_METHOD.search(msg.get("body", b"")[:2000])
+            seen["method"] = m.group(1) if m else b"?"
+        return msg
+
+    async def snd(msg):
+        if msg["type"] == "http.response.start":
+            seen["status"] = msg["status"]
+        elif msg["type"] == "http.response.body" and 400 <= seen["status"] < 500 and seen["status"] != 401:
+            log.warning("mcp %s %s: method=%s protocol=%s accept=%s error=%s", scope["method"], seen["status"],
+                        seen["method"].decode(), headers.get("mcp-protocol-version", "-"), headers.get("accept", "-"),
+                        msg.get("body", b"")[:200].decode(errors="replace"))
+            seen["status"] = 0
+        await send(msg)
+    return await app_(scope, recv, snd)
 
 
 app.add_middleware(AuthMiddleware)

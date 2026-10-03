@@ -11,12 +11,14 @@ permissions:
   id-token: write   # assinatura keyless (cosign + OIDC do GitHub): sem chave privada para guardar
 
 jobs:
-  images:
-    runs-on: ubuntu-latest
+  # Cada imagem é construída em runner nativo de cada arquitetura (amd64 e arm64: Graviton, Ampere, T2A, Macs M1+)
+  # e enviada só por digest; o job "images" junta as duas num índice multi-arquitetura, põe as tags e assina.
+  build:
+    runs-on: ${{ matrix.arch.runner }}
     strategy:
       fail-fast: false
       matrix:
-        include:
+        image:
           - {name: central, context: ., file: central/Dockerfile, target: ""}
           - {name: agent-runtime, context: runtime, file: runtime/Dockerfile, target: ""}
           - {name: harness-base, context: harness, file: harness/Dockerfile, target: base}
@@ -26,8 +28,60 @@ jobs:
           - {name: harness-hermes, context: harness, file: harness/Dockerfile, target: hermes}
           - {name: mcp-data-studio, context: mcp-servers/data-studio, file: mcp-servers/data-studio/Dockerfile, target: ""}
           - {name: mcp-memory, context: mcp-servers/memory, file: mcp-servers/memory/Dockerfile, target: ""}
+        arch:
+          - {platform: linux/amd64, runner: ubuntu-latest, tag: amd64}
+          - {platform: linux/arm64, runner: ubuntu-24.04-arm, tag: arm64}
     steps:
       - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image.name }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.file }}
+          target: ${{ matrix.image.target }}
+          platforms: ${{ matrix.arch.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/${{ matrix.image.name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.arch.tag }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}-${{ matrix.arch.tag }}
+          sbom: true                # SBOM (SPDX) e proveniência SLSA anexados à imagem no registry
+          provenance: mode=max
+      - name: Export the digest
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.image.name }}-${{ matrix.arch.tag }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  images:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [central, agent-runtime, harness-base, harness-claude-code, harness-codex, harness-deepseek-harness,
+               harness-hermes, mcp-data-studio, mcp-memory]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ matrix.name }}-*
+          merge-multiple: true
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v3
         with:
@@ -43,23 +97,17 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
       - uses: sigstore/cosign-installer@v3
-      - id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.file }}
-          target: ${{ matrix.target }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-          sbom: true                # SBOM (SPDX) e proveniência SLSA anexados à imagem no registry
-          provenance: mode=max
-      - name: Sign the image (cosign keyless)
+      - name: Create the multi-arch index, then sign it (cosign keyless)
+        working-directory: /tmp/digests
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: cosign sign --yes "ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}@${DIGEST}"
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+        run: |
+          test "$(ls | wc -l)" -eq 2   # amd64 + arm64
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")             $(printf "$IMAGE@sha256:%s " *)
+          VERSION_TAG=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          docker buildx imagetools inspect "$VERSION_TAG"
+          DIGEST=$(docker buildx imagetools inspect "$VERSION_TAG" --format '{{json .Manifest}}' | jq -r .digest)
+          cosign sign --yes "$IMAGE@$DIGEST"
 
   chart:
     if: startsWith(github.ref, 'refs/tags/')

@@ -100,7 +100,8 @@ reproduzem a demo estão em [scripts/demo/portal-tour](scripts/demo/portal-tour/
 O instalador guiado faz as perguntas e cuida do resto: gera o `.env`, sobe a stack, cadastra e **testa** o LLM, cria o
 admin e gera as configurações das ferramentas de IA. O guia completo está em [docs/install.md](docs/install.md).
 
-1. **Pré-requisitos:** Docker (Desktop ou Engine) com Compose 2.20+, e Python 3.10+ para rodar o instalador.
+1. **Pré-requisitos:** Docker (Desktop ou Engine) com Compose 2.20+, e Python 3.10+ para rodar o instalador. Funciona
+   em Intel/AMD e ARM64 (Macs Apple Silicon, Graviton).
 2. **Rode o instalador:**
    ```bash
    git clone https://github.com/valteresj2/agent-hangar && cd agent-hangar
