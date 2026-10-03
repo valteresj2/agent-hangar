@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+  *{box-sizing:border-box;margin:0}
+  body{width:1280px;height:640px;background:#1C2530;color:#C9D1DB;font-family:"IBM Plex Sans",sans-serif;position:relative;overflow:hidden}
+  .grid{position:absolute;inset:0;background-image:linear-gradient(#26313E 1px,transparent 1px),linear-gradient(90deg,#26313E 1px,transparent 1px);
+    background-size:64px 64px;opacity:.55}
+  .wrap{position:absolute;left:88px;top:84px;right:88px}
+  .brand{display:flex;align-items:center;gap:18px;font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:44px;color:#fff}
+  .brand svg{width:56px;height:56px;stroke:#F4B400;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  h1{font-family:"Barlow Semi Condensed",sans-serif;font-weight:700;font-size:86px;line-height:1.02;color:#fff;margin-top:58px;letter-spacing:-.5px}
+  h1 em{font-style:normal;color:#F4B400}
+  p{font-size:27px;line-height:1.45;margin-top:28px;max-width:960px;color:#C9D1DB}
+  .chips{position:absolute;left:88px;bottom:96px;display:flex;gap:12px;flex-wrap:wrap;right:88px}
+  .chip{font-family:"IBM Plex Mono",monospace;font-size:19px;padding:8px 16px;border:1.5px solid #3A4757;border-radius:8px;color:#C9D1DB;background:#1C2530}
+  .tape{position:absolute;left:88px;right:88px;bottom:48px;display:flex;gap:28px}
+  .tape i{flex:1;height:6px;background:#F4B400;border-radius:1px}
+</style></head>
+<body>
+<div class="grid"></div>
+<div class="wrap">
+  <div class="brand"><svg viewBox="0 0 24 24"><path d="M2.5 20.5V11L12 3.5 21.5 11v9.5"/><path d="M6.5 20.5v-6h11v6"/><path d="M9.5 14.5v6M14.5 14.5v6"/></svg>Agent Hangar</div>
+  <h1>One home for <em>every AI agent</em></h1>
+  <p>Build, test and ship agents once, then use them from Claude, ChatGPT, Codex, Cursor, VS Code or Slack, with teams, approvals and audit.</p>
+</div>
+<div class="chips"><span class="chip">MCP</span><span class="chip">OpenAI-compatible</span><span class="chip">A2A</span><span class="chip">OAuth 2.1</span><span class="chip">Docker</span><span class="chip">Kubernetes</span><span class="chip">Apache-2.0</span></div>
+<div class="tape"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+</body></html>
