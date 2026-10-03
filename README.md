@@ -25,7 +25,7 @@ MCP. Then come her Início page, the agent, a Playground answer, the team memory
 connections and the company catalog."></p>
 <p align="center"><sub>The user portal, recorded on a local install · <a href="docs/assets/portal-tour.mp4">MP4 version</a></sub></p>
 
-> **Status: alpha (v0.13).** It works end to end and is covered by tests, but APIs may still change. Run it inside
+> **Status: alpha (v0.14).** It works end to end and is covered by tests, but APIs may still change. Run it inside
 > your network until you have read [docs/security.md](docs/security.md).
 
 ## Why Agent Hangar
@@ -60,6 +60,33 @@ they cost or who approved them. Agent Hangar fixes that:
 In short: **your agents stop belonging to a tool and start belonging to your company.**
 
 ---
+
+## How it compares
+
+How Agent Hangar compares with CrewAI AMP, LangSmith Deployment, Dify, AWS Bedrock AgentCore and Microsoft Foundry
+with Agent 365, as of October 3, 2026. "Not found" means the documentation consulted does not describe the feature;
+it does not prove the feature is missing. Where each one is ahead, the model options and the sources:
+[docs/comparison.md](docs/comparison.md).
+
+| Criterion | Agent Hangar | CrewAI AMP | LangSmith Deployment | Dify | AWS Bedrock AgentCore | Microsoft Foundry + Agent 365 |
+| --- | --- | --- | --- | --- | --- | --- |
+| What it is | Self-hosted control plane for agents from any source | Commercial control plane of the CrewAI framework | Agent runtime (Agent Server) with observability and evaluation | Visual platform for LLM apps, agents and RAG | AWS services: Runtime, Gateway and Registry | Azure managed service, with the registry in Agent 365 |
+| Hosting | Self-hosted: Docker and Kubernetes (GKE, AKS, EKS) | AMP Cloud or AMP Factory (self-hosted on AWS, Azure or GCP) | Cloud, hybrid or self-hosted (Enterprise plan) | Cloud, VPC or self-hosted (Community, Enterprise) | AWS cloud | Azure cloud |
+| LLMs that power the agents | Any, through connections: OpenAI, Anthropic, Azure OpenAI, Gemini, OpenRouter, DeepSeek, Ollama, any OpenAI-compatible endpoint and gateways (LiteLLM, Portkey) | Several providers through litellm, with Azure and Bedrock integrations | Defined by the agent's framework; the runtime does not tie you to a provider | Broad; providers installed from the plugin Marketplace | The Gateway gives access to LLMs; model list not verified | Catalog of 10,000+ models (OpenAI, Anthropic, Meta, DeepSeek and others) |
+| Price and license | Apache-2.0; no license cost, you pay for infrastructure and LLM tokens | OSS framework; AMP with a free Basic plan and Enterprise on request, billed per execution | Self-hosted requires the Enterprise plan and a license key; prices not found | Community is free; Cloud from US$59 to US$159 per workspace/month; Enterprise on request | Not verified | Not verified |
+| Agents made in Claude, ChatGPT, Cursor, Codex go to one catalog | Yes, that is the focus: the tool creates the agent through the hangar's MCP | Partial: an MCP server exposes AMP deploy operations to clients such as Claude | Partial: deploys LangGraph, Deep Agents and other frameworks | Not found | Yes, for MCP, A2A and agent cards synced by URL (preview) | Partial: agents from Foundry, Copilot Studio and registered by an admin |
+| Agent catalog | Yes: owner, version, access requests, playground | Yes: Agent Repositories and Marketplace | Not found | Plugin marketplace, not an agent catalog | Yes: Agent Registry, with optional manual approval | Yes: Agent 365 registry and Entra Agent Registry |
+| Platform-agnostic access | OpenAI-compatible, MCP, A2A and ACP, per agent | A2A (0.2 and 0.3, early release) and a REST API per crew | Native MCP and A2A | API, web app, embed and MCP tool | MCP through the Gateway and A2A in the Runtime | A2A 1.0, Responses and Activity; MCP through the Toolbox |
+| Portability and lock-in | Low: YAML spec with JSON Schema, GitOps (`hangar apply`), standard endpoints, self-hosted | Medium: framework code is portable; the managed deploy belongs to AMP | Medium: LangGraph is open and there is a standalone Agent Server with Docker; the full platform is Enterprise | Medium: apps export as YAML DSL; self-hosted available | Open protocols (MCP, A2A), but the runtime and Registry stay on AWS | Accepts any framework and A2A, but hosting and registry stay on Azure and Microsoft 365 |
+| Agents combined into new agents | Yes: `sub_agents` over A2A, with permission checks | Yes: crews, the core of the framework | Yes: RemoteGraph through MCP and A2A | Yes: workflows with chained agents | Yes: A2A between agents | Yes: A2A tool |
+| Tool catalog | 230+ MCP servers from the Docker catalog; remote MCPs with OAuth | Tool Repository and its own MCP servers | Not found | Marketplace with tools and MCP integrations | The Gateway aggregates APIs, Lambdas and MCPs into a virtual MCP | Toolbox: a single MCP endpoint, with governance and versioning |
+| Coding agents and IDE | Harnesses (Claude Code, Codex, Hermes, DeepSeek Harness) as agents; VS Code extension; Cline, Roo Code and Continue | Partial: a skills plugin that teaches CrewAI to coding agents | Not found | Not found | Not found | Not found |
+| Promotion gated by tests | Yes: immutable versions, stage test gate, approval by a second maintainer, rollback | Not found | Evaluation in the same stack; promotion gate not found | Not found | Not found | Versions agents and creates stable endpoints; gate not found |
+| Long-term memory | Temporal graph per agent, team or org (Graphiti) | Memory and knowledge in the framework | Per-thread state, durable execution | Knowledge base (RAG) | Not verified | Memory as a native tool |
+| Governance and cost | SSO, SCIM, roles, audit, monthly budget per team with optional cutoff, cost per agent | RBAC and security controls | Custom auth; ABAC when self-hosted | SSO/SAML, RBAC and audit (Enterprise) | IAM/JWT and Cedar policies in the Gateway | Entra ID and Agent 365 controls |
+| Data residency and compliance | Data on your infrastructure, encrypted secrets, signed images with SBOM; no certifications cited | On-premises or cloud deployment; certifications not found | Self-hosted for data residency and isolated (air-gapped) environments | Self-hosted keeps data in-house; Enterprise with SOC 2 Type II and ISO 27001 | Not verified | Not verified |
+| Observability | Prometheus, JSON logs, OpenTelemetry, metrics per channel | Real-time observability | Strong point: traces and evaluation | Built-in observability | AgentCore Observability and CloudWatch | Application Insights and Agent 365 telemetry |
+| Maturity | Alpha (v0.14), Apache-2.0 | OSS with a commercial layer | Commercial, partly Enterprise | 157,000+ GitHub stars | Registry in public preview | Agent 365 generally available; A2A 1.0 GA |
 
 ## From a request in Claude to a working agent
 

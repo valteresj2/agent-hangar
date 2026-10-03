@@ -18,7 +18,7 @@ Claude um Assistente Comercial, que é criado, testado e publicado pelo MCP do H
 agente, o Playground, a memória do time, o resumo diário agendado, as conexões e o catálogo da empresa"></p>
 <p align="center"><sub>O portal do usuário, gravado numa instalação local · <a href="docs/assets/portal-tour.mp4">versão MP4</a></sub></p>
 
-> **Status: alpha (v0.13).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
+> **Status: alpha (v0.14).** Funciona de ponta a ponta e tem testes, mas as APIs ainda podem mudar. Rode dentro da
 > sua rede até ler [docs/security.md](docs/security.md).
 
 ## Por que o Agent Hangar
@@ -55,6 +55,33 @@ outro lugar, e ninguém sabe quanto custam ou quem aprovou. O Agent Hangar resol
   tarefas recorrentes, e agentes de código que editam projetos no VS Code.
 
 Em resumo: **seus agentes deixam de pertencer a uma ferramenta e passam a pertencer à sua empresa.**
+
+## Comparativo
+
+Como o Agent Hangar se compara com CrewAI AMP, LangSmith Deployment, Dify, AWS Bedrock AgentCore e Microsoft Foundry
+com Agent 365, em 3 de outubro de 2026. "Não encontrado" significa que a documentação consultada não descreve o
+recurso; não prova que ele não exista. Onde cada um está à frente, os modelos LLM e as fontes:
+[docs/comparison.pt-BR.md](docs/comparison.pt-BR.md).
+
+| Critério | Agent Hangar | CrewAI AMP | LangSmith Deployment | Dify | AWS Bedrock AgentCore | Microsoft Foundry + Agent 365 |
+| --- | --- | --- | --- | --- | --- | --- |
+| O que é | Control plane self-hosted para agentes de qualquer origem | Control plane comercial do framework CrewAI | Runtime de agentes (Agent Server) com observabilidade e avaliação | Plataforma visual de apps LLM, agentes e RAG | Serviços AWS: Runtime, Gateway e Registry | Serviço gerenciado Azure, com registry no Agent 365 |
+| Hospedagem | Self-hosted: Docker e Kubernetes (GKE, AKS, EKS) | AMP Cloud ou AMP Factory (self-hosted em AWS, Azure ou GCP) | Cloud, híbrido ou self-hosted (plano Enterprise) | Cloud, VPC ou self-hosted (Community, Enterprise) | Nuvem AWS | Nuvem Azure |
+| Modelos LLM que alimentam os agentes | Qualquer um, por conexões: OpenAI, Anthropic, Azure OpenAI, Gemini, OpenRouter, DeepSeek, Ollama, endpoint OpenAI-compatível e gateways (LiteLLM, Portkey) | Vários provedores via litellm, com integrações Azure e Bedrock | Definido pelo framework do agente; o runtime não prende a um provedor | Amplo; provedores instalados pelo Marketplace de plugins | Gateway dá acesso a LLMs; lista de modelos não verificada | Catálogo com mais de 10 mil modelos (OpenAI, Anthropic, Meta, DeepSeek e outros) |
+| Preço e licença | Apache-2.0; sem custo de licença, você paga infraestrutura e tokens do LLM | Framework OSS; AMP com plano Basic gratuito e Enterprise sob consulta, cobrança por execução | Self-hosted exige plano Enterprise e chave de licença; valores não encontrados | Community gratuita; Cloud de US$ 59 a US$ 159 por workspace/mês; Enterprise sob consulta | Não verificado | Não verificado |
+| Agentes feitos em Claude, ChatGPT, Cursor, Codex vão para um catálogo único | Sim, é o foco: a ferramenta cria o agente pelo MCP do hangar | Parcial: MCP server expõe operações de deploy do AMP a clientes como Claude | Parcial: faz deploy de LangGraph, Deep Agents e outros frameworks | Não encontrado | Sim, para MCP, A2A e agent cards sincronizados por URL (preview) | Parcial: agentes do Foundry, Copilot Studio e registrados por admin |
+| Catálogo de agentes | Sim: dono, versão, pedido de acesso, playground | Sim: Agent Repositories e Marketplace | Não encontrado | Marketplace de plugins, não de agentes | Sim: Agent Registry, com aprovação manual opcional | Sim: Agent 365 registry e Entra Agent Registry |
+| Acesso agnóstico a plataforma | OpenAI-compatível, MCP, A2A e ACP, por agente | A2A (0.2 e 0.3, early release) e API REST por crew | MCP e A2A nativos | API, web app, embed e ferramenta MCP | MCP via Gateway e A2A no Runtime | A2A 1.0, Responses e Activity; MCP via Toolbox |
+| Portabilidade e lock-in | Baixo: spec em YAML com JSON Schema, GitOps (hangar apply), endpoints padrão e self-hosted | Médio: código do framework é portável; o deploy gerenciado é do AMP | Médio: LangGraph é aberto e há Agent Server standalone com Docker; plataforma completa é Enterprise | Médio: apps exportáveis como YAML DSL; self-hosted disponível | Protocolos abertos (MCP, A2A), mas runtime e Registry ficam na AWS | Aceita qualquer framework e A2A, mas hospedagem e registry ficam no Azure e no Microsoft 365 |
+| Agentes combinados em novos agentes | Sim: sub\_agents via A2A, com checagem de permissão | Sim: crews, núcleo do framework | Sim: RemoteGraph via MCP e A2A | Sim: workflows com agentes encadeados | Sim: A2A entre agentes | Sim: ferramenta A2A |
+| Catálogo de ferramentas | 230+ MCP servers do catálogo Docker; MCPs remotos com OAuth | Tool Repository e MCP servers próprios | Não encontrado | Marketplace com tools e integrações MCP | Gateway agrega APIs, Lambdas e MCPs num MCP virtual | Toolbox: endpoint MCP único, com governança e versão |
+| Agentes de código e IDE | Harnesses (Claude Code, Codex, Hermes, DeepSeek Harness) como agentes; extensão de VS Code; Cline, Roo Code e Continue | Parcial: plugin de skills que ensina o CrewAI a agentes de código | Não encontrado | Não encontrado | Não encontrado | Não encontrado |
+| Promoção com testes | Sim: versão imutável, gate de testes em stage, aprovação de segundo mantenedor, rollback | Não encontrado | Avaliação na mesma stack; gate de promoção não encontrado | Não encontrado | Não encontrado | Versiona agentes e cria endpoints estáveis; gate não encontrado |
+| Memória de longo prazo | Grafo temporal por agente, time ou org (Graphiti) | Memória e knowledge no framework | Estado por thread, execução durável | Base de conhecimento (RAG) | Não verificado | Memory como ferramenta nativa |
+| Governança e custo | SSO, SCIM, papéis, auditoria, orçamento mensal por time com corte opcional, custo por agente | RBAC e controles de segurança | Auth customizada; ABAC no self-hosted | SSO/SAML, RBAC e auditoria (Enterprise) | IAM/JWT e políticas Cedar no Gateway | Entra ID e controles do Agent 365 |
+| Residência de dados e conformidade | Dados na sua infraestrutura, segredos criptografados, imagens assinadas com SBOM; sem certificações citadas | Implantação on-premise ou em nuvem; certificações não encontradas | Self-hosted para residência de dados e ambientes isolados (air-gapped) | Self-hosted mantém os dados em casa; Enterprise com SOC 2 Type II e ISO 27001 | Não verificado | Não verificado |
+| Observabilidade | Prometheus, logs JSON, OpenTelemetry, métricas por canal | Observabilidade em tempo real | Ponto forte: traces e avaliação | Observabilidade integrada | AgentCore Observability e CloudWatch | Application Insights e telemetria do Agent 365 |
+| Maturidade | Alpha (v0.14), Apache-2.0 | OSS com camada comercial | Comercial, parte Enterprise | Mais de 157 mil estrelas no GitHub | Registry em preview público | Agent 365 em disponibilidade geral; A2A 1.0 GA |
 
 ## Exemplo: do pedido no Claude ao agente funcionando
 

@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Comparison with CrewAI AMP, LangSmith Deployment, Dify, AWS Bedrock AgentCore and Microsoft Foundry + Agent 365,
+  in both READMEs; details and sources in [docs/comparison.md](docs/comparison.md)
+  ([pt-BR](docs/comparison.pt-BR.md)).
 - [docs/cloud-vm.md](docs/cloud-vm.md): install on a cloud VM with Docker on AWS (EC2), Azure (Virtual Machines)
   and Google Cloud (Compute Engine). It covers the VM with SSH open only to you, Docker Engine, the installer and a
   tunnel for HTTPS. Each step links to the provider's documentation.
