@@ -704,8 +704,11 @@ def setup(root: Path, answers_file: str | None = None, start: bool = True, assum
         run(["docker", "compose", "up", "-d"], root)
     else:
         run(["docker", "compose", "up", "-d", "--build"], root)
-    if "harness" in a.get("extras", []) and a["images"] == "build":
-        run(["docker", "compose", "--profile", "harness", "build"], root, check=False)
+    if "harness" in a.get("extras", []):
+        if a["images"] == "build":
+            run(["docker", "compose", "--profile", "harness", "build"], root, check=False)
+        else:  # a imagem do Claude Code não é publicada (licença proprietária): construída aqui, a partir deste código
+            run(["docker", "compose", "--profile", "harness", "build", "harness-claude-code"], root, check=False)
     local = f"http://localhost:{a['port']}"
     if not wait_healthy(local):
         fail("a central não ficou saudável em 5 min — veja  docker compose logs central")

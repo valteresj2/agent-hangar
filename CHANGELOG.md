@@ -5,6 +5,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- The published images on ghcr.io are now public, except `harness-claude-code`: Claude Code's license does not allow
+  redistributing it. `hangar setup` builds that image locally when the coding-harness extra is chosen with published
+  images. See [docs/harnesses.md](docs/harnesses.md#the-claude-code-image-is-not-published).
+
 ## [0.13.0] — 2026-10-02
 
 ### Added

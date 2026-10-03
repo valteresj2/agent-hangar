@@ -41,6 +41,28 @@ docker compose --profile hermes build    # harness-hermes
 Image names are `${HANGAR_REGISTRY:-agent-hangar}/harness-<id>:${HANGAR_VERSION:-latest}`. To use a custom image
 for one harness, set `HARNESS_IMAGE_<ID>` (e.g. `HARNESS_IMAGE_CLAUDE_CODE=myorg/claude:1`).
 
+### The Claude Code image is not published
+
+The public images on `ghcr.io/valteresj2` include `harness-base`, `harness-codex` (Codex CLI, Apache-2.0),
+`harness-deepseek-harness` (MIT) and `harness-hermes` (MIT). **`harness-claude-code` is not published.** Claude Code
+(`@anthropic-ai/claude-code`) is proprietary software from Anthropic: its license does not allow redistributing it
+inside a public image. You build that image yourself, from this repository:
+
+```bash
+docker compose --profile harness build harness-claude-code
+```
+
+- **Docker:** `hangar setup` does this for you when you choose the coding-harness extra with published images. The
+  other harnesses are pulled from ghcr.io.
+- **Kubernetes:** build the image and push it to your own registry, then point the hangar at it:
+  ```bash
+  docker build --target claude-code -t registry.acme.com/agent-hangar/harness-claude-code:0.13.0 harness/
+  docker push registry.acme.com/agent-hangar/harness-claude-code:0.13.0
+  ```
+  Either mirror all images there (`image.registry`), or set only this one with
+  `central.extraEnv: {HARNESS_IMAGE_CLAUDE_CODE: registry.acme.com/agent-hangar/harness-claude-code:0.13.0}`.
+- Using Claude Code is subject to Anthropic's terms, and its calls need an Anthropic-compatible connection.
+
 A harness without a connection runs on `harness-base` in **mock** mode: it writes a `JOB_NOTES.md` and returns.
 No CLI or key is needed.
 

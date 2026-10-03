@@ -43,6 +43,10 @@ outro lugar, e ninguém sabe quanto custam ou quem aprovou. O Agent Hangar resol
   qualquer idioma) agentes, skills e MCPs que já fazem parte do trabalho. Ele monta o agente novo com essas peças e
   pergunta só as habilidades que faltam. As peças são só de leitura: nada nelas muda.
   [docs/composer.md](docs/composer.md)
+- **Harnesses de código** (Claude Code, Codex, Hermes, DeepSeek Harness) rodam num container novo a cada chamada. As
+  imagens do Codex, do Hermes e do DeepSeek são publicadas. A do Claude Code é construída localmente a partir deste
+  repositório, porque a licença do Claude Code não permite redistribuí-lo; o instalador faz isso por você. Veja
+  [docs/harnesses.md](docs/harnesses.md#the-claude-code-image-is-not-published).
 - **Seguro para usar na empresa.**
   - Cada mudança vira uma versão nova, testada em stage antes de ir para produção.
   - Os segredos ficam criptografados, e tudo roda na sua infraestrutura (Docker ou Kubernetes).

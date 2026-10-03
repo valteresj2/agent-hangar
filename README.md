@@ -218,7 +218,9 @@ person signs in and authorizes (OAuth), with no key to copy.
 **One container per agent, one per job.**
 - Chat agents run in hardened containers: read-only file system, all capabilities dropped, memory/CPU/PID limits.
 - Coding harnesses (Claude Code, Codex, Hermes, DeepSeek Harness) run in a **fresh container per call**, which
-  returns the result and the `git diff`.
+  returns the result and the `git diff`. The Codex, Hermes and DeepSeek images are published. The Claude Code image
+  is built locally from this repository, because Claude Code's license does not allow redistributing it; the installer
+  does it for you. See [docs/harnesses.md](docs/harnesses.md#the-claude-code-image-is-not-published).
 
 **Coding agents in VS Code.** With the **Agent Hangar extension**, the agents you can use appear in VS Code's chat
 model picker. In Agent mode they read, edit and test your project with the editor's own tools, on your machine and
