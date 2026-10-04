@@ -188,6 +188,10 @@ def _split_capabilities(request: str) -> list[str]:
     return caps[:8] or ([request.strip()] if request.strip() else [])
 
 
+WHY_PT = ("objetivo parecido", "termos em comum", "cobre")
+WHY_EN = ("similar goal", "shared terms", "covers")
+
+
 def _lang_pt(text: str) -> bool:
     w = _fold(text).split()
     pt = sum(x in {"de", "que", "para", "com", "uma", "os", "do", "da", "nao", "cliente", "voce"} for x in w)
@@ -234,12 +238,13 @@ def plan(db: Session, acc: Access, request: str, capabilities: list[str] | None 
         modes.append("specialist")
         if "view_spec" in perms:
             modes.append("base")
-        why = [f"objetivo parecido: {a.objective[:140]}"]
+        lbl = WHY_PT if _lang_pt(request) else WHY_EN
+        why = [f"{lbl[0]}: {a.objective[:140]}"]
         terms = _shared_terms(" ".join(queries), c["doc"])
         if terms:
-            why.append("termos em comum: " + ", ".join(terms))
+            why.append(f"{lbl[1]}: " + ", ".join(terms))
         if covered:
-            why.append("cobre: " + "; ".join(covered[:3]))
+            why.append(f"{lbl[2]}: " + "; ".join(covered[:3]))
         agents.append({"slug": a.slug, "name": a.name, "team": a.team_id, "version": c["version"],
                        "score": round(s, 3), "match": lvl or "partial", "why": why, "covers": covered,
                        "modes": modes, "access": access, "spec_visible": "view_spec" in perms,
@@ -278,16 +283,26 @@ def plan(db: Session, acc: Access, request: str, capabilities: list[str] | None 
     use_as_is = [x for x in agents if "use_as_is" in x["modes"]]
     specialists = [x for x in agents if x["match"] == "strong" or x["covers"]][:3]
     if use_as_is:
-        rec = (f"'{use_as_is[0]['name']}' já faz isso: use-o como está (connect_agent ou request_agent_access) — ou monte "
-               f"um agente NOVO a partir dele (base ou especialista). Ele não será alterado.")
+        name = use_as_is[0]["name"]
+        rec = (f"'{name}' já faz isso: use-o como está (connect_agent ou request_agent_access) — ou monte um agente NOVO "
+               f"a partir dele (base ou especialista). Ele não será alterado." if pt else
+               f"'{name}' already does this: use it as is (connect_agent or request_agent_access), or build a NEW agent "
+               f"from it (base or specialist). It will not be changed.")
     elif specialists:
-        rec = ("Monte um agente NOVO que chama " + ", ".join(
-            f"'{x['name']}'" + ("" if x["access"] == "ok" else " (pedir acesso antes)") for x in specialists)
-               + " como especialista(s); escreva só o que é novo. Os agentes existentes não são alterados.")
+        names = ", ".join(f"'{x['name']}'" + ("" if x["access"] == "ok" else
+                                              (" (pedir acesso antes)" if pt else " (request access first)"))
+                          for x in specialists)
+        rec = (f"Monte um agente NOVO que chama {names} como especialista(s); escreva só o que é novo. Os agentes "
+               f"existentes não são alterados." if pt else
+               f"Build a NEW agent that calls {names} as specialist(s); write only what is new. The existing agents "
+               f"are not changed.")
     elif skill_hits or mcp_hits:
-        rec = "Nenhum agente parecido em produção: crie um agente novo reaproveitando as skills/MCPs sugeridos."
+        rec = ("Nenhum agente parecido em produção: crie um agente novo reaproveitando as skills/MCPs sugeridos." if pt
+               else "No similar agent in production: create a new agent reusing the suggested skills/MCPs.")
     else:
-        rec = "Nada no catálogo cobre o pedido: construa do zero (compose_agent sem peças) e registre as skills novas."
+        rec = ("Nada no catálogo cobre o pedido: construa do zero (compose_agent sem peças) e registre as skills novas."
+               if pt else "Nothing in the catalog covers the request: build from scratch (compose_agent without "
+                          "pieces) and register the new skills.")
 
     plan_id = "pl_" + secrets.token_urlsafe(9)
     shared.put(f"plan:{plan_id}", {"by": acc.p.name, "request": request[:2000], "candidates": [x["slug"] for x in agents],

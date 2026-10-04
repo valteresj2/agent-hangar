@@ -101,60 +101,63 @@
   </aside>
 </main>
 <script>
-// Real screens from a local install (v0.12.0). The agents, tests, memory, answers and costs are real; the people and
-// customers are fictional. The portal's interface is in Portuguese; the data and this tour are in English.
+// Real screens from a local install (v0.15.0, portal in English). The agents, tests, memory, answers and costs are
+// real; the people and customers are fictional.
 const STEPS = [
   { cover: "intro" },
   { img: "01-claude", x: 74, y: 59, tip: "Claude ships it",
     title: "It starts in the AI tool you already use",
-    body: `<p>Maya, from Sales, asks Claude for three agents. Claude builds them through the Hangar's <b>MCP server</b>: register, design, add tests, ship and schedule.</p>
+    body: `<p>Maya, from Sales, asks Claude for agents. Claude builds them through the Hangar's <b>MCP server</b>: register, design, add tests, write the guide, ship and schedule.</p>
       <p>The same works from ChatGPT, Cursor, VS Code, Codex or OpenCode. Nothing is locked inside one vendor.</p>`,
     note: "This screen is a visual reconstruction of Claude, built from the recorded MCP calls. Every call in it really ran." },
+  { img: "17-reuse", x: 50, y: 33, tip: "Reuse first",
+    title: "Reuse before you build",
+    body: `<p>Before building anything, the Hangar searches the company catalog for agents, skills and tools that already do part of the job, using only what Maya is allowed to see.</p>
+      <p>The new agent calls them as <b>specialists</b> or starts from a copy. The existing agents are never changed, and Claude writes only what is new.</p>` },
   { img: "03-approval", x: 85, y: 40, tip: "Pending approval",
     title: "Production needs a second pair of eyes",
-    body: `<p>All three agents passed their tests in stage, but the Sales team requires approval before production. Whoever asked can't approve their own release (<b>four-eyes</b>).</p>
+    body: `<p>The agents passed their tests in stage, but the Sales team requires approval before production. Whoever asked can't approve their own release (<b>four-eyes</b>).</p>
       <p>An admin approved it; the release then went live.</p>`,
-    note: "Portuguese UI: “Aprovações” = Approvals, “pendente” = pending." },
-  { img: "02-home", x: 37, y: 30, tip: "3 in production",
+    note: "This screen was recorded in Portuguese (“Aprovações” = Approvals). The portal has a PT · EN switch." },
+  { img: "02-home", x: 34, y: 30, tip: "4 in production",
     title: "Everyone gets a home page",
     body: `<p>Maya sees her agents, what is live, requests waiting for her, her calls and her cost, plus anything that needs attention: a failed test, a failing schedule, a budget running out.</p>` },
-  { img: "14-multiagent", x: 50, y: 63, tip: "Two agents, one team",
-    title: "Agents combine into new agents",
-    body: `<p><b>Deal Desk</b> doesn't store facts or write emails itself. It is an orchestrator: it asks <b>Account Memory</b> for the facts and <b>Proposal Writer</b> for the email, over A2A.</p>
-      <p>Existing agents are reused as specialists, each keeping its own instructions, model and tests.</p>` },
-  { img: "06-tests", x: 24, y: 38, tip: "9/9 checks",
+  { img: "14-guide", x: 58, y: 72, tip: "Specialists over A2A",
+    title: "Every agent explains itself",
+    body: `<p>Each agent has a <b>Guide</b>: a flow drawn from its spec, a fact sheet with example requests taken from its passing tests, and a guide written for the people who will use it.</p>
+      <p><b>Deal Desk</b> doesn't store facts or write emails itself: it asks <b>Account Memory</b> and <b>Proposal Writer</b>, over A2A. Claude wrote this guide as a step of the build.</p>` },
+  { img: "06-tests", x: 30, y: 38, tip: "9/9 checks",
     title: "Nothing reaches production untested",
     body: `<p>Every change creates a new version that runs in stage first:</p>
       <ul><li>smoke checks of every protocol: OpenAI, A2A, ACP, MCP;</li><li>the agent's own test cases, graded by an LLM judge.</li></ul>
       <p>Here Account Memory proves it records facts and refuses to invent a customer it doesn't know.</p>` },
-  { img: "08-memory", x: 89, y: 66, tip: "Shared memory",
+  { img: "08-memory", x: 27, y: 47.5, tip: "Team memory",
     title: "The team shares one memory",
-    body: `<p>Maya told Account Memory about three customers. Each fact is stored in the <b>Sales team's</b> memory, with the date it became true, so every agent and teammate sees the same history.</p>
+    body: `<p>Maya told Account Memory about her customers. Each fact is stored in the <b>Sales team's</b> memory, with the date it became true, so every agent and teammate sees the same history.</p>
       <p>Stage reads production memory but writes apart, so tests never pollute it.</p>` },
-  { img: "07-playground", x: 87, y: 58, tip: "Real answer",
+  { img: "07-playground", x: 45, y: 58, tip: "Real answer",
     title: "Ask it anything",
     body: `<p>“Prepare me for my call with Northwind Logistics tomorrow.”</p>
       <p>Deal Desk pulled the facts from memory and wrote a call brief: the situation, the open risks (SSO is the blocker, Priya prefers Tuesdays) and the next step. A follow-up email comes after it.</p>` },
-  { img: "11-schedule", x: 55, y: 42, tip: "Ran on its own",
+  { img: "11-schedule", x: 26, y: 24, tip: "Ran on its own",
     title: "Agents work on a schedule",
     body: `<p>Every weekday at 8:00, Deal Desk sends the <b>morning pipeline brief</b>, with customers ranked by urgency and the next step for each.</p>
       <p>It flags what is missing instead of making it up. Results can also go to Slack or Teams through a webhook.</p>` },
-  { img: "15-connect-tools", x: 58, y: 43, tip: "Pick a tool",
+  { img: "15-connect-tools", x: 58, y: 47, tip: "Pick a tool",
     title: "Use it from any platform",
     body: `<p>The same agent plugs into Claude Code, Claude Desktop, Codex, OpenCode, Cursor, VS Code, Cline, Continue, LibreChat, Open WebUI, SDKs or any MCP client.</p>
-      <p>It works as a <b>tool (MCP)</b> or as a <b>model</b> in the chat picker.</p>`,
-    note: "“Como ferramenta” = as a tool, “Como modelo” = as a model." },
+      <p>It works as a <b>tool (MCP)</b> or as a <b>model</b> in the chat picker.</p>` },
   { img: "16-connect-cursor", x: 34, y: 50, tip: "Ready to paste",
     title: "One click, ready-made config",
     body: `<p>Connecting Cursor gives a config to paste, with a key just for that tool and that agent, issued in Maya's name.</p>
       <p>Revoke one tool without touching the others. Usage is tracked per tool, and keys die automatically if she loses access.</p>`,
     note: "The key was masked in this screenshot and revoked right after." },
-  { img: "10-catalog", x: 36, y: 15, tip: "Company catalog",
+  { img: "10-catalog", x: 30, y: 15.5, tip: "Company catalog",
     title: "Everyone can find every agent",
     body: `<p>The company catalog lists the agents of every team: what they do, who owns them, whether they passed their tests.</p>
-      <p>People request access in one click, and a maintainer of the owning team approves.</p>`,
+      <p>People open an agent's Guide to see what it does, then request access in one click; a maintainer of the owning team approves.</p>`,
     note: "Other teams' agents in this install have Portuguese names." },
-  { img: "12-usage", x: 78, y: 30, tip: "Per channel & protocol",
+  { img: "12-usage", x: 59, y: 31.5, tip: "Per channel & protocol",
     title: "Every call has a cost and a trail",
     body: `<p>For each call: agent, environment, channel, protocol, tokens, cost and latency. The <b>A2A</b> rows are Deal Desk calling its two specialists.</p>
       <p>Teams can have monthly budgets, and everything lands in the audit log.</p>` },
@@ -163,8 +166,8 @@ const STEPS = [
 
 const COVERS = {
   intro: { count: "Interactive demo · 2 minutes", title: "One home for every AI agent your company builds",
-    side: `<p>Follow Maya, an account executive, from a request in Claude to three agents working in production, used from any platform.</p>
-      <p>These are real screens from a local install of Agent Hangar v0.12.0. The agents, tests, memory, answers and costs are real; the people and customers are fictional.</p>`,
+    side: `<p>Follow Maya, an account executive, from a request in Claude to agents working in production, used from any platform.</p>
+      <p>These are real screens from a local install of Agent Hangar v0.15.0. The agents, tests, memory, answers and costs are real; the people and customers are fictional.</p>`,
     html: `<h2>One home for every AI agent<br>your company builds.</h2>
       <p>Build agents in Claude, ChatGPT, Cursor or VS Code. Agent Hangar tests them, runs each in its own container and makes them usable from any platform, over OpenAI-compatible, MCP, A2A and ACP.</p>
       <div class="cta"><a class="primary" href="#" data-go="1">Start the tour →</a><a href="https://github.com/valteresj2/agent-hangar">View on GitHub</a></div>` },

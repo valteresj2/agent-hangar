@@ -5,7 +5,7 @@ https://valteresj2.github.io/agent-hangar/demo/).
 
 ## What was recorded
 
-The run happened on a local install of v0.12.0 on 2026-10-01. People and customers are fictional; the agents, tests,
+The run happened on a local install of v0.12.0 on 2026-10-01; the portal screens were taken again on v0.15.0 on 2026-10-04, in English, adding the Guide and "reuse before you build" steps (`capture.py main|extra|reuse`, signing in with `maya_password.txt`). People and customers are fictional; the agents, tests,
 memory, answers and costs are real.
 
 1. **Setup:** Maya Chen (a local account) maintains the *Sales* team, which requires approval for production. She
@@ -26,7 +26,7 @@ memory, answers and costs are real.
 
 ## Running it again
 
-Put `maya_token.txt` and `maya_session.txt` in this folder. They are secrets: git-ignored, never commit them.
+Put `maya_token.txt` and `maya_password.txt` (the demo account's password) in this folder. They are secrets: git-ignored, never commit them.
 
 ```bash
 docker run --rm --network hangar_agents -v "$PWD:/demo" agent-hangar/central:latest python /demo/run_calls.py

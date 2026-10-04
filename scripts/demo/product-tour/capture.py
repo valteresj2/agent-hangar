@@ -1,5 +1,6 @@
-"""Capturas da demo interativa (Product Hunt) como a Maya. Uso: python capture.py <grupo>
-grupos: approval (antes de aprovar), main (depois de publicado e com memória/uso), claude (conversa renderizada)."""
+"""Capturas da demo interativa (Product Hunt) como a Maya, com o portal em inglês. Uso: python capture.py <grupo>
+grupos: approval (antes de aprovar), main (depois de publicado e com memória/uso), extra (Guia e Conectar),
+reuse (reusar antes de construir), claude (conversa renderizada)."""
 import pathlib
 import sys
 
@@ -9,7 +10,7 @@ D = pathlib.Path("/demo")
 OUT = D / "shots"
 OUT.mkdir(exist_ok=True)
 BASE = "http://central:8080"
-SESSION = (D / "maya_session.txt").read_text().strip()
+PASSWORD = (D / "maya_password.txt").read_text().strip()  # conta local de demonstração (arquivo fora do git)
 W, H = 1440, 900
 
 
@@ -24,8 +25,9 @@ def run(group: str):
             pg.screenshot(path=str(OUT / "01-claude.png"), full_page=False)
             b.close()
             return
-        ctx.add_cookies([{"name": "hangar_session", "value": SESSION, "url": BASE},
-                         {"name": "hangar_csrf", "value": "demo-csrf-token", "url": BASE}])
+        r = ctx.request.post(f"{BASE}/api/auth/password", data={"username": "maya.chen", "password": PASSWORD})
+        assert r.ok, r.text()
+        ctx.add_init_script("localStorage.setItem('hangar_lang', 'en')")  # o portal tem PT e EN; a demo é em inglês
         pg = ctx.new_page()
 
         def go(hash_, name, wait="main h1", pause=1500, before=None):
@@ -68,7 +70,7 @@ def run(group: str):
             go("#/usage", "12-usage.png", pause=2500)
             go("#/agents/deal-desk/versions", "13-versions.png", wait=".tabs", pause=1500)
         elif group == "extra":
-            go("#/agents/deal-desk/topology", "14-multiagent.png", wait=".tabs", pause=2500)
+            go("#/agents/deal-desk/guide", "14-guide.png", wait=".guide-md", pause=1500)
             pg.goto(f"{BASE}/app/#/agents/deal-desk/connect")
             pg.wait_for_selector(".cn-go")
             pg.wait_for_timeout(1200)
@@ -92,6 +94,24 @@ def run(group: str):
             for k in conns:
                 r = pg.request.delete(f"{BASE}/api/keys/{k['id']}", headers={"X-CSRF-Token": csrf})
                 print("revogada", k["client_label"], r.status)
+        elif group == "reuse":
+            # reusar antes de construir: o hangar procura no catálogo agentes e skills parecidos com o pedido
+            pg.goto(f"{BASE}/app/#/agents/new")
+            pg.wait_for_selector("#pl-req")
+            pg.fill("#pl-req", "A renewal assistant that remembers each customer's history, flags upcoming renewals and "
+                               "writes the renewal email")
+            pg.fill("#pl-caps", "remember each customer's history\nflag upcoming renewals\nwrite the renewal proposal email")
+            pg.click("#pl-go")
+            pg.wait_for_selector("#pl-out table, #pl-out .warn-card", timeout=60000)
+            pg.wait_for_timeout(800)
+            spec = pg.locator(".pl-spec[value='account-memory']")
+            if spec.count():
+                spec.first.check()
+            pg.wait_for_timeout(400)
+            pg.eval_on_selector("#pl-out", "o => o.scrollIntoView({block: 'start'})")
+            pg.evaluate("window.scrollBy(0, -260)")
+            pg.wait_for_timeout(400)
+            pg.screenshot(path=str(OUT / "17-reuse.png"))
         b.close()
     print("ok", sorted(x.name for x in OUT.iterdir()))
 

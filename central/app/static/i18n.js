@@ -198,7 +198,8 @@
       'remember each customer\'s history\nwrite the follow-up e-mail\napprove discounts under the sales policy',
     '); opcional': '); optional', 'ex.: Triagem de chamados': 'e.g. Ticket triage', 'Buscar na memória (ex.: plano da ACME)': 'Search the memory (e.g. ACME plan)', '(obrigatório). O valor da chave aparece uma única vez.': '(required). The key value is shown only once.',
     // ---- guia do agente
-    'Guia': 'Guide', 'Ficha': 'Fact sheet', 'Entrega': 'Delivers', 'Dono': 'Owner',
+    'Canal': 'Channel', 'Protocolo': 'Protocol', 'Modo': 'Mode', 'Arquivo:': 'File:', 'Escopo:': 'Scope:', '· grupo': '· group',
+    'Guia': 'Guide', 'Agendamento': 'Schedule', 'Ficha': 'Fact sheet', 'Entrega': 'Delivers', 'Dono': 'Owner',
     'Ferramentas': 'Tools', 'Pedidos de exemplo': 'Example requests', 'Onde chamar': 'Where to call',
     'Casos que passaram nos testes desta versão.': 'Cases that passed the tests of this version.',
     'Para ligar numa ferramenta (Claude, ChatGPT, VS Code…), use a aba': 'To plug it into a tool (Claude, ChatGPT, VS Code…), use the tab',
@@ -557,10 +558,12 @@
     [/(^|[^\d.,])1 calls\b/, '$11 call'], [/^Mantenedor · /, 'Maintainer · '], [/^Membro · /, 'Member · '],
     [/^Este texto foi escrito para a v(\d+); a versão descrita agora é a v(\d+)\. Confira se ainda vale\.$/,
       'This text was written for v$1; the version described is now v$2. Check that it still applies.'],
+    [/(\d+)\/(\d+) checks aprovados/, '$1/$2 checks passed'], [/\((\d+) ativa\(s\)\)/, '($1 active)'],
+    [/ — Como ferramenta \(MCP\)$/, ' — As a tool (MCP)'], [/ — Como modelo$/, ' — As a model'],
     [/^Já existe um guia escrito para a v(\d+); ele aparece aqui quando essa versão for publicada\.$/,
       'A guide is already written for v$1; it shows here when that version is published.'],
     [/\(empresa\)$/, '(company)'], [/\(privado\)$/, '(private)'], [/\(aberto\)$/, '(open)']];
-  const PTISH = /[ãõçáéíóúâêôàÁÉÍÓÚÇ]|\b(de|do|da|para|com|sem|seu|sua|agente|agentes|chave|nenhum|em|por|que|erros|membros|dias|chamadas|bom|boa|mantenedor|membro)\b/i;
+  const PTISH = /[ãõçáéíóúâêôàÁÉÍÓÚÇ]|\b(de|do|da|para|com|sem|seu|sua|agente|agentes|chave|nenhum|em|por|que|erros|membros|dias|chamadas|bom|boa|mantenedor|membro|como|ativa|aprovados)\b/i;
   const tr = text => {
     const raw = text.trim();
     if (!raw || !/[A-Za-zÀ-ú]/.test(raw)) return text;
