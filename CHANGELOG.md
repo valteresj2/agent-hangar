@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-10-04
+
 ### Added
 - **Guide tab for every agent**, between Usage and Playground ([docs/guide.md](docs/guide.md)). It replaces the
   Multi-agent tab.
