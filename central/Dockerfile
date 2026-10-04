@@ -1,6 +1,6 @@
 # Contexto de build: raiz do repositório (para levar os templates e a extensão do VS Code junto).
 # Estágio 1: a extensão Agent Hangar do VS Code (.vsix), servida pela central em /downloads/.
-FROM node:22-alpine AS vscode-ext
+FROM node:26-alpine AS vscode-ext
 WORKDIR /ext
 COPY extensions/vscode/package.json ./
 RUN npm install --no-audit --no-fund
