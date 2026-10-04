@@ -186,8 +186,9 @@ O cliente chama as ferramentas do hangar e faz o resto:
 
 1. Registra o agente (nome, objetivo, saída esperada).
 2. Escreve instruções, skills, tools e casos de teste.
-3. Faz deploy num container de **stage** e roda os testes.
-4. Registra o resultado e só promove para **produção** se os testes passarem.
+3. Escreve o **guia** do agente para quem vai usá-lo (o que é, o que faz, como usar).
+4. Faz deploy num container de **stage** e roda os testes.
+5. Registra o resultado e só promove para **produção** se os testes passarem.
 
 A partir daí o agente é um serviço com quatro endpoints padrão. Você pode plugá-lo no LibreChat, no Open WebUI, no
 OpenCode, no Claude Desktop, num bot de Slack, em outro agente (via A2A) ou em qualquer SDK da OpenAI. Cada agente

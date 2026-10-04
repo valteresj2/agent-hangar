@@ -9,6 +9,11 @@ URLs, API calls and sub-agent references.
 Every spec change creates a new **immutable version** (v1, v2, …). Saving an identical spec is a no-op. Rolling
 back copies an old spec into a *new* version, so history is never rewritten.
 
+Every agent also has a **guide** for the people who will use it: what it is, what it does, what it does not do,
+how to use it and its limits. The AI tool that builds the agent writes it as a step of the build, before the ship.
+The guide is versioned with the agent, but it lives outside the spec, so fixing it needs no new version or tests.
+See [guide.md](guide.md).
+
 ## Agent types
 
 | Type | Runs as | Good for |

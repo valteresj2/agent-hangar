@@ -191,3 +191,83 @@ def test_agent_card_uses_the_reviewed_guide(client, env):
                json={"text": "## O que é\n**Ajuda** o time de vendas com renovações.\n\n## O que faz\n- lista"})
     with SessionLocal() as db:
         assert guides.card_summary(db, svc.get_agent(db, slug)) == "Ajuda o time de vendas com renovações."
+
+
+def _mcp(client, headers):
+    pat = {"Authorization": "Bearer " + client.post("/api/keys", headers=headers,
+                                                    json={"name": "claude", "scopes": ["user"]}).json()["key"]}
+
+    def call(tool, args):
+        body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": tool, "arguments": args}}
+        r = client.post("/mcp", json=body, headers={**MCP_HDR, **pat}).json()["result"]
+        assert not r["isError"], r["content"][0]["text"]
+        return json.loads(r["content"][0]["text"])
+    return call
+
+
+def test_the_guide_is_a_build_step_over_mcp(client, env):
+    """Construção pelo MCP: as ferramentas recebem o guia na mesma chamada, dizem quando ele falta e o ship também."""
+    call = _mcp(client, env["h"]["dev"])
+    a = call("register_agent", {"name": f"Built {env['n']}", "objective": "Answer renewal questions.",
+                                "final_output": "A short answer.", "team": env["team"]})
+    out = call("design_agent", {"slug": a["slug"], "instructions": "Answer about renewals.",
+                                "tests": [{"name": "t", "input": "Renewals?", "expect_contains": "x"}]})
+    assert out["guide"]["written"] is False and "set_agent_guide" in out["guide"]["next_step"]
+    assert "guia" in out["next"]
+    out = call("design_agent", {"slug": a["slug"], "instructions": "Answer about renewals, briefly.",
+                                "guide": "## O que é\nResponde sobre renovações."})
+    assert out["guide"] == {"written": True, "version": out["version"], "source": "author", "reviewed": True}
+    assert out["next"].startswith("ship_agent")
+    # o ship devolve a situação do guia da versão publicada
+    with SessionLocal() as db:
+        ag = svc.get_agent(db, a["slug"])
+        db.add(TestRun(agent_id=ag.id, version=ag.current_version, env="stage", status="passed", summary="ok", results=[]))
+        db.commit()
+    shipped = call("promote_to_production", {"slug": a["slug"]})
+    assert shipped["status"] in ("deployed", "approval_pending")
+    g = call("get_agent_guide", {"slug": a["slug"]})
+    assert g["doc"]["text"].endswith("Responde sobre renovações.") and g["doc"]["version"] == out["version"]
+
+
+def test_editing_a_live_agent_keeps_the_new_guide_until_it_is_published(client, env):
+    """O guia escrito para uma versão em construção não substitui o da produção antes do ship."""
+    slug, call = env["slug"], _mcp(client, env["h"]["dev"])
+    client.put(f"/api/agents/{slug}/guide", headers=env["h"]["dev"], json={"text": "## O que é\nGuia da produção."})
+    out = call("edit_agent", {"slug": slug, "instructions": "Now also handles upsells.", "test": False,
+                              "guide": "## O que é\nRenovações e upsell."})
+    assert out["guide"]["written"] is True
+    g = client.get(f"/api/agents/{slug}/guide", headers=env["h"]["dev"]).json()
+    assert g["doc"]["text"].endswith("Guia da produção.") and g["pending"]["version"] == out["guide"]["version"]
+    _to_prod(slug)
+    g = client.get(f"/api/agents/{slug}/guide", headers=env["h"]["dev"]).json()
+    assert g["doc"]["text"].endswith("Renovações e upsell.") and g["pending"] is None and g["doc"]["outdated"] is False
+
+
+def test_multi_agent_build_reports_missing_guides(client, env):
+    call = _mcp(client, env["h"]["dev"])
+    out = call("build_multi_agent", {
+        "name": f"Desk {env['n']}", "objective": "Prepare calls.", "final_output": "A brief.",
+        "orchestrator_instructions": "Delegate.", "team": env["team"], "guide": "## O que é\nPrepara reuniões.",
+        "members": [{"name": f"Facts {env['n']}", "objective": "Find facts.", "final_output": "Facts.",
+                     "instructions": "Find.", "guide": "## O que é\nBusca fatos."},
+                    {"name": f"Mail {env['n']}", "objective": "Write mail.", "final_output": "An email.",
+                     "instructions": "Write."}]})
+    assert out["guides_missing"] == [out["members"][1]] and "set_agent_guide" in out["next"]
+
+
+def test_auto_draft_does_not_cover_a_human_guide_of_an_older_version(client, env, monkeypatch):
+    name, calls = _with_connection(client, env, monkeypatch, "## O que é\nRascunho.")
+    monkeypatch.setattr(config, "GUIDE_AUTOGEN", True)
+    started = []
+    monkeypatch.setattr(guides.threading, "Thread", lambda target, **kw: started.append(target) or
+                        type("T", (), {"start": lambda self: None})())
+    slug = env["agent"]("Human", {"llm": {"connection": name}, "instructions": "x"}, prod=False)
+    _to_prod(slug)
+    assert len(started) == 1  # nunca teve guia: rascunho agendado
+    started.clear()
+    client.put(f"/api/agents/{slug}/guide", headers=env["h"]["dev"], json={"text": "## O que é\nEscrito pelo time."})
+    client.patch(f"/api/agents/{slug}", headers=env["h"]["dev"], json={"instructions": "y"})
+    _to_prod(slug)
+    assert started == []  # o texto do time continua (com aviso de versão antiga)
+    g = client.get(f"/api/agents/{slug}/guide", headers=env["h"]["dev"]).json()
+    assert g["doc"]["text"].endswith("Escrito pelo time.") and g["doc"]["outdated"] is True

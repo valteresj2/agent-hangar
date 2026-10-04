@@ -59,10 +59,16 @@ REUSAR ANTES DE CONSTRUIR (sempre, antes de criar qualquer agente)
   (access="request_access" no plano -> request_agent_access).
 - Nada parecido no catálogo? Siga o fluxo abaixo (do zero), ou compose_agent sem peças.
 
-GUIA DO AGENTE (para quem vai usar)
-- Depois do ship, escreva o guia com set_agent_guide(slug, text) em Markdown, no idioma do usuário: '## O que é',
-  '## O que faz', '## O que não faz', '## Como usar' (2 a 4 pedidos de exemplo) e '## Limites'. Só fatos da spec e
-  dos testes; nada inventado. Sem guia escrito, o hangar gera um rascunho no ship, marcado para revisão.
+GUIA DO AGENTE (etapa da construção, nunca opcional)
+- Todo agente que você cria ou muda ganha um GUIA para quem vai usá-lo (aba Guia do portal): Markdown no idioma do
+  usuário, com '## O que é' (2 frases), '## O que faz' (lista), '## O que não faz' (lista curta), '## Como usar' (como
+  pedir, com 2 a 4 pedidos de exemplo — use os inputs dos seus testes) e '## Limites' (dados que acessa, memória,
+  especialistas que chama, o que exige aprovação). Só fatos da spec e dos testes; nada inventado.
+- Escreva-o JUNTO da construção: passe guide=... em design_agent, compose_agent, build_multi_agent (guide do
+  orquestrador e members[].guide) ou edit_agent; ou chame set_agent_guide(slug, text). Ele vale para a versão que
+  você acabou de criar. As respostas dessas ferramentas e do ship_agent trazem `guide.written`: se for false, escreva.
+- Mudou o comportamento com edit_agent? Atualize o guia na mesma chamada (guide=...).
+- Sem guia escrito, o hangar gera um rascunho no ship, marcado "não revisado" — não conte com ele: escreva.
 - Para explicar um agente que já existe ("o que esse agente faz?", "como uso?"), leia get_agent_guide(slug): fluxo,
   ficha e texto, respeitando o acesso de quem pergunta.
 
@@ -89,22 +95,24 @@ FLUXO
    memory__recall e memory__remember; diga nas instructions quando consultar e o que gravar. Só funciona se a
    instalação ligou a memória (docs/memory.md) — senão o deploy avisa.
 6. Multiagente: crie os especialistas e depois o orquestrador com sub_agents=[slugs] (build_multi_agent).
-7. ship_agent(slug): testa em stage, registra e só promove para produção se passar. Se falhar, leia os
+7. GUIA: escreva o guia do agente (seção GUIA DO AGENTE acima) com guide=... na chamada de construção ou com
+   set_agent_guide(slug, text). Num multiagente, um guia para cada especialista e um para o orquestrador.
+8. ship_agent(slug): testa em stage, registra e só promove para produção se passar. Se falhar, leia os
    resultados, corrija com design_agent e rode de novo. Errou uma versão? rollback_agent.
-8. Ao final informe: slug, versão, endpoints (OpenAI-compatible, A2A, ACP e MCP — todo agente é também um
-   servidor MCP com 1 tool), resultado dos testes. Para o usuário plugar o agente numa ferramenta (Claude
+9. Ao final informe: slug, versão, resultado dos testes, se o guia foi escrito (o usuário vê na aba Guia) e os
+   endpoints (OpenAI-compatible, A2A, ACP e MCP — todo agente é também um servidor MCP com 1 tool). Para o usuário plugar o agente numa ferramenta (Claude
    Code/Desktop, Codex, OpenCode, Cursor, VS Code, LibreChat, Open WebUI…), use connect_agent(slug, client,
    mode): "mcp" = o agente vira ferramenta (todas); "model" = vira modelo no chat (LibreChat, Open WebUI,
    OpenCode, SDK OpenAI). Ela gera uma chave só daquela ferramenta e devolve a configuração pronta — NUNCA
    entregue o token de admin. Para agente com harness, run_harness_job mostra resultado/diff.
-9. EDITAR DEPOIS (esqueceu algo, quer ajustar um agente que já existe — em produção ou não):
+10. EDITAR DEPOIS (esqueceu algo, quer ajustar um agente que já existe — em produção ou não):
    get_agent_spec(slug) mostra a spec atual e qual versão está em produção/stage. Depois
    edit_agent(slug, changes={...}, test=True) cria uma versão nova, sobe em STAGE e roda os testes — a produção
    continua na versão anterior. Mostre ao usuário o que mudou (changes) e o resultado. Se passou e ele quiser
    publicar: edit_agent(slug, promote=True) (ou promote_to_production). Com promote=True junto das mudanças, só
    publica se os testes passarem. Para revisar antes: diff_agent_versions(slug, from_version=<prod>). Nunca
    publique sem os testes aprovados; se reprovar, corrija com edit_agent e teste de novo.
-10. AGENDAMENTO (o usuário quer que o agente rode sozinho: "toda segunda às 9h", "todo dia útil às 18h",
+11. AGENDAMENTO (o usuário quer que o agente rode sozinho: "toda segunda às 9h", "todo dia útil às 18h",
    "dia 5 às 8h", "amanhã às 14h"): depois de criar e testar, chame schedule_agent(slug, message, cron=... ou
    run_at=...). message = a tarefa exata que o agente recebe a cada disparo (escreva completa, como se o usuário
    pedisse no chat). cron tem 5 campos no fuso da empresa (whoami mostra org.timezone): "0 9 * * 1" = segunda
@@ -277,10 +285,11 @@ async def design_agent(ctx: Context, slug: str, instructions: str | None = None,
                        skills: list | None = None, mcps: list | None = None, tools: list | None = None,
                        sub_agents: list | None = None, tests: list | None = None, channels: list | None = None,
                        llm: dict | None = None, harness: dict | None = None, judge: dict | None = None,
-                       memory: dict | None = None, remove: list[str] | None = None) -> dict:
+                       memory: dict | None = None, remove: list[str] | None = None, guide: str | None = None) -> dict:
     """Atualiza a spec do agente (gera nova versão se mudar). JSON Merge Patch: passe só o que quer mudar;
     dentro de llm/harness/judge, um valor null apaga o campo. `remove` apaga campos inteiros (ex.:
-    remove=["harness"] para voltar a ser agente de chat, ou remove=["llm"] antes de virar harness)."""
+    remove=["harness"] para voltar a ser agente de chat, ou remove=["llm"] antes de virar harness).
+    guide: Markdown do guia do agente para quem vai usar (O que é, O que faz, O que não faz, Como usar com 2 a 4 pedidos de exemplo, Limites). É gravado para a versão criada por esta chamada (o mesmo que set_agent_guide)."""
     patch = {k: v for k, v in (("instructions", instructions), ("skills", skills), ("mcps", mcps),
                                ("tools", tools), ("sub_agents", sub_agents), ("tests", tests),
                                ("channels", channels), ("llm", llm), ("harness", harness), ("judge", judge),
@@ -294,8 +303,12 @@ async def design_agent(ctx: Context, slug: str, instructions: str | None = None,
     def go(db, acc):
         _agent(db, acc, slug, "edit")
         a = svc.design_agent(db, slug, patch, acc.p.name, acc=acc)
-        return {"slug": a.slug, "version": a.current_version, "status": a.status, "kind": a.kind,
-                "next": "ship_agent (testa em stage e promove) ou run_tests"}
+        if guide:
+            svc.guides.set_text(db, acc, slug, guide, acc.p.name, version=a.current_version)
+        g = svc.guides.status(db, a)
+        return {"slug": a.slug, "version": a.current_version, "status": a.status, "kind": a.kind, "guide": g,
+                "next": "ship_agent (testa em stage e promove) ou run_tests" if g["written"]
+                        else "escreva o guia (set_agent_guide ou design_agent(guide=...)) e depois ship_agent"}
     return await _run(ctx, go)
 
 
@@ -315,16 +328,22 @@ async def compose_agent(ctx: Context, name: str, objective: str, final_output: s
                         tools: list | None = None, tests: list[dict] | None = None,
                         copy_tests_from: list[str] | None = None, copy_base_tests: bool = True,
                         include_skill_tests: bool = True, llm: dict | None = None, memory: dict | None = None,
-                        team: str = "", visibility: str = "", plan_id: str = "") -> dict:
+                        team: str = "", visibility: str = "", plan_id: str = "", guide: str = "") -> dict:
     """Cria um agente NOVO montado a partir de peças do catálogo — os agentes de origem NUNCA são alterados.
     specialists: slugs (em produção) que o novo chama como estão (sub_agents, via A2A; outro time exige acesso).
     base: slug cujas instruções, skills, ferramentas e testes (versão em produção) são COPIADOS para o novo.
     skills: nomes do catálogo. new_skills: [{name, description, content, examples?, test?}] — skills novas do time.
     instructions/tests: SÓ o que é novo (o resto vem das peças). copy_tests_from: copia os testes de outros agentes.
-    Os testes das skills entram automaticamente. Depois: ship_agent(slug)."""
-    return await _run(ctx, lambda db, acc: svc.composer.compose(
-        db, acc, name, objective, final_output, instructions, team, visibility, specialists, base, skills, new_skills,
-        mcps, tools, tests, copy_tests_from, copy_base_tests, include_skill_tests, llm, memory, plan_id))
+    Os testes das skills entram automaticamente. guide: Markdown do guia do agente para quem vai usar (O que é, O que faz, O que não faz, Como usar com 2 a 4 pedidos de exemplo, Limites). É gravado para a versão criada por esta chamada. Depois: ship_agent(slug)."""
+    def go(db, acc):
+        out = svc.composer.compose(
+            db, acc, name, objective, final_output, instructions, team, visibility, specialists, base, skills,
+            new_skills, mcps, tools, tests, copy_tests_from, copy_base_tests, include_skill_tests, llm, memory, plan_id)
+        a = svc.get_agent(db, out["slug"])
+        if guide:
+            svc.guides.set_text(db, acc, a.slug, guide, acc.p.name, version=a.current_version)
+        return {**out, "guide": svc.guides.status(db, a)}
+    return await _run(ctx, go)
 
 
 @mcp.tool()
@@ -343,10 +362,15 @@ async def get_agent_guide(ctx: Context, slug: str) -> dict:
 
 
 @mcp.tool()
-async def set_agent_guide(ctx: Context, slug: str, text: str) -> dict:
+async def set_agent_guide(ctx: Context, slug: str, text: str, version: int | None = None) -> dict:
     """Escreve (ou substitui) o guia do agente em Markdown: o que é, o que faz, o que não faz, como usar (com pedidos
-    de exemplo) e limites. Não cria versão nova da spec nem exige testes. Exige poder editar o agente."""
-    return await _run(ctx, lambda db, acc: svc.guides.set_text(db, acc, slug, text, acc.p.name))
+    de exemplo) e limites. Faz parte da construção: escreva antes do ship_agent. Vale para a versão mais nova do
+    agente (a que está sendo construída); `version` grava para outra. Não cria versão nova da spec nem exige
+    testes. Exige poder editar o agente."""
+    def go(db, acc):
+        v = version or svc.get_agent(db, slug).current_version
+        return svc.guides.set_text(db, acc, slug, text, acc.p.name, version=v)
+    return await _run(ctx, go)
 
 
 @mcp.tool()
@@ -362,10 +386,11 @@ async def rollback_agent(ctx: Context, slug: str, version: int) -> dict:
 @mcp.tool()
 async def build_multi_agent(ctx: Context, name: str, objective: str, final_output: str,
                             orchestrator_instructions: str, members: list, connection: str = "", model: str = "",
-                            owner: str = "", team: str = "") -> dict:
+                            owner: str = "", team: str = "", guide: str = "") -> dict:
     """Cria um multiagente de uma vez (todos no mesmo time). members: [{name, objective, final_output,
-    instructions, skills?, mcps?, tools?, tests?}]. Cada membro vira um agente; o orquestrador delega a eles via
-    A2A. `connection`/`model` valem para todos. Depois use ship_agent no orquestrador."""
+    instructions, skills?, mcps?, tools?, tests?, guide?}]. Cada membro vira um agente; o orquestrador delega a eles via
+    A2A. `connection`/`model` valem para todos. guide (do orquestrador) e members[].guide: o guia de cada agente em
+    Markdown (O que é, O que faz, O que não faz, Como usar, Limites). Depois use ship_agent no orquestrador."""
     def go(db, acc):
         t = acc.team_for_new_agent(team or None)
         llm_patch = {k: v for k, v in (("connection", connection), ("model", model)) if v}
@@ -376,14 +401,22 @@ async def build_multi_agent(ctx: Context, name: str, objective: str, final_outpu
             patch = {k: m[k] for k in ("instructions", "skills", "mcps", "tools", "tests") if k in m}
             if llm_patch:
                 patch["llm"] = llm_patch
-            svc.design_agent(db, a.slug, patch, acc.p.name)
+            a = svc.design_agent(db, a.slug, patch, acc.p.name)
+            if m.get("guide"):
+                svc.guides.set_text(db, acc, a.slug, m["guide"], acc.p.name, version=a.current_version)
             slugs.append(a.slug)
         o = svc.create_agent(db, name, objective, final_output, owner=owner, actor=acc.p.name, team_id=t.id)
         patch = {"instructions": orchestrator_instructions, "sub_agents": slugs}
         if llm_patch:
             patch["llm"] = llm_patch
-        svc.design_agent(db, o.slug, patch, acc.p.name)
-        return {"orchestrator": o.slug, "members": slugs, "team": t.slug, "next": f"ship_agent('{o.slug}')"}
+        o = svc.design_agent(db, o.slug, patch, acc.p.name)
+        if guide:
+            svc.guides.set_text(db, acc, o.slug, guide, acc.p.name, version=o.current_version)
+        missing = [s for s in [*slugs, o.slug] if not svc.guides.status(db, svc.get_agent(db, s))["written"]]
+        return {"orchestrator": o.slug, "members": slugs, "team": t.slug,
+                "guides_missing": missing,
+                "next": (f"escreva o guia de {', '.join(missing)} (set_agent_guide) e depois " if missing else "")
+                        + f"ship_agent('{o.slug}')"}
     return await _run(ctx, go)
 
 
@@ -442,8 +475,12 @@ async def promote_to_production(ctx: Context, slug: str, note: str = "") -> dict
 async def ship_agent(ctx: Context, slug: str, note: str = "") -> dict:
     """Atalho: (sub-agentes primeiro) testa em stage, registra e promove para produção se aprovado. Sem
     permissão de promover direto, termina com um pedido de aprovação (status="approval_pending") — avise o
-    usuário que um mantenedor do time precisa aprovar em Aprovações."""
-    return await _run(ctx, lambda db, acc: svc.org.ship(db, acc, slug, note))
+    usuário que um mantenedor do time precisa aprovar em Aprovações. A resposta traz `guide`: se o guia da versão
+    ainda não foi escrito, escreva-o (set_agent_guide) — senão o hangar gera um rascunho para revisão."""
+    def go(db, acc):
+        out = svc.org.ship(db, acc, slug, note)
+        return {**out, "guide": svc.guides.status(db, svc.get_agent(db, slug))}
+    return await _run(ctx, go)
 
 
 @mcp.tool()
@@ -581,7 +618,7 @@ async def get_agent_spec(ctx: Context, slug: str, version: int | None = None) ->
 async def edit_agent(ctx: Context, slug: str, changes: dict | None = None, instructions: str | None = None,
                      name: str | None = None, objective: str | None = None, final_output: str | None = None,
                      owner: str | None = None, remove: list[str] | None = None, test: bool = True,
-                     promote: bool = False, note: str = "") -> dict:
+                     promote: bool = False, note: str = "", guide: str | None = None) -> dict:
     """Edita um agente que já existe e, na mesma chamada, testa em stage e (opcional) publica.
 
     changes: JSON Merge Patch sobre a spec (formato de get_spec_schema) — ex.: {"tools": [...]},
@@ -590,7 +627,8 @@ async def edit_agent(ctx: Context, slug: str, changes: dict | None = None, instr
     test=True (padrão): cria a versão nova, faz deploy em STAGE e roda os testes — produção segue na versão
     anterior. promote=True: se os testes passarem, publica em produção (ou cria o pedido de aprovação, se o seu
     papel/time exigir). Sem mudanças e com promote=True, publica a versão atual se ela já tiver teste aprovado.
-    Devolve o que mudou (changes), o resultado dos testes e o estado de produção."""
+    Devolve o que mudou (changes), o resultado dos testes e o estado de produção.
+    guide: o guia atualizado para a versão nova, se a mudança alterou o que o agente faz ou como usá-lo."""
     patch = dict(changes or {})
     for k, v in (("instructions", instructions), ("name", name), ("objective", objective),
                  ("final_output", final_output), ("owner", owner)):
@@ -598,7 +636,13 @@ async def edit_agent(ctx: Context, slug: str, changes: dict | None = None, instr
             patch[k] = v
     for k in remove or []:
         patch[k] = None
-    return await _run(ctx, lambda db, acc: svc.org.edit_agent(db, acc, slug, patch, test, promote, note))
+    def go(db, acc):
+        out = svc.org.edit_agent(db, acc, slug, patch, test, promote, note)
+        a = svc.get_agent(db, slug)
+        if guide:
+            svc.guides.set_text(db, acc, slug, guide, acc.p.name, version=a.current_version)
+        return {**out, "guide": svc.guides.status(db, a)}
+    return await _run(ctx, go)
 
 
 @mcp.tool()

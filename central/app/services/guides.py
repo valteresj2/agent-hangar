@@ -51,8 +51,33 @@ def described_version(a: Agent) -> int:
     return dep.version if dep else a.current_version
 
 
-def latest(db: Session, a: Agent) -> AgentGuide | None:
-    return db.scalar(select(AgentGuide).where(AgentGuide.agent_id == a.id).order_by(AgentGuide.version.desc()))
+def latest(db: Session, a: Agent, upto: int | None = None) -> AgentGuide | None:
+    """O texto mais novo até a versão `upto` (padrão: a versão descrita). Um guia escrito durante a construção de uma
+    versão que ainda não foi publicada só aparece quando ela vai para produção."""
+    upto = described_version(a) if upto is None else upto
+    return db.scalar(select(AgentGuide).where(AgentGuide.agent_id == a.id, AgentGuide.version <= upto)
+                     .order_by(AgentGuide.version.desc()))
+
+
+def _row(db: Session, a: Agent, version: int) -> AgentGuide | None:
+    return db.scalar(select(AgentGuide).where(AgentGuide.agent_id == a.id, AgentGuide.version == version))
+
+
+def status(db: Session, a: Agent) -> dict:
+    """Situação do guia da versão mais nova (a que está sendo construída): devolvida pelas ferramentas de construção
+    para que a ferramenta de IA escreva o guia como parte do fluxo, antes do ship."""
+    row = _row(db, a, a.current_version)
+    if row:
+        return {"written": True, "version": row.version, "source": row.source, "reviewed": row.reviewed}
+    prev = latest(db, a, a.current_version)
+    out = {"written": False, "version": a.current_version,
+           "next_step": f"set_agent_guide(slug='{a.slug}', text=...) — guia em Markdown: O que é, O que faz, O que não "
+                        "faz, Como usar (2 a 4 pedidos de exemplo) e Limites, só com fatos da spec e dos testes"}
+    if prev:
+        out["previous"] = {"version": prev.version, "source": prev.source,
+                           "hint": "existe um guia de uma versão anterior: confira se ainda vale e reescreva se a "
+                                   "versão nova mudou o comportamento"}
+    return out
 
 
 def _names(items) -> list[str]:
@@ -145,13 +170,15 @@ def guide(db: Session, acc: Access, slug: str) -> dict:
         "examples": _examples(db, a, version, spec) if use else [],
         "endpoints": endpoints(a.slug) if "consume" in perms else None,
     }
-    g = latest(db, a)
+    g = latest(db, a, version)
+    pending = _row(db, a, a.current_version) if a.current_version > version else None
     doc = None
     if g:
         doc = {"text": g.text, "source": g.source, "reviewed": g.reviewed, "version": g.version,
                "updated_by": g.updated_by, "updated_at": g.updated_at.isoformat() if g.updated_at else None,
                "outdated": g.version < version}
     return {"facts": facts, "graph": _graph(db, acc, a, spec, schedules), "doc": doc,
+            "pending": {"version": pending.version, "source": pending.source} if pending else None,
             "can_edit": "edit" in perms, "can_generate": "edit" in perms and _llm_target(db, spec) is not None}
 
 
@@ -180,7 +207,9 @@ def _upsert(db: Session, a: Agent, version: int, text: str, source: str, reviewe
     return row
 
 
-def set_text(db: Session, acc: Access, slug: str, text: str, actor: str) -> dict:
+def set_text(db: Session, acc: Access, slug: str, text: str, actor: str, version: int | None = None) -> dict:
+    """version: a versão que o texto descreve. Padrão: a versão descrita (produção). As ferramentas de construção
+    passam a versão que acabaram de criar, para o guia acompanhar a versão que vai ser publicada."""
     a = get_agent(db, slug)
     acc.require("edit", a)
     text = (text or "").strip()
@@ -188,7 +217,10 @@ def set_text(db: Session, acc: Access, slug: str, text: str, actor: str) -> dict
         raise PlatformError("o guia não pode ficar vazio")
     if len(text) > MAX_TEXT:
         raise PlatformError(f"o guia passa de {MAX_TEXT} caracteres")
-    version = described_version(a)
+    if version is None:
+        version = described_version(a)
+    elif not any(v.version == version for v in a.versions):
+        raise PlatformError(f"'{slug}' não tem a versão {version}")
     _upsert(db, a, version, text, "author", True, actor)
     audit(db, actor, "agent.guide", slug, f"v{version}")
     return guide(db, acc, slug)
@@ -259,6 +291,11 @@ def generate_draft(db: Session, slug: str, actor: str = "hangar", force: bool = 
     text = re.sub(r"^```(?:markdown|md)?\s*|\s*```$", "", text).strip()
     if not text:
         raise PlatformError("o LLM não devolveu o texto do guia")
+    current = _row(db, a, version)
+    if current is not None:
+        db.refresh(current)
+        if current.source == "author" and not force:
+            return current
     row = _upsert(db, a, version, text[:MAX_TEXT], "generated", False, actor)
     audit(db, actor, "agent.guide.generate", slug, f"v{version}")
     return row
@@ -279,8 +316,12 @@ def after_promote(db: Session, a: Agent, version: int):
     não atrasa nem derruba o ship)."""
     if not config.GUIDE_AUTOGEN:
         return
-    has = db.scalar(select(AgentGuide.id).where(AgentGuide.agent_id == a.id, AgentGuide.version == version))
-    if has or _llm_target(db, _version_spec(a, version)) is None:
+    if _row(db, a, version) is not None:
+        return
+    # um texto escrito por pessoa para uma versão anterior continua valendo (com o aviso de versão antiga): o
+    # rascunho automático é só para agentes que nunca tiveram guia escrito
+    authored = db.scalar(select(AgentGuide.id).where(AgentGuide.agent_id == a.id, AgentGuide.source == "author"))
+    if authored or _llm_target(db, _version_spec(a, version)) is None:
         return
     slug = a.slug
 

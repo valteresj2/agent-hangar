@@ -557,6 +557,8 @@
     [/(^|[^\d.,])1 calls\b/, '$11 call'], [/^Mantenedor · /, 'Maintainer · '], [/^Membro · /, 'Member · '],
     [/^Este texto foi escrito para a v(\d+); a versão descrita agora é a v(\d+)\. Confira se ainda vale\.$/,
       'This text was written for v$1; the version described is now v$2. Check that it still applies.'],
+    [/^Já existe um guia escrito para a v(\d+); ele aparece aqui quando essa versão for publicada\.$/,
+      'A guide is already written for v$1; it shows here when that version is published.'],
     [/\(empresa\)$/, '(company)'], [/\(privado\)$/, '(private)'], [/\(aberto\)$/, '(open)']];
   const PTISH = /[ãõçáéíóúâêôàÁÉÍÓÚÇ]|\b(de|do|da|para|com|sem|seu|sua|agente|agentes|chave|nenhum|em|por|que|erros|membros|dias|chamadas|bom|boa|mantenedor|membro)\b/i;
   const tr = text => {

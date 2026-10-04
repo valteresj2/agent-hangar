@@ -540,7 +540,8 @@ function guideDoc(a, g, editing = false) {
     return;
   }
   const status = !d ? '' : !d.reviewed ? '<span class="pill warn">rascunho gerado · não revisado</span>' : '<span class="pill ok">revisado</span>';
-  const outdated = d && d.outdated ? `<div class="card warn-card mt">Este texto foi escrito para a v${d.version}; a versão descrita agora é a v${g.facts.version}. Confira se ainda vale.</div>` : '';
+  const outdated = (d && d.outdated ? `<div class="card warn-card mt">Este texto foi escrito para a v${d.version}; a versão descrita agora é a v${g.facts.version}. Confira se ainda vale.</div>` : '')
+    + (g.pending ? `<div class="mute small mt">Já existe um guia escrito para a v${g.pending.version}; ele aparece aqui quando essa versão for publicada.</div>` : '');
   const btns = g.can_edit ? `<div class="row mt">
       <button id="g-edit" class="ghost">${d ? 'Editar' : 'Escrever guia'}</button>
       ${d && !d.reviewed ? '<button id="g-approve">Aprovar rascunho</button>' : ''}

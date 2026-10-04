@@ -20,8 +20,16 @@ All notable changes to this project are documented here. The format follows
     `GUIDE_AUTOGEN=0` turns this off.
   - The first paragraph of a reviewed guide becomes the A2A Agent Card description.
   - API: `GET/PUT /api/agents/{slug}/guide`, `POST .../guide/approve`, `POST .../guide/generate`.
-  - MCP: `get_agent_guide`, `set_agent_guide`. The platform instructions ask AI tools to write the guide after the
-    ship.
+  - MCP: `get_agent_guide`, `set_agent_guide`.
+- **The guide is a step of building an agent over MCP.**
+  - It is step 7 of the platform instructions, before `ship_agent`.
+  - `design_agent`, `compose_agent`, `build_multi_agent` (orchestrator and each member) and `edit_agent` accept
+    `guide=` in the same call.
+  - Every build tool and `ship_agent` return `guide.written`, with the next step when it is missing.
+    `build_multi_agent` lists `guides_missing`.
+  - The guide is saved for the version being built. When you edit a live agent, the new text waits for its version
+    to be published; the tab shows "a guide for vN is ready".
+  - The automatic draft runs only for agents that never had a guide written by a person.
 - Comparison with CrewAI AMP, LangSmith Deployment, Dify, AWS Bedrock AgentCore and Microsoft Foundry + Agent 365,
   in both READMEs; details and sources in [docs/comparison.md](docs/comparison.md)
   ([pt-BR](docs/comparison.pt-BR.md)).
