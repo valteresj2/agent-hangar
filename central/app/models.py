@@ -464,3 +464,18 @@ class AgentLineage(Base):
     created_by: Mapped[str] = mapped_column(String(200), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
+
+class AgentGuide(Base):
+    """Guia de um agente para quem vai usá-lo: o que é, o que faz e como usar (Markdown). Fica fora da spec de
+    propósito: corrigir a documentação não cria versão nova nem exige testes. Cada texto diz a versão que descreve;
+    o rascunho gerado por LLM no ship fica marcado (`reviewed=False`) até um mantenedor revisar."""
+    __tablename__ = "agent_guides"
+    __table_args__ = (UniqueConstraint("agent_id", "version"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int] = mapped_column(Integer)  # versão do agente que este texto descreve
+    text: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(20), default="author")  # author | generated
+    reviewed: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_by: Mapped[str] = mapped_column(String(254), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

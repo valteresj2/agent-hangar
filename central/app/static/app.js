@@ -267,10 +267,10 @@ function shipResult(steps) {
 
 async function agentDetail(slug, tab = 'overview') {
   const a = await api('/agents/' + slug);
-  const tabs = ['overview', 'connect', 'topology', 'spec', 'versions', 'tests', 'jobs', 'deployments', 'usage', 'playground', 'schedules', 'memory', 'access'];
-  const names = { overview: 'Visão geral', connect: 'Conectar', topology: 'Multiagente', spec: 'Spec', versions: 'Versões', tests: 'Testes', jobs: 'Jobs', deployments: 'Deployments', usage: 'Uso', playground: 'Playground', schedules: 'Agendamentos', memory: 'Memória', access: 'Acesso' };
+  const tabs = ['overview', 'connect', 'spec', 'versions', 'tests', 'jobs', 'deployments', 'usage', 'guide', 'playground', 'schedules', 'memory', 'access'];
+  const names = { overview: 'Visão geral', connect: 'Conectar', spec: 'Spec', versions: 'Versões', tests: 'Testes', jobs: 'Jobs', deployments: 'Deployments', usage: 'Uso', guide: 'Guia', playground: 'Playground', schedules: 'Agendamentos', memory: 'Memória', access: 'Acesso' };
   const need = { connect: 'consume', spec: 'view_spec', versions: 'view_spec', tests: 'view_spec', jobs: 'usage', deployments: 'view_spec', usage: 'usage', playground: 'consume', schedules: 'usage', memory: 'view_spec', access: 'manage' };
-  const shown = tabs.filter(t => (t !== 'topology' || a.kind === 'multi') && (t !== 'jobs' || a.harness) && (!need[t] || can(a, need[t])));
+  const shown = tabs.filter(t => (t !== 'jobs' || a.harness) && (!need[t] || can(a, need[t])));
   const direct = can(a, 'promote');
   main.innerHTML = `
   <div class="row between"><div><a href="#/agents${['viewer'].includes(a.access) ? '/catalog' : ''}" class="mute small">← Agentes</a>
@@ -296,7 +296,7 @@ async function agentDetail(slug, tab = 'overview') {
   on('#b-req', () => requestAccessDialog(slug));
   const t = $('#tab');
   const key = shown.includes(tab) ? tab : 'overview';
-  ({ overview, connect: agentConnect, topology, spec: specEditor, versions, tests, jobs, deployments, usage, playground, schedules: agentSchedules, memory: agentMemory, access: agentAccess })[key](t, a);
+  ({ overview, connect: agentConnect, guide: agentGuide, spec: specEditor, versions, tests, jobs, deployments, usage, playground, schedules: agentSchedules, memory: agentMemory, access: agentAccess })[key](t, a);
 }
 
 async function agentConnect(t, a) {
@@ -426,12 +426,135 @@ async function lineageCard(slug) {
       <table class="mt">${l.used_by.map(u => `<tr><td><a href="#/agents/${esc(u.slug)}">${esc(u.name)}</a></td><td><span class="pill info">${u.as === 'base' ? 'cópia (base)' : 'especialista'}</span></td></tr>`).join('')}</table></div>` : ''}</div>`;
 }
 
-async function topology(t, a) {
-  const subs = await Promise.all(a.sub_agents.map(s => api('/agents/' + s)));
-  t.innerHTML = `<div class="card"><h2>Orquestração</h2>
-    <div class="card" style="border-color:var(--accent)"><b>${esc(a.name)}</b> ${pill(a.status)}<div class="mute small">Orquestrador · delega via A2A</div></div>
-    <div style="border-left:2px solid var(--line);margin:0 0 0 24px;padding-left:20px">
-    ${subs.map(s => `<div class="card mt" onclick="location.hash='#/agents/${s.slug}'" style="cursor:pointer"><b>${esc(s.name)}</b> ${pill(s.status)} ${s.prod ? '<span class="pill ok">em produção</span>' : ''}<div class="mute small">${esc(s.objective)}</div></div>`).join('')}</div></div>`;
+/* ---------- Guia: como o agente funciona (fluxo montado da spec), ficha factual e texto para quem vai usar ---------- */
+const GKIND = { input: 'Entrada', schedule: 'Agendamento', agent: 'Agente', skill: 'Skill', mcp: 'MCP', tool: 'Ferramenta', memory: 'Memória', specialist: 'Especialista', job: 'Harness', output: 'Saída' };
+// rótulos que são dado (nomes escritos por pessoas) não passam pela tradução; os do sistema sim
+const DATA_LABEL = new Set(['agent', 'skill', 'mcp', 'tool', 'specialist']), DATA_SUB = new Set(['agent', 'output', 'schedule']);
+const trunc = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+
+function flowSvg(graph) {
+  const W = 210, H = 62, GAP = 22, RGAP = 40;
+  const by = k => graph.nodes.filter(n => k.includes(n.kind));
+  const inputs = by(['input', 'schedule']), agent = by(['agent'])[0], out = by(['output'])[0];
+  const res = by(['skill', 'mcp', 'tool', 'memory', 'specialist', 'job']);
+  // recursos em linhas de até 4; a largura cresce para caber a linha e o topo (entrada → agente → saída) fica centrado
+  const perRow = Math.min(4, Math.max(1, res.length)), rowW = perRow * W + (perRow - 1) * RGAP;
+  const width = Math.max(810, rowW + 80), off = (width - 810) / 2, COLX = [10 + off, 300 + off, 590 + off];
+  const pos = {};
+  inputs.forEach((n, i) => { pos[n.id] = [COLX[0], 20 + i * (H + GAP)]; });
+  const topH = Math.max(inputs.length * (H + GAP) - GAP, H);
+  const midY = 20 + (topH - H) / 2;
+  pos[agent.id] = [COLX[1], midY]; pos[out.id] = [COLX[2], midY];
+  const rowY0 = 20 + topH + 64, rowStep = H + 56, rows = Math.ceil(res.length / perRow);
+  const rowOf = {};
+  res.forEach((n, i) => {
+    const row = Math.floor(i / perRow), inRow = Math.min(perRow, res.length - row * perRow), col = i % perRow;
+    const x0 = (width - (inRow * W + (inRow - 1) * RGAP)) / 2;
+    pos[n.id] = [x0 + col * (W + RGAP), rowY0 + row * rowStep];
+    rowOf[n.id] = row;
+  });
+  const height = res.length ? rowY0 + rows * rowStep - 36 : 20 + topH + 20;
+  const flow = ([a, b]) => {   // horizontal: entrada → agente → saída
+    const [ax, ay] = pos[a], [bx, by2] = pos[b];
+    const x1 = ax + W, y1 = ay + H / 2, x2 = bx, y2 = by2 + H / 2, mx = (x1 + x2) / 2;
+    return `<path class="g-edge" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2 - 6},${y2}" marker-end="url(#g-arrow)"/>`;
+  };
+  // o agente usa os recursos: um tronco desce do agente e cada linha de recursos tem o seu barramento, então nenhuma
+  // linha passa por dentro de outra caixa (não parece que um recurso chama o outro)
+  const bus = () => {
+    if (!res.length) return '';
+    const acx = pos[agent.id][0] + W / 2, aby = pos[agent.id][1] + H, busY = r => rowY0 + r * rowStep - 26, trunkX = 18;
+    const cx = id => pos[id][0] + W / 2;
+    const parts = [`M${acx},${aby} V${busY(0)}`];
+    for (let r = 0; r < rows; r++) {
+      const xs = res.filter(n => rowOf[n.id] === r).map(n => cx(n.id));
+      parts.push(r === 0 ? `M${Math.min(acx, ...xs)},${busY(0)} H${Math.max(acx, ...xs)}` : `M${trunkX},${busY(r)} H${Math.max(...xs)}`);
+    }
+    if (rows > 1) parts.push(`M${Math.min(acx, cx(res[0].id))},${busY(0)} H${trunkX} V${busY(rows - 1)}`);
+    const drops = res.map(n => `<path class="g-edge g-use" d="M${cx(n.id)},${busY(rowOf[n.id])} V${pos[n.id][1] - 6}" marker-end="url(#g-arrow)"/>`);
+    return `<path class="g-edge g-use" d="${parts.join(' ')}"/>${drops.join('')}`;
+  };
+  const edge = e => (e[1] === agent.id || (e[0] === agent.id && e[1] === out.id)) ? flow(e) : '';
+  const box = n => {
+    const [x, y] = pos[n.id];
+    const g = `<g class="g-node g-${n.kind}"><title>${esc(n.label)}${n.sub ? ' — ' + esc(n.sub) : ''}</title>
+      <rect x="${x}" y="${y}" width="${W}" height="${H}" rx="8"/>
+      <text class="g-kind" x="${x + 12}" y="${y + 17}">${esc(GKIND[n.kind] || n.kind)}</text>
+      <text class="g-label" x="${x + 12}" y="${y + 35}"${DATA_LABEL.has(n.kind) ? ' data-noi18n' : ''}>${esc(trunc(n.label, 26))}</text>
+      <text class="g-sub" x="${x + 12}" y="${y + 51}"${DATA_SUB.has(n.kind) ? ' data-noi18n' : ''}>${esc(trunc(n.sub, 32))}</text></g>`;
+    return n.href ? `<a href="${esc(n.href)}">${g}</a>` : g;
+  };
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Fluxo do agente">
+    <defs><marker id="g-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+    ${graph.edges.filter(e => pos[e[0]] && pos[e[1]]).map(edge).join('')}${bus()}
+    ${graph.nodes.filter(n => pos[n.id]).map(box).join('')}</svg>`;
+}
+
+const when = iso => { const x = ago(iso); return x === 'agora' ? x : `${x} atrás`; };
+const GUIDE_SKELETON = () => window.LANG === 'en'
+  ? '## What it is\n\n## What it does\n- \n\n## What it does not do\n- \n\n## How to use it\n- \n\n## Limits\n- \n'
+  : '## O que é\n\n## O que faz\n- \n\n## O que não faz\n- \n\n## Como usar\n- \n\n## Limites\n- \n';
+
+async function agentGuide(t, a) {
+  t.innerHTML = '<div class="card"><div class="mute">Carregando…</div></div>';
+  const g = await api(`/agents/${a.slug}/guide`);
+  const f = g.facts;
+  const row = (k, v) => v ? `<dt>${k}</dt><dd>${v}</dd>` : '';
+  const list = xs => xs && xs.length ? xs.map(x => `<span class="chip" data-noi18n>${esc(x)}</span>`).join(' ') : '';
+  const bf = f.built_from;
+  const built = bf ? [bf.based_on && `cópia de <a href="#/agents/${esc(bf.based_on.slug)}">${esc(bf.based_on.slug)}</a>`,
+    ...(bf.specialists || []).map(s => `<a href="#/agents/${esc(s.slug)}">${esc(s.slug)}</a>`)].filter(Boolean).join(', ') : '';
+  const mem = f.memory ? ({ agent: 'só este agente', team: 'compartilhada com o time', org: 'compartilhada com a empresa' })[f.memory.scope || 'agent'] : '';
+  t.innerHTML = `
+  <div class="card"><div class="row between"><h2>Como funciona</h2><span class="mute small">v${f.version}${f.prod_version === f.version ? ' · em produção' : ''}</span></div>
+    <div class="guide-flow">${flowSvg(g.graph)}</div>
+    <div class="mute small">O fluxo sai da spec da versão descrita e mostra quais skills, ferramentas e especialistas o agente usa, não o conteúdo deles.</div></div>
+  <div class="grid g2 mt guide-grid">
+    <div class="card" id="gdoc"></div>
+    <div class="card"><h2>Ficha</h2><dl class="kv guide-kv">
+      ${row('Objetivo', `<span data-noi18n>${esc(f.objective)}</span>`)}
+      ${row('Entrega', `<span data-noi18n>${esc(f.final_output)}</span>`)}
+      ${row('Dono', f.owner ? `<span data-noi18n>${esc(f.owner)}</span>` : '')}
+      ${row('Versões', `descrita v${f.version}${f.prod_version ? ` · produção v${f.prod_version}` : ' · fora de produção'}${f.stage_version ? ` · stage v${f.stage_version}` : ''}`)}
+      ${row('Modelo', `<span data-noi18n>${esc(f.model)}</span>`)}
+      ${row('Skills', list(f.skills))}${row('MCPs', list(f.mcps))}${row('Ferramentas', list(f.tools))}
+      ${row('Memória', mem)}
+      ${row('Agendamentos', f.schedules.map(s => `<div><span data-noi18n>${esc(s.name)}</span> · ${esc(s.when)}</div>`).join(''))}
+      ${row('Construído a partir de', built)}</dl>
+      ${f.examples.length ? `<h3>Pedidos de exemplo</h3><div class="mute small">Casos que passaram nos testes desta versão.</div>
+        <ul class="guide-ex">${f.examples.map(x => `<li data-noi18n>${esc(x)}</li>`).join('')}</ul>` : ''}
+      ${f.endpoints ? `<h3>Onde chamar</h3><div class="small">${Object.entries(f.endpoints).map(([k, v]) => `<div class="mt"><span class="mute">${esc(k)}</span> ${copyable(v)}</div>`).join('')}</div>
+        <div class="mute small mt">Para ligar numa ferramenta (Claude, ChatGPT, VS Code…), use a aba <a href="#/agents/${a.slug}/connect">Conectar</a>.</div>` : ''}
+    </div></div>`;
+  guideDoc(a, g);
+}
+
+function guideDoc(a, g, editing = false) {
+  const el = $('#gdoc'), d = g.doc;
+  if (editing) {
+    el.innerHTML = `<h2>Guia</h2><div class="mute small">Markdown. Escreva para quem vai usar: o que é, o que faz, o que não faz, como usar (com pedidos de exemplo) e limites. Salvar não cria versão nova nem exige testes.</div>
+      <textarea id="g-text" rows="18" class="mt" data-noi18n>${esc(d ? d.text : GUIDE_SKELETON())}</textarea>
+      <div class="row mt"><button id="g-save">Salvar guia</button><button id="g-cancel" class="ghost">Cancelar</button></div>`;
+    $('#g-cancel').onclick = () => guideDoc(a, g);
+    $('#g-save').onclick = e => act(e.target, async () => { const r = await api(`/agents/${a.slug}/guide`, { method: 'PUT', body: { text: $('#g-text').value } }); guideDoc(a, r); }, 'Guia salvo');
+    return;
+  }
+  const status = !d ? '' : !d.reviewed ? '<span class="pill warn">rascunho gerado · não revisado</span>' : '<span class="pill ok">revisado</span>';
+  const outdated = d && d.outdated ? `<div class="card warn-card mt">Este texto foi escrito para a v${d.version}; a versão descrita agora é a v${g.facts.version}. Confira se ainda vale.</div>` : '';
+  const btns = g.can_edit ? `<div class="row mt">
+      <button id="g-edit" class="ghost">${d ? 'Editar' : 'Escrever guia'}</button>
+      ${d && !d.reviewed ? '<button id="g-approve">Aprovar rascunho</button>' : ''}
+      ${g.can_generate ? `<button id="g-gen" class="ghost">${d ? 'Gerar de novo com IA' : 'Gerar rascunho com IA'}</button>` : ''}</div>` : '';
+  el.innerHTML = `<div class="row between"><h2>Guia</h2>${status}</div>
+    ${d ? `<div class="md guide-md" data-noi18n>${mdLite(d.text)}</div>
+      <div class="mute small mt">${d.source === 'generated' ? 'Gerado pelo LLM do agente · pedido por' : 'Escrito por'} <span data-noi18n>${esc(d.updated_by)}</span> · v${d.version}${d.updated_at ? ` · ${when(d.updated_at)}` : ''}</div>`
+      : `<div class="empty">Este agente ainda não tem guia.${g.can_edit && !g.can_generate ? ' Escreva aqui, ou peça ao Claude/ChatGPT conectado ao hangar: “escreva o guia do agente com set_agent_guide”.' : ''}</div>`}
+    ${outdated}${btns}`;
+  const on = (id, fn) => { const b = $(id); if (b) b.onclick = fn; };
+  on('#g-edit', () => guideDoc(a, g, true));
+  on('#g-approve', e => act(e.target, async () => { const r = await api(`/agents/${a.slug}/guide/approve`, { method: 'POST' }); guideDoc(a, r); }, 'Rascunho aprovado'));
+  on('#g-gen', e => (!d || confirm('Gerar um rascunho novo com o LLM do agente? Ele substitui o texto atual.')) &&
+    act(e.target, async () => { const r = await api(`/agents/${a.slug}/guide/generate`, { method: 'POST' }); guideDoc(a, r); }, 'Rascunho gerado — revise antes de aprovar'));
 }
 
 function versions(t, a) {

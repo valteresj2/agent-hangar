@@ -209,6 +209,15 @@ pode usar o agente **via MCP** (Claude Code, Claude Desktop, Codex, OpenCode, Cu
 as de chat também podem usá-lo **como modelo** (LibreChat, Open WebUI, OpenCode, SDKs OpenAI). Cada conexão é
 opcional e pode ser revogada sozinha.
 
+**Um guia para cada agente.** Cada agente tem a aba **Guia**, pensada para quem vai usá-lo:
+- um fluxo montado a partir da spec (pedido, agente, as skills, ferramentas, memória e especialistas que ele usa, e
+  o que ele entrega);
+- uma ficha com pedidos de exemplo reais (os casos de teste aprovados) e onde chamar o agente;
+- um texto em Markdown: o que é, o que faz, o que não faz, como usar e os limites.
+
+Quem escreve o texto é a ferramenta de IA que criou o agente. Se uma versão vai para produção sem texto, o LLM do
+agente escreve um rascunho, marcado para revisão até um mantenedor aprovar. Veja [docs/guide.md](docs/guide.md).
+
 ## Início rápido
 
 ```bash

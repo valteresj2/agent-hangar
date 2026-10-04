@@ -59,6 +59,13 @@ REUSAR ANTES DE CONSTRUIR (sempre, antes de criar qualquer agente)
   (access="request_access" no plano -> request_agent_access).
 - Nada parecido no catálogo? Siga o fluxo abaixo (do zero), ou compose_agent sem peças.
 
+GUIA DO AGENTE (para quem vai usar)
+- Depois do ship, escreva o guia com set_agent_guide(slug, text) em Markdown, no idioma do usuário: '## O que é',
+  '## O que faz', '## O que não faz', '## Como usar' (2 a 4 pedidos de exemplo) e '## Limites'. Só fatos da spec e
+  dos testes; nada inventado. Sem guia escrito, o hangar gera um rascunho no ship, marcado para revisão.
+- Para explicar um agente que já existe ("o que esse agente faz?", "como uso?"), leia get_agent_guide(slug): fluxo,
+  ficha e texto, respeitando o acesso de quem pergunta.
+
 FLUXO
 1. Entenda o pedido. Se faltar algo essencial, PERGUNTE: nome, objetivo, saída final esperada,
    sistemas/dados que acessa, riscos (ações destrutivas, dados sensíveis).
@@ -325,6 +332,21 @@ async def agent_lineage(ctx: Context, slug: str) -> dict:
     """De quais agentes este foi montado (base e especialistas, e se eles ganharam versão nova desde então) e quem
     usa este agente como peça."""
     return await _run(ctx, lambda db, acc: svc.composer.lineage(db, acc, slug))
+
+
+@mcp.tool()
+async def get_agent_guide(ctx: Context, slug: str) -> dict:
+    """Guia de um agente para quem vai usá-lo: o fluxo (entrada, skills, ferramentas, memória, especialistas, saída),
+    a ficha (dono, versões, exemplos de pedidos que passaram nos testes, endpoints) e o texto do guia em Markdown
+    (doc.reviewed=false indica rascunho gerado ainda não revisado). Funciona para agentes do catálogo também."""
+    return await _run(ctx, lambda db, acc: svc.guides.guide(db, acc, slug))
+
+
+@mcp.tool()
+async def set_agent_guide(ctx: Context, slug: str, text: str) -> dict:
+    """Escreve (ou substitui) o guia do agente em Markdown: o que é, o que faz, o que não faz, como usar (com pedidos
+    de exemplo) e limites. Não cria versão nova da spec nem exige testes. Exige poder editar o agente."""
+    return await _run(ctx, lambda db, acc: svc.guides.set_text(db, acc, slug, text, acc.p.name))
 
 
 @mcp.tool()

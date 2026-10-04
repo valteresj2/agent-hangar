@@ -78,6 +78,8 @@ JOB_MEM_LIMIT = _env("JOB_MEM_LIMIT", "1g")
 JOB_CPUS = float(_env("JOB_CPUS", "1.0"))
 JOB_TIMEOUT_S = int(_env("JOB_TIMEOUT_S", "180"))
 JOB_MAX_TIMEOUT_S = int(_env("JOB_MAX_TIMEOUT_S", "900"))
+# rascunho do guia do agente gerado pelo LLM quando uma versão vai para produção sem guia escrito
+GUIDE_AUTOGEN = _env("GUIDE_AUTOGEN", "1") == "1"
 JOB_WORKERS = int(_env("JOB_WORKERS", "8"))
 
 # Agendamentos (execuções de agentes em produção por cron ou data única)

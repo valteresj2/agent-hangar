@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Guide tab for every agent**, between Usage and Playground ([docs/guide.md](docs/guide.md)). It replaces the
+  Multi-agent tab.
+  - A flow diagram built from the spec. It shows which skills, MCPs, tools, memory, specialists (linked) and
+    harness job the agent uses, never their content.
+  - A fact sheet. Example requests come from the passed test cases; endpoints are shown only to people who can use
+    the agent.
+  - A Markdown guide for users: what it is, what it does, what it does not do, how to use it and its limits.
+  - The guide text is versioned per agent version but kept outside the spec, so fixing documentation needs no new
+    version or tests. The tab warns when the text was written for an older version.
+  - When a version reaches production without a guide, the agent's LLM writes a draft from the spec and the passed
+    tests only. It is marked "not reviewed" until a maintainer approves it, and it never replaces human text.
+    `GUIDE_AUTOGEN=0` turns this off.
+  - The first paragraph of a reviewed guide becomes the A2A Agent Card description.
+  - API: `GET/PUT /api/agents/{slug}/guide`, `POST .../guide/approve`, `POST .../guide/generate`.
+  - MCP: `get_agent_guide`, `set_agent_guide`. The platform instructions ask AI tools to write the guide after the
+    ship.
 - Comparison with CrewAI AMP, LangSmith Deployment, Dify, AWS Bedrock AgentCore and Microsoft Foundry + Agent 365,
   in both READMEs; details and sources in [docs/comparison.md](docs/comparison.md)
   ([pt-BR](docs/comparison.pt-BR.md)).

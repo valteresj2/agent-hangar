@@ -178,7 +178,11 @@ def stop(db: Session, slug: str, env: str, actor="admin"):
 
 
 def promote(db: Session, slug: str, actor="admin") -> Deployment:
-    return deploy_env(db, slug, "prod", actor)
+    dep = deploy_env(db, slug, "prod", actor)
+    if dep.status == "running":
+        from . import guides  # rascunho do guia da versão nova, em segundo plano (melhor esforço)
+        guides.after_promote(db, get_agent(db, slug), dep.version)
+    return dep
 
 
 def ship(db: Session, slug: str, actor="admin", _seen=None, promote_prod: bool = True) -> list[dict]:

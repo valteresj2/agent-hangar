@@ -223,6 +223,32 @@ def agent_lineage(slug: str, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.composer.lineage(db, acc(request, db), slug))
 
 
+class GuideBody(BaseModel):
+    text: str = Field(max_length=20_000)
+
+
+@router.get("/agents/{slug}/guide")
+def agent_guide(slug: str, request: Request, db=Depends(db_dep)):
+    """Fluxo, ficha e texto do guia (o que é, o que faz, como usar) — para quem vê o agente, inclusive no catálogo."""
+    return guard(lambda: svc.guides.guide(db, acc(request, db), slug))
+
+
+@router.put("/agents/{slug}/guide")
+def agent_guide_set(slug: str, body: GuideBody, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.guides.set_text(db, acc(request, db), slug, body.text, actor(request)))
+
+
+@router.post("/agents/{slug}/guide/approve")
+def agent_guide_approve(slug: str, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.guides.approve(db, acc(request, db), slug, actor(request)))
+
+
+@router.post("/agents/{slug}/guide/generate")
+def agent_guide_generate(slug: str, request: Request, db=Depends(db_dep)):
+    """Rascunho gerado pelo LLM do agente a partir da spec e dos testes aprovados (substitui o texto atual)."""
+    return guard(lambda: svc.guides.generate(db, acc(request, db), slug, actor(request)))
+
+
 @router.post("/agents/{slug}/rollback")
 def rollback(slug: str, body: RollbackBody, request: Request, db=Depends(db_dep)):
     _agent(request, db, slug, "edit")

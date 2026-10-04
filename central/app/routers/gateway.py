@@ -80,9 +80,24 @@ def user_of(request: Request) -> int | None:
 
 
 # ------------------------------------------------------------------ agente-com-harness: ponte de protocolos
+CARD_PATHS = (".well-known/agent.json", ".well-known/agent-card.json")
+
+
+def _with_summary(content: bytes, summary: str) -> bytes:
+    """Agent card do runtime com a descrição trocada pelo resumo do guia revisado (melhor descoberta via A2A)."""
+    try:
+        card = json.loads(content)
+    except ValueError:
+        return content
+    if isinstance(card, dict):
+        card["description"] = summary
+        return json.dumps(card, ensure_ascii=False).encode()
+    return content
+
+
 def _card(info: dict, base: str) -> dict:
     skills = [s if isinstance(s, str) else s.get("name") for s in info["skills"]]
-    return {"protocolVersion": "0.3.0", "name": info["name"], "description": info["objective"],
+    return {"protocolVersion": "0.3.0", "name": info["name"], "description": info.get("summary") or info["objective"],
             "url": f"{base}/a2a", "preferredTransport": "JSONRPC", "version": str(info["version"]),
             "capabilities": {"streaming": False, "pushNotifications": False},
             "defaultInputModes": ["text/plain"], "defaultOutputModes": ["text/plain"],
@@ -135,7 +150,7 @@ async def _harness_mcp(info: dict, request: Request, env: str, channel: str):
 async def _proxy_harness(info: dict, path: str, request: Request, env: str):
     base = f"{config.PUBLIC_BASE_URL}/{'gw' if env == 'prod' else 'gw-stage'}/{info['slug']}"
     channel = channel_of(request)
-    if path in (".well-known/agent.json", ".well-known/agent-card.json"):
+    if path in CARD_PATHS:
         return _card(info, base)
     if path == "mcp":
         return await _harness_mcp(info, request, env, channel)
@@ -198,7 +213,8 @@ async def _proxy(request: Request, slug: str, path: str, env: str):
             return JSONResponse({"error": "orçamento mensal do time esgotado — fale com o mantenedor do time"}, 429)
         spec = svc.spec_of(a)
         info = {"slug": a.slug, "name": a.name, "objective": a.objective, "final_output": a.final_output,
-                "version": a.current_version, "skills": spec.get("skills", []), "id": a.id}
+                "version": a.current_version, "skills": spec.get("skills", []), "id": a.id,
+                "summary": svc.guides.card_summary(db, a) if path in CARD_PATHS else ""}
         is_harness = bool(spec.get("harness"))
         code_ok, code_msg = svc.code_allowed(db, spec, env)
     if not code_ok and protocol_of(path) == "openai" and _sends_client_tools(await request.body()):
@@ -265,6 +281,9 @@ async def _proxy(request: Request, slug: str, path: str, env: str):
     content = await upstream.aread()
     await upstream.aclose()
     await client.aclose()
+    if path in CARD_PATHS and ok and info["summary"]:
+        content = _with_summary(content, info["summary"])
+        headers = {k: v for k, v in headers.items() if k.lower() != "content-length"}
     if proto != "other" and not path.startswith(".well-known"):
         try:
             payload = httpx.Response(200, content=content).json()

@@ -17,6 +17,7 @@ os.environ.update({
     "TEMPLATES_DIR": os.path.join(ROOT, "templates"),
     "DEFAULT_MODEL": "mock/echo",
     "SCHEDULER_ENABLED": "0",  # os testes chamam tick()/execute() direto
+    "GUIDE_AUTOGEN": "0",  # os testes chamam guides.generate_draft() direto
 })
 sys.path.insert(0, os.path.join(ROOT, "central"))
 

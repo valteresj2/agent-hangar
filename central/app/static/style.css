@@ -249,3 +249,25 @@ h3.up{font:600 12px/1.2 var(--f-ui);text-transform:uppercase;letter-spacing:.06e
 .lang-sw b{font-weight:700}
 .lang-float{display:none;position:fixed;top:14px;right:16px;z-index:50}
 body.login-mode .lang-float{display:inline-flex}
+
+/* Guia do agente: fluxo em SVG (cores do produto, claro e escuro) e texto */
+.guide-flow{overflow-x:auto;margin:6px 0 8px}
+.guide-flow svg{width:100%;min-width:640px;height:auto;display:block}
+.g-node rect{fill:var(--panel);stroke:var(--line);stroke-width:1.2}
+.g-node .g-kind{font:600 10px var(--f-ui);fill:var(--mute);text-transform:uppercase;letter-spacing:.06em}
+.g-node .g-label{font:600 13px var(--f-ui);fill:var(--ink)}
+.g-node .g-sub{font:11px var(--f-ui);fill:var(--mute)}
+.g-agent rect{stroke:var(--mark);stroke-width:2;fill:var(--mark-soft)}
+.g-output rect{stroke:var(--go);fill:var(--go-bg)}
+.g-input rect,.g-schedule rect{fill:var(--panel-2)}
+.g-specialist rect{stroke:var(--info);fill:var(--info-bg)}
+.g-memory rect{stroke:var(--hold);fill:var(--hold-bg)}
+a .g-node:hover rect{stroke-width:2.4}
+.g-edge{fill:none;stroke:var(--mute);stroke-width:1.4}
+.g-edge.g-use{stroke-dasharray:4 4}
+#g-arrow path{fill:var(--mute)}
+.guide-grid{align-items:start}
+.guide-md .md-h{font-weight:700;margin:14px 0 6px}
+.guide-md ul,.guide-md ol{margin:4px 0 8px 20px}
+.guide-ex{margin:6px 0 0 18px}
+.guide-kv dd{overflow-wrap:anywhere}

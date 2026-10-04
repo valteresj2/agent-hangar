@@ -277,6 +277,15 @@ per-channel metrics. The **Connect** tab gives a revocable key per tool and the 
   once, and the tokens are kept and refreshed by the hangar ([docs/remote-mcp.md](docs/remote-mcp.md)).
 - **Data Studio:** Python and DuckDB analysis that produces dashboards and decks.
 
+**A guide for every agent.** Each agent has a **Guide** tab for the people who will use it.
+- A flow diagram built from the spec: request, the agent, the skills, tools, memory and specialists it uses, and what
+  it delivers.
+- A fact sheet with real example requests (the test cases that passed) and where to call it.
+- A Markdown text: what it is, what it does, what it does not do, how to use it and its limits.
+
+The AI tool that built the agent writes the text. If a version reaches production without one, the agent's LLM
+writes a draft, marked for review until a maintainer approves it. See [docs/guide.md](docs/guide.md).
+
 **Long-term memory.** Add `memory: {scope: agent | team | org}` and the agent remembers customers, decisions and
 preferences across conversations ([docs/memory.md](docs/memory.md)).
 - The memory is a **temporal knowledge graph** (Graphiti on Neo4j Community or FalkorDB). A fact that changes is
@@ -399,6 +408,8 @@ hangar jobs run code-fixer "Add input validation to parse_date()" --follow
 | [Memory](docs/memory.md) · [MCP catalog](docs/mcp-catalog.md) · [Remote MCPs + Activepieces](docs/remote-mcp.md) | What agents can know and use |
 | [Harnesses](docs/harnesses.md) | Claude Code, Codex, Hermes and DeepSeek Harness as agents |
 | [Reuse before you build](docs/composer.md) | New agents from existing ones: plan, pieces, skills, read-only rules |
+| [Agent guide](docs/guide.md) | The Guide tab: flow from the spec, fact sheet, the users' guide and its drafts |
+| [Cloud VM](docs/cloud-vm.md) · [Comparison](docs/comparison.md) | Docker on AWS, Azure or Google Cloud; how Agent Hangar compares with other platforms |
 | [Kubernetes](docs/kubernetes.md) · [Terraform](deploy/terraform/README.md) | GKE, AKS, EKS: chart, high availability, vault secrets, cloud identity, one-`apply` stacks |
 | [Observability](docs/observability.md) · [Backup and upgrade](docs/backup.md) · [Supply chain](docs/supply-chain.md) | Metrics, logs, traces; `hangar backup`/`upgrade`; signed images and SBOM |
 | [API](docs/api.md) · [CLI](docs/cli.md) · [Security](docs/security.md) | Reference and hardening |

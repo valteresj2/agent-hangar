@@ -5,6 +5,7 @@ from . import (  # noqa: F401  (svc.access.Access, svc.connect.snippet, svc.org.
                       code_eval,
                       composer,
                       connect,
+                      guides,
                       home,
                       mcp_gateway,
                       mcp_oauth,

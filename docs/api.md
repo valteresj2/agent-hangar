@@ -109,6 +109,17 @@ Discovery and token endpoints are open (CORS enabled); the consent and managemen
 
 See [composer.md](composer.md). MCP tools: `plan_agent`, `compose_agent`, `agent_lineage`.
 
+## Agent guide (`/api/agents/{slug}/guide`)
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/agents/{slug}/guide` | Anyone who can see the agent: `facts` (goal, versions, model, pieces, example requests, endpoints when the caller can use it), `graph` (`nodes`, `edges` of the flow) and `doc` (`text`, `source`, `reviewed`, `version`, `outdated`) |
+| PUT | `/api/agents/{slug}/guide` | Editors: `{text}` in Markdown. It creates no new agent version and needs no tests |
+| POST | `/api/agents/{slug}/guide/approve` | Editors: marks the generated draft as reviewed |
+| POST | `/api/agents/{slug}/guide/generate` | Editors: new draft from the agent's LLM, written only from the spec and the passed tests |
+
+See [guide.md](guide.md). MCP tools: `get_agent_guide`, `set_agent_guide`.
+
 ## User portal
 
 | Method | Path | Description |
