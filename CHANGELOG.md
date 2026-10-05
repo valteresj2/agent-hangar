@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-10-05
+
 ### Added
 - **Digital employee (phase F1)**: agents hired for a job, with a human manager, an authority level and a task queue
   ([docs/digital-employee.md](docs/digital-employee.md)).
