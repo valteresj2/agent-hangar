@@ -80,6 +80,10 @@ JOB_TIMEOUT_S = int(_env("JOB_TIMEOUT_S", "180"))
 JOB_MAX_TIMEOUT_S = int(_env("JOB_MAX_TIMEOUT_S", "900"))
 # rascunho do guia do agente gerado pelo LLM quando uma versão vai para produção sem guia escrito
 GUIDE_AUTOGEN = _env("GUIDE_AUTOGEN", "1") == "1"
+# Digital employee: tarefas rodando em paralelo por réplica, rodadas máximas por tarefa e prazo padrão das decisões
+EMPLOYEE_WORKERS = int(_env("EMPLOYEE_WORKERS", "3"))
+EMPLOYEE_MAX_RUNS = int(_env("EMPLOYEE_MAX_RUNS", "12"))
+DECISION_EXPIRES_MIN = int(_env("DECISION_EXPIRES_MIN", "240"))
 JOB_WORKERS = int(_env("JOB_WORKERS", "8"))
 
 # Agendamentos (execuções de agentes em produção por cron ou data única)

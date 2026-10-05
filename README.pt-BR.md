@@ -219,6 +219,23 @@ opcional e pode ser revogada sozinha.
 Quem escreve o texto é a ferramenta de IA que criou o agente. Se uma versão vai para produção sem texto, o LLM do
 agente escreve um rascunho, marcado para revisão até um mantenedor aprovar. Veja [docs/guide.md](docs/guide.md).
 
+**Digital employees (agente como funcionário, com o humano no circuito).** Contrate um agente para um cargo em vez
+de só chamá-lo. Ele tem cargo, gestor humano e **alçada**; recebe tarefas e trabalha nelas em segundo plano.
+- **Contratação em modo self:** a sua ferramenta de IA pergunta pelo MCP o que faltar (`plan_employee` →
+  `hire_employee`) e nada é criado até o cargo estar completo.
+- **Experiência, depois admissão:** primeiro ele faz tarefas reais em stage; o gestor lê os resultados e o admite em
+  produção.
+- **Alçada aplicada pela plataforma, não pelo prompt:** antes de cada ferramenta, o runtime pergunta à central. Cada
+  tipo de ação (ler, enviar para fora, dinheiro, apagar…) é feito sozinho, feito com aviso, aprovado por uma ou duas
+  pessoas ou nunca feito, e o piso da empresa sempre vale.
+- **Humano no circuito:** a tarefa pausa na ação exata (ferramenta e argumentos) e o gestor aprova, edita, recusa ou
+  instrui. Sem resposta, o pedido vai para o substituto e depois expira sem a ação.
+- **Onde gerenciar:** donos e gestores têm o seu espaço no portal (*Digital employees*, *Decisões*); o admin tem a
+  força de trabalho, o catálogo de ações e o piso da empresa no console. Os relatórios diários podem ir para o Slack
+  ou o Teams, o que for da empresa.
+
+Veja [docs/digital-employee.md](docs/digital-employee.md).
+
 ## Início rápido
 
 ```bash
@@ -275,7 +292,8 @@ Veja [integrations/librechat](integrations/librechat/).
 
 [Conceitos](docs/concepts.md) · [Referência da spec](docs/spec.md) · [Harnesses](docs/harnesses.md) ·
 [API](docs/api.md) · [CLI](docs/cli.md) · [Clientes](docs/clients.md) · [Templates](docs/templates.md) ·
-[Segurança](docs/security.md)
+[Segurança](docs/security.md) ·
+[Digital employee](docs/digital-employee.md)
 
 ## Licença
 

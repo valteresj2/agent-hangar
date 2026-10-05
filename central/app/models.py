@@ -479,3 +479,165 @@ class AgentGuide(Base):
     reviewed: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_by: Mapped[str] = mapped_column(String(254), default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+# ------------------------------------------------------------------ Digital employee (F1)
+class Employee(Base):
+    """Digital employee: um agente com cargo, gestor humano, alçada e caixa de tarefas. A alçada é aplicada pela
+    plataforma (gate), nunca pelo prompt. Ciclo de vida: draft -> onboarding -> probation -> active <-> paused ->
+    offboarded."""
+    __tablename__ = "employees"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), unique=True, index=True)
+    team_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    mission: Mapped[str] = mapped_column(Text, default="")
+    responsibilities: Mapped[list] = mapped_column(JSON, default=list)
+    kpis: Mapped[list] = mapped_column(JSON, default=list)  # [{name, target, how}]
+    systems: Mapped[list] = mapped_column(JSON, default=list)  # sistemas/ferramentas declarados pelo dono
+    channels: Mapped[list] = mapped_column(JSON, default=list)  # portal | mcp | schedule | webhook
+    owner_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    manager_user_id: Mapped[int] = mapped_column(Integer)
+    backup_user_ids: Mapped[list] = mapped_column(JSON, default=list)
+    autonomy_level: Mapped[str] = mapped_column(String(12), default="intern")  # intern | junior | pleno | senior
+    status: Mapped[str] = mapped_column(String(12), default="draft")
+    working_hours: Mapped[str] = mapped_column(String(60), default="")
+    task_budget_usd: Mapped[float] = mapped_column(Float, default=1.0)
+    task_time_limit_min: Mapped[int] = mapped_column(Integer, default=30)
+    report_webhook: Mapped[str] = mapped_column(String(500), default="")
+    report_hour: Mapped[int] = mapped_column(Integer, default=18)
+    last_report_on: Mapped[str] = mapped_column(String(10), default="")  # AAAA-MM-DD do último relatório diário
+    created_by: Mapped[str] = mapped_column(String(254), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    hired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    offboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AuthorityRule(Base):
+    """Alçada do cargo para um tipo de ação: auto | notify | approve | approve_2 | never, com condições opcionais
+    sobre os argumentos da ação. O piso da empresa (OrgAuthorityFloor) sempre vence quando é mais restritivo."""
+    __tablename__ = "authority_rules"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), index=True)
+    action_type: Mapped[str] = mapped_column(String(30))
+    mode: Mapped[str] = mapped_column(String(12))
+    conditions: Mapped[list] = mapped_column(JSON, default=list)  # [{field, op, value}]
+    approver: Mapped[str] = mapped_column(String(254), default="manager")  # manager | team_maintainer | user:<email>
+    expires_in_min: Mapped[int] = mapped_column(Integer, default=240)
+    note: Mapped[str] = mapped_column(Text, default="")
+
+
+class ActionCatalog(Base):
+    """Classificação de cada ferramenta por tipo de ação e risco. Ferramenta nova ganha uma classificação automática
+    (conservadora) marcada para o admin revisar."""
+    __tablename__ = "action_catalog"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tool_ref: Mapped[str] = mapped_column(String(300), unique=True, index=True)
+    action_type: Mapped[str] = mapped_column(String(30))
+    risk: Mapped[int] = mapped_column(Integer, default=3)
+    reversible: Mapped[bool] = mapped_column(Boolean, default=False)
+    classified_by: Mapped[str] = mapped_column(String(254), default="auto")  # auto = a revisar pelo admin
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class OrgAuthorityFloor(Base):
+    """Piso da empresa por tipo de ação: nenhum cargo afrouxa. separation=True: quem pediu a tarefa não aprova."""
+    __tablename__ = "org_authority_floor"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    action_type: Mapped[str] = mapped_column(String(30), unique=True)
+    min_mode: Mapped[str] = mapped_column(String(12))
+    separation: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_by: Mapped[str] = mapped_column(String(254), default="")
+
+
+class EmployeeTask(Base):
+    """Trabalho entregue a um Digital employee. Roda em etapas com checkpoint; pausa em waiting_human quando uma ação
+    precisa de decisão e retoma do checkpoint depois dela."""
+    __tablename__ = "employee_tasks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), index=True)
+    source: Mapped[str] = mapped_column(String(20), default="portal")
+    requester: Mapped[str] = mapped_column(String(254), default="")
+    requester_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    title: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text, default="")
+    expected: Mapped[str] = mapped_column(Text, default="")  # tarefas de experiência: o resultado esperado
+    probation: Mapped[bool] = mapped_column(Boolean, default=False)
+    priority: Mapped[int] = mapped_column(Integer, default=2)  # 1 alta, 2 normal, 3 baixa
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="new", index=True)
+    result: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str] = mapped_column(Text, default="")
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    tokens: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    runs: Mapped[int] = mapped_column(Integer, default=0)
+    worker: Mapped[str] = mapped_column(String(80), default="")
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class TaskEvent(Base):
+    __tablename__ = "employee_task_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("employee_tasks.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # created | run | tool | gate | human_request | decision | checkpoint | done | error | note
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class TaskCheckpoint(Base):
+    __tablename__ = "employee_task_checkpoints"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("employee_tasks.id", ondelete="CASCADE"), index=True)
+    seq: Mapped[int] = mapped_column(Integer)
+    messages: Mapped[list] = mapped_column(JSON, default=list)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class HumanRequest(Base):
+    """Humano no circuito: aprovação de uma ação exata, pergunta, admissão ou aviso. Sem resposta no prazo, escala
+    para o substituto; sem resposta de novo, expira em "não fazer"."""
+    __tablename__ = "human_requests"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), index=True)
+    task_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # approval | question | admission | notice
+    action_type: Mapped[str] = mapped_column(String(30), default="")
+    mode: Mapped[str] = mapped_column(String(12), default="approve")
+    tool_ref: Mapped[str] = mapped_column(String(300), default="")
+    tool_name: Mapped[str] = mapped_column(String(120), default="")
+    action_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    payload_hash: Mapped[str] = mapped_column(String(64), default="")
+    rationale: Mapped[str] = mapped_column(Text, default="")
+    risk: Mapped[int] = mapped_column(Integer, default=3)
+    reversible: Mapped[bool] = mapped_column(Boolean, default=False)
+    question: Mapped[str] = mapped_column(Text, default="")
+    assigned_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    fallback_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    escalated: Mapped[bool] = mapped_column(Boolean, default=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(12), default="open", index=True)  # open | decided | expired | cancelled
+    approvals: Mapped[list] = mapped_column(JSON, default=list)  # approve_2: [{user_id, by, at}]
+    decision: Mapped[str] = mapped_column(String(20), default="")  # approve | approve_edited | reject | instruct
+    edited_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    decided_by: Mapped[str] = mapped_column(String(254), default="")
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    grant_hash: Mapped[str] = mapped_column(String(64), default="")  # a ação exata liberada (uma vez)
+    grant_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class EmployeeReport(Base):
+    __tablename__ = "employee_reports"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), index=True)
+    period: Mapped[str] = mapped_column(String(30))
+    summary: Mapped[str] = mapped_column(Text, default="")
+    metrics: Mapped[dict] = mapped_column(JSON, default=dict)
+    sent_to: Mapped[str] = mapped_column(String(500), default="")
+    delivered: Mapped[bool] = mapped_column(Boolean, default=False)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

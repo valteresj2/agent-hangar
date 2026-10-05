@@ -120,6 +120,35 @@ See [composer.md](composer.md). MCP tools: `plan_agent`, `compose_agent`, `agent
 
 See [guide.md](guide.md). MCP tools: `get_agent_guide`, `set_agent_guide`.
 
+## Digital employee API
+
+See [digital-employee.md](digital-employee.md). "Manage" means the owner, the manager, a maintainer of the team or
+an admin.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/employees` | Digital employees you can see, with status, task counts, open decisions and 30-day cost |
+| POST | `/api/employees/plan` | Creates nothing: `missing` (each with the question for the owner), `optional`, `reuse` and `authority_default` |
+| POST | `/api/employees` | Hire. With a required field missing it returns `created: false` and the questions |
+| GET | `/api/employees/{slug}` | Job, rules, effective authority, probation tasks and `metrics` |
+| PATCH | `/api/employees/{slug}` | Manage: job, responsibilities (3+), systems, channels, manager, backups, limits, report webhook and hour. Only the manager or an admin changes `autonomy_level` |
+| POST | `/api/employees/{slug}/probation` | Manage: deploys stage and queues the probation tasks |
+| POST | `/api/employees/{slug}/status` | Manage: `{to: paused \| active \| offboarded, reason}` |
+| PUT | `/api/employees/{slug}/authority` | Manage: `{rules: [...]}`; the answer includes `warnings` for rules below the company floor |
+| GET / POST | `/api/employees/{slug}/tasks` | List (`?status=`) or give a task `{title, body, priority, due_at}` |
+| GET / POST | `/api/employees/{slug}/reports` | List reports, or generate one now (manage) |
+| GET | `/api/tasks/{id}` | Task with its events (timeline) and decision requests |
+| POST | `/api/tasks/{id}/cancel` | The requester or someone who manages the employee |
+| GET | `/api/decisions` | Open decisions you can take (yours first) |
+| POST | `/api/decisions/{id}` | `{decision, edit?, reason?}`: `approve`, `approve_edited`, `reject`, `instruct`, `answer`, `ack` |
+| POST | `/api/decisions/batch` | `{ids, decision, reason?}`; errors are returned per item |
+| GET | `/api/admin/workforce` | Admin or auditor: every employee, decisions by age, approvals by type, expired, unclassified tools |
+| POST | `/api/admin/workforce/stop-all` | Admin: pauses every employee on probation or active |
+| GET / PUT | `/api/admin/action-catalog` | Classification of each tool (`{tool_ref, action_type, risk, reversible}`) |
+| GET / PUT | `/api/admin/authority-floor` | Company floor (`{items: [{action_type, min_mode, separation}]}`) |
+
+`GET /api/me` also returns `decisions`: how many decisions wait for you (notices excluded).
+
 ## User portal
 
 | Method | Path | Description |
@@ -221,5 +250,7 @@ These routes are:
 - `POST /internal/jobs/{id}/callback`, authenticated by the job token.
 - `/internal/gw/…`, used for agent → sub-agent calls.
 - `GET /internal/dashboard/*`, a read-only view for agents with `platform_dashboard`.
+- `POST /internal/gate`, called by a Digital employee's runtime before every tool call: `{task_id, tool, ref, args,
+  rationale, kind}` returns `allowed`, `waiting` (with `request_id`) or `denied`.
 
-The last two are authenticated by `X-Agent-Slug` plus that agent's HMAC token.
+The last three are authenticated by `X-Agent-Slug` plus that agent's HMAC token.

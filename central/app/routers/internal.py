@@ -82,6 +82,24 @@ def dashboard_caller(request: Request, db=Depends(db_dep)):
     return db
 
 
+class GateBody(BaseModel):
+    task_id: int | None = None
+    tool: str
+    ref: str
+    args: dict = {}
+    rationale: str = ""
+    kind: str = "tool"  # tool | ask_human
+
+
+@router.post("/gate")
+def gate(body: GateBody, request: Request, db=Depends(db_dep)):
+    """Digital employee: o runtime pergunta antes de executar cada ferramenta. A alçada é aplicada aqui, não no
+    prompt: allowed (executa), waiting (pedido de decisão aberto; a tarefa pausa) ou denied (não executa)."""
+    a = caller_agent(request, db)
+    return svc.employee_tasks.gate(db, a, body.task_id, body.tool[:120], body.ref[:300], body.args or {},
+                                   body.rationale or "", body.kind)
+
+
 @router.get("/dashboard/overview")
 def dash_overview(db=Depends(dashboard_caller)):
     return svc.overview(db)

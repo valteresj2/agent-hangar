@@ -75,6 +75,8 @@ h3{font-size:13px;font-weight:600;color:var(--mute);margin:18px 0 6px}
 .hero{border-color:var(--mark);background:linear-gradient(90deg,var(--mark) 0 4px,var(--panel) 4px)}
 .warn-card{border-color:#E7C77A;background:var(--mark-soft)}
 @media (prefers-color-scheme:dark){.warn-card{border-color:#6B5516}}
+.ok-card{border-color:var(--go);background:var(--go-bg)}
+.dc-pick{float:left;margin:4px 10px 0 0;min-height:auto}
 .bad-card{border-color:var(--stop);background:var(--stop-bg);color:var(--stop);margin-bottom:12px}
 .click-card{cursor:pointer;transition:border-color .15s}.click-card:hover{border-color:var(--ink)}
 

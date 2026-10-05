@@ -24,6 +24,11 @@
       <a href="#/approvals" data-r="approvals" data-i="approve">Pedidos e aprovações <span id="appr-badge" class="badge" hidden></span></a>
     </div>
     <div class="nav-group">
+      <div class="nav-title">Digital employees</div>
+      <a href="#/employees" data-r="employees" data-i="briefcase">Meus Digital employees</a>
+      <a href="#/decisions" data-r="decisions" data-i="inbox">Decisões <span id="dec-badge" class="badge" hidden></span></a>
+    </div>
+    <div class="nav-group">
       <div class="nav-title">Criar</div>
       <a href="#/agents/new" data-r="agents/new" data-need="builder" data-i="plus">Novo agente</a>
       <a href="#/templates" data-r="templates" data-need="builder" data-i="template">Templates</a>
@@ -51,6 +56,7 @@
 <script src="/ui/icons.js?v=__V__"></script>
 <script>document.querySelectorAll('[data-i]').forEach(el => el.insertAdjacentHTML('afterbegin', icon(el.dataset.i)));</script>
 <script src="/ui/org.js?v=__V__"></script>
+<script src="/ui/employees.js?v=__V__"></script>
 <script src="/ui/home.js?v=__V__"></script>
 <script src="/ui/app.js?v=__V__"></script>
 </body>

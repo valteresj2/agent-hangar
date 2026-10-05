@@ -406,6 +406,8 @@ def me(db: Session, acc: Access) -> dict:
     p = acc.p
     out = {"name": p.name, "via": p.via, "is_admin": p.is_admin, "is_auditor": p.is_auditor, "user": None,
            "teams": [], "org": org_dict(db), "pending": len(pending_for(db, acc))}
+    from .employee_tasks import pending_for as decisions_for
+    out["decisions"] = sum(1 for d in decisions_for(db, acc) if d["kind"] != "notice")
     if p.is_user:
         u = db.get(User, p.user_id)
         out["user"] = user_dict(db, u)

@@ -5,6 +5,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Digital employee (phase F1)**: agents hired for a job, with a human manager, an authority level and a task queue
+  ([docs/digital-employee.md](docs/digital-employee.md)).
+  - Hiring in self mode over MCP: `plan_employee` returns the missing fields with the question for the owner, and
+    `hire_employee` creates nothing until the job is complete. The portal has the same flow as a guided form.
+  - Lifecycle: onboarding → probation (real tasks in stage) → admission by the manager (ships to production) →
+    active ↔ paused → offboarded.
+  - Authority enforced by the platform: the runtime calls `POST /internal/gate` before every tool call and fails
+    closed. Modes are auto, notify, approve, approve_2 and never; job rules with conditions sit under the autonomy
+    level's default and the company floor, and the strictest wins. Tools are classified into an action catalog.
+  - Human in the loop: tasks pause on the exact action. Decisions are approve, approve with edits, reject, instruct,
+    answer and acknowledge, with separation of duties, two approvers, escalation to a backup and expiry (the action
+    is not done). Approvals are one-time grants for that exact payload.
+  - Tasks run from checkpoints with a timeline, a budget, a time limit and a round limit.
+  - Daily reports in the portal and on a webhook (Slack or Teams, whichever the company uses).
+  - Portal: *Digital employees* (list, hire, per-employee tabs) and *Decisions* (inbox with batch decide, badge, home
+    card). Console: workforce overview with *Stop all now*, the action catalog and the company floor.
+  - API under `/api/employees`, `/api/tasks`, `/api/decisions` and `/api/admin/{workforce,action-catalog,authority-floor}`;
+    MCP tools for hiring, tasks, decisions and the lifecycle. Migration `0013_digital_employees`.
+  - Settings: `EMPLOYEE_WORKERS`, `EMPLOYEE_MAX_RUNS`, `DECISION_EXPIRES_MIN`.
+
 ## [0.15.0] — 2026-10-04
 
 ### Added

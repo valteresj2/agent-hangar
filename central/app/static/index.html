@@ -20,6 +20,8 @@
       <a href="#/" data-r="" data-i="gauge">Painel</a>
       <a href="#/agents" data-r="agents" data-i="bot">Agentes</a>
       <a href="#/approvals" data-r="approvals" data-i="approve">Aprovações <span id="appr-badge" class="badge" hidden></span></a>
+      <a href="#/workforce" data-r="workforce" data-i="briefcase">Digital employees</a>
+      <a href="#/decisions" data-r="decisions" data-i="inbox">Decisões <span id="dec-badge" class="badge" hidden></span></a>
     </div>
     <div class="nav-group">
       <div class="nav-title">Construção</div>
@@ -53,6 +55,7 @@
 <script src="icons.js?v=__V__"></script>
 <script>document.querySelectorAll('[data-i]').forEach(el => el.insertAdjacentHTML('afterbegin', icon(el.dataset.i)));</script>
 <script src="org.js?v=__V__"></script>
+<script src="employees.js?v=__V__"></script>
 <script src="app.js?v=__V__"></script>
 </body>
 </html>

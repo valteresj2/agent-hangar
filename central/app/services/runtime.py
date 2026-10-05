@@ -47,6 +47,10 @@ def resolve_spec(db: Session, agent: Agent, env: str, version: int | None = None
         gw = "gw" if env == "prod" or sub.slug in pieces else "gw-stage"
         subs.append({"slug": sub.slug, "name": sub.name, "objective": sub.objective,
                      "url": f"{config.INTERNAL_BASE_URL}/internal/{gw}/{sub.slug}"})
+    from .employees import runtime_profile  # Digital employee: o runtime passa toda ferramenta pelo gate da central
+    profile = runtime_profile(db, agent)
+    if profile:
+        spec["employee"] = profile
     spec.update(skills_resolved=skills, mcps=mcps, sub_agents_resolved=subs, slug=agent.slug,
                 name=agent.name, objective=agent.objective, final_output=agent.final_output,
                 version=version or agent.current_version)

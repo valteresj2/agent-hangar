@@ -26,6 +26,7 @@ function renderSide() {
   const ok = need => !need || (need === 'admin' && ME.is_admin) || (need === 'auditor' && ME.is_auditor) || (need === 'builder' && (ME.can_create_agents || ME.is_admin));
   document.querySelectorAll('nav a').forEach(a => { a.hidden = !ok(a.dataset.need); });
   const badge = $('#appr-badge'); if (badge) { badge.textContent = ME.pending || ''; badge.hidden = !ME.pending; }
+  const dec = $('#dec-badge'); if (dec) { dec.textContent = ME.decisions || ''; dec.hidden = !ME.decisions; }
   const u = ME.user;
   const role = ME.is_admin ? 'Admin' : ME.is_auditor ? 'Auditor' : (ME.teams[0] ? `${ROLE_LABEL[ME.teams[0].role]} · ${ME.teams[0].name}` : 'Membro');
   $('#whoami').innerHTML = `<div class="who">${u && u.avatar_url ? `<img src="${esc(u.avatar_url)}" alt="" referrerpolicy="no-referrer">` : `<span class="av">${esc((u ? (u.name || u.email) : 'A')[0].toUpperCase())}</span>`}

@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from . import auth, config, crypto, db, observability, shared
 from . import services as svc
 from .mcp_tools import mcp
-from .routers import access, admin, gateway, internal, memory, oauth, remote_mcp, schedules, scim
+from .routers import access, admin, employees, gateway, internal, memory, oauth, remote_mcp, schedules, scim
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 observability.setup_logging()
@@ -43,6 +43,7 @@ async def lifespan(app):
     await run_in_threadpool(svc.recover_orphans)
     await run_in_threadpool(_write_gateway_files)  # o gateway Docker MCP precisa dos arquivos mesmo sem servidor ativo
     svc.schedules.start()
+    svc.employee_tasks.start()
     shared.start_heartbeat(housekeeping=svc.jobs.housekeeping)
     observability.start_metrics_server()
     try:
@@ -50,6 +51,7 @@ async def lifespan(app):
             yield
     finally:
         svc.schedules.stop()
+        svc.employee_tasks.stop()
         shared.stop_heartbeat()
 
 
@@ -182,6 +184,7 @@ def metrics(request: Request):
     return Response(body, media_type=ctype)
 app.include_router(access.router)
 app.include_router(admin.router)
+app.include_router(employees.router)
 app.include_router(scim.router)
 app.include_router(schedules.router)
 app.include_router(remote_mcp.router)

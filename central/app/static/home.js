@@ -7,7 +7,8 @@ const homeReqPill = s => { const [t, c] = HOME_REQ[s] || [s, '']; return `<span 
 const homeFirstName = n => String(n || '').split(/[\s@]/)[0];
 
 async function homePage() {
-  const h = await api('/me/home');
+  const [h, dec] = await Promise.all([api('/me/home'), api('/decisions').catch(() => [])]);
+  const toDecide = dec.filter(d => d.kind !== 'notice');
   const c = h.counts;
   const builder = ME.can_create_agents || ME.is_admin;
   const hour = new Date().getHours();
@@ -21,6 +22,10 @@ async function homePage() {
     ${h.attention.length ? `<ul class="attn">${h.attention.map(x => `<li class="${x.level}"><span class="attn-ic">${icon(HOME_ATTN_IC[x.level] || 'chat')}</span>
       <a href="${esc(x.link)}">${esc(x.text)}</a></li>`).join('')}</ul>`
       : '<div class="mute">Nenhum teste reprovado, agendamento com falha, erro recente ou orçamento estourando nos seus agentes.</div>'}</div>
+
+  ${toDecide.length ? `<div class="card mt warn-card"><div class="row between"><h2>Para você decidir: Digital employees (${toDecide.length})</h2><a href="#/decisions" class="small">Abrir Decisões →</a></div>
+    <ul class="list">${toDecide.slice(0, 5).map(d => `<li><a href="#/decisions"><b>${esc(d.employee_name)}</b> · ${esc({ approval: 'aprovação', question: 'pergunta', admission: 'admissão' }[d.kind] || d.kind)}${d.tool ? ` <code class="inline">${esc(d.tool)}</code>` : ''}</a>
+      <span class="mute small">${ago(d.created_at)}</span></li>`).join('')}</ul></div>` : ''}
 
   <div class="board mt">
     ${kpi(fmt(c.agents), 'Meus agentes')}

@@ -1,6 +1,6 @@
 /* Página antiga em cache carregando este arquivo novo (sem icons.js/org.js): recarrega na versão atual. */
 const USER_MODE = window.HANGAR_MODE === 'user';  // portal do usuário (/app) x console de admin (/ui)
-if (typeof icon !== 'function' || typeof boot !== 'function' || (USER_MODE && typeof homePage !== 'function')) {
+if (typeof icon !== 'function' || typeof boot !== 'function' || typeof decisionsPage !== 'function' || (USER_MODE && typeof homePage !== 'function')) {
   // recarrega uma vez só: se o problema não for cache (ex.: erro num script), não entra em loop
   let again = false;
   try { again = Date.now() - Number(sessionStorage.getItem('hangar_reload') || 0) < 15000; sessionStorage.setItem('hangar_reload', String(Date.now())); } catch (e) { again = true; }
@@ -989,19 +989,26 @@ async function route() {
     if (r === 'agents' && a === 'new') await newAgentPage();
     else if (r === 'agents' && a === 'catalog') await agentsPage('catalog');
     else if (r === 'agents' && a) await agentDetail(a, b);
+    else if (r === 'employees' && a === 'new') await employeeHirePage();
+    else if (r === 'employees' && a) await employeeDetail(a, b);
+    else if (r === 'tasks' && a) await taskPage(a);
+    else if (r === 'workforce') await workforcePage(a);
     else if (r === 'teams' && a === 'new') await teamsPage(true);
     else if (r === 'teams' && a) await teamDetail(a);
     else await ({ '': USER_MODE ? homePage : dashboard, agents: agentsPage, templates: templatesPage, keys: keysPage, deployments: deploymentsPage, tests: testsPage, usage: usagePage, catalog: catalogPage, providers: providersPage, connect: connectPage, audit: auditPage,
-      approvals: approvalsPage, teams: teamsPage, users: usersPage, sso: ssoPage, vscode: vscodeAuthorizePage, oauth: oauthConsentPage }[r] || dashboard)();
+      approvals: approvalsPage, employees: employeesPage, decisions: decisionsPage, workforce: workforcePage, teams: teamsPage, users: usersPage, sso: ssoPage, vscode: vscodeAuthorizePage, oauth: oauthConsentPage }[r] || dashboard)();
   } catch (e) { if (!(e instanceof AuthError)) main.innerHTML = `<div class="card"><h2>Erro</h2>${esc(e.message)}</div>`; }
 }
 window.addEventListener('hashchange', () => { if (location.hash.startsWith('#/login')) showLogin(); else route(); });
 boot();
 // auto-refresh só em páginas de leitura (nunca em formulários, editor de spec ou playground)
 const NO_REFRESH = ['new', 'playground', 'spec', 'access', 'schedules', 'memory'];
+// Digital employees: formulários (entregar tarefa, alçada, configurações, catálogo e piso) não recarregam sozinhos
+const EMP_NO_REFRESH = p => (p[1] === 'employees' && p[2] && !['tasks', 'decisions', 'probation', 'reports'].includes(p[3])) || (p[1] === 'workforce' && ['catalog', 'floor'].includes(p[2]));
 setInterval(() => {
   const parts = location.hash.split('/');
-  if (!ME || document.hidden || ['keys', 'templates', 'catalog', 'providers', 'connect', 'teams', 'users', 'sso', 'login', 'oauth', 'vscode'].includes(parts[1])) return;
+  if (!ME || document.hidden || ['keys', 'templates', 'catalog', 'providers', 'connect', 'teams', 'users', 'sso', 'login', 'oauth', 'vscode', 'decisions'].includes(parts[1])) return;
+  if (EMP_NO_REFRESH(parts)) return;
   if (NO_REFRESH.includes(parts[2]) || NO_REFRESH.includes(parts[3]) || document.activeElement.matches('input,textarea,select')) return;
   route();
 }, 15000);

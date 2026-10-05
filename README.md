@@ -286,6 +286,24 @@ per-channel metrics. The **Connect** tab gives a revocable key per tool and the 
 The AI tool that built the agent writes the text. If a version reaches production without one, the agent's LLM
 writes a draft, marked for review until a maintainer approves it. See [docs/guide.md](docs/guide.md).
 
+**Digital employees (agent as employee, with a human in the loop).** Hire an agent for a job instead of only calling
+it. It has a job profile, a human manager and an **authority level**; it takes tasks and works on them in the
+background.
+- **Hiring in self mode:** your AI tool asks you for whatever is missing over MCP (`plan_employee` → `hire_employee`)
+  and creates nothing until the job is complete.
+- **Probation, then admission:** it first does real tasks in stage; the manager reads the results and admits it to
+  production.
+- **Authority enforced by the platform, not the prompt:** before every tool call the runtime asks the central. Each
+  action type (read, send outside, money, delete…) is done on its own, done with a notice, approved by one or two
+  people, or never done, and a company floor always applies.
+- **Human in the loop:** the task pauses on the exact action (tool and arguments) and the manager approves, edits,
+  rejects or instructs. Unanswered requests go to a backup and then expire without the action being done.
+- **Where to manage it:** owners and managers have their own space in the portal (*Digital employees*, *Decisions*);
+  admins have the workforce view, the action catalog and the company floor in the console. Daily reports can go to
+  Slack or Teams, whichever your company uses.
+
+See [docs/digital-employee.md](docs/digital-employee.md).
+
 **Long-term memory.** Add `memory: {scope: agent | team | org}` and the agent remembers customers, decisions and
 preferences across conversations ([docs/memory.md](docs/memory.md)).
 - The memory is a **temporal knowledge graph** (Graphiti on Neo4j Community or FalkorDB). A fact that changes is
@@ -409,6 +427,7 @@ hangar jobs run code-fixer "Add input validation to parse_date()" --follow
 | [Harnesses](docs/harnesses.md) | Claude Code, Codex, Hermes and DeepSeek Harness as agents |
 | [Reuse before you build](docs/composer.md) | New agents from existing ones: plan, pieces, skills, read-only rules |
 | [Agent guide](docs/guide.md) | The Guide tab: flow from the spec, fact sheet, the users' guide and its drafts |
+| [Digital employee](docs/digital-employee.md) | Agents with a job, a manager and an authority level: self-mode hiring, probation, tasks, decisions, reports |
 | [Cloud VM](docs/cloud-vm.md) · [Comparison](docs/comparison.md) | Docker on AWS, Azure or Google Cloud; how Agent Hangar compares with other platforms |
 | [Kubernetes](docs/kubernetes.md) · [Terraform](deploy/terraform/README.md) | GKE, AKS, EKS: chart, high availability, vault secrets, cloud identity, one-`apply` stacks |
 | [Observability](docs/observability.md) · [Backup and upgrade](docs/backup.md) · [Supply chain](docs/supply-chain.md) | Metrics, logs, traces; `hangar backup`/`upgrade`; signed images and SBOM |

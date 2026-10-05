@@ -72,6 +72,23 @@ GUIA DO AGENTE (etapa da construção, nunca opcional)
 - Para explicar um agente que já existe ("o que esse agente faz?", "como uso?"), leia get_agent_guide(slug): fluxo,
   ficha e texto, respeitando o acesso de quem pergunta.
 
+DIGITAL EMPLOYEE (agente como funcionário: cargo, gestor, alçada, tarefas e humano no circuito)
+- Use quando o dono quer um agente que RECEBE TAREFAS e trabalha nelas ao longo do tempo, com um gestor humano que
+  aprova o que for sensível ("um funcionário que…", "um analista que cuida de…", "alguém para fazer X toda semana").
+- Construção em modo self, com o dono: chame plan_employee com o que já sabe. A resposta traz `missing` (campos
+  obrigatórios que faltam, cada um com a pergunta pronta) e `optional`. Faça as perguntas ao dono — no máximo 4 por
+  vez, explicando por que precisa — e chame plan_employee de novo com as respostas até `ready=true`.
+- NUNCA invente: cargo, missão, responsabilidades (3+), gestor (e-mail ou usuário real), sistemas que ele usa, alçada
+  (ou a confirmação explícita do padrão: accept_default_authority=true), canais de entrada e 3+ tarefas de experiência
+  com o resultado esperado. Mostre a alçada padrão e o piso da empresa (authority_default) e sugira a mais restritiva.
+- Reaproveite o catálogo: `reuse` traz agentes, skills e MCPs parecidos; use-os em specialists/skills/mcps.
+- Antes de contratar, mostre ao dono um resumo do cargo e confirme. Depois: hire_employee (recusa e devolve as
+  perguntas se faltar algo) -> start_probation (sobe em stage e roda as tarefas de experiência) -> o GESTOR aprova a
+  admissão em Decisões (portal) ou com decide -> ativo em produção.
+- Trabalho: assign_task(slug, title, body). Acompanhe com employee_status / task_status. Ações fora da alçada pausam a
+  tarefa e viram pedidos de decisão: my_pending_decisions e decide(request_id, approve|approve_edited|reject|instruct).
+- A alçada é da PLATAFORMA (gate), não do prompt: não tente contornar. pause_employee para tudo na hora.
+
 FLUXO
 1. Entenda o pedido. Se faltar algo essencial, PERGUNTE: nome, objetivo, saída final esperada,
    sistemas/dados que acessa, riscos (ações destrutivas, dados sensíveis).
@@ -371,6 +388,149 @@ async def set_agent_guide(ctx: Context, slug: str, text: str, version: int | Non
         v = version or svc.get_agent(db, slug).current_version
         return svc.guides.set_text(db, acc, slug, text, acc.p.name, version=v)
     return await _run(ctx, go)
+
+
+def _employee_fields(title, mission, responsibilities, manager, backups, team, systems, specialists, base, skills,
+                     new_skills, mcps, tools, instructions, llm, memory, channels, authority, accept_default_authority,
+                     autonomy_level, probation_tasks, kpis, working_hours, task_budget_usd, task_time_limit_min,
+                     report_webhook, report_hour, name, visibility, plan_id) -> dict:
+    return {"title": title, "mission": mission, "responsibilities": responsibilities or [], "manager": manager,
+            "backups": backups or [], "team": team, "systems": systems or [], "specialists": specialists or [],
+            "base": base, "skills": skills or [], "new_skills": new_skills or [], "mcps": mcps or [], "tools": tools or [],
+            "instructions": instructions, "llm": llm, "memory": memory, "channels": channels or [],
+            "authority": authority or [], "accept_default_authority": accept_default_authority,
+            "autonomy_level": autonomy_level or "intern", "probation_tasks": probation_tasks or [], "kpis": kpis or [],
+            "working_hours": working_hours, "task_budget_usd": task_budget_usd, "task_time_limit_min": task_time_limit_min,
+            "report_webhook": report_webhook, "report_hour": report_hour, "name": name, "visibility": visibility,
+            "plan_id": plan_id}
+
+
+@mcp.tool()
+async def plan_employee(ctx: Context, request: str = "", title: str = "", mission: str = "",
+                        responsibilities: list[str] | None = None, manager: str = "", backups: list[str] | None = None,
+                        team: str = "", systems: list[str] | None = None, specialists: list[str] | None = None,
+                        base: str = "", skills: list[str] | None = None, new_skills: list[dict] | None = None,
+                        mcps: list[str] | None = None, tools: list | None = None, instructions: str = "",
+                        llm: dict | None = None, memory: dict | None = None, channels: list[str] | None = None,
+                        authority: list[dict] | None = None, accept_default_authority: bool = False,
+                        autonomy_level: str = "intern", probation_tasks: list[dict] | None = None,
+                        kpis: list[dict] | None = None, working_hours: str = "", task_budget_usd: float | None = None,
+                        task_time_limit_min: int | None = None, report_webhook: str = "", report_hour: int | None = None,
+                        name: str = "", visibility: str = "", plan_id: str = "") -> dict:
+    """Digital employee, passo 1 (não cria nada): o que falta para contratar (`missing`, cada campo com a pergunta
+    pronta para o dono), perguntas opcionais, o que reaproveitar do catálogo (`reuse`) e a alçada padrão com o piso da
+    empresa. Chame de novo com as respostas até ready=true."""
+    f = _employee_fields(title, mission, responsibilities, manager, backups, team, systems, specialists, base, skills,
+                         new_skills, mcps, tools, instructions, llm, memory, channels, authority, accept_default_authority,
+                         autonomy_level, probation_tasks, kpis, working_hours, task_budget_usd, task_time_limit_min,
+                         report_webhook, report_hour, name, visibility, plan_id)
+    return await _run(ctx, lambda db, acc: svc.employees.plan(db, acc, request, **f))
+
+
+@mcp.tool()
+async def hire_employee(ctx: Context, request: str = "", title: str = "", mission: str = "",
+                        responsibilities: list[str] | None = None, manager: str = "", backups: list[str] | None = None,
+                        team: str = "", systems: list[str] | None = None, specialists: list[str] | None = None,
+                        base: str = "", skills: list[str] | None = None, new_skills: list[dict] | None = None,
+                        mcps: list[str] | None = None, tools: list | None = None, instructions: str = "",
+                        llm: dict | None = None, memory: dict | None = None, channels: list[str] | None = None,
+                        authority: list[dict] | None = None, accept_default_authority: bool = False,
+                        autonomy_level: str = "intern", probation_tasks: list[dict] | None = None,
+                        kpis: list[dict] | None = None, working_hours: str = "", task_budget_usd: float | None = None,
+                        task_time_limit_min: int | None = None, report_webhook: str = "", report_hour: int | None = None,
+                        name: str = "", visibility: str = "", plan_id: str = "") -> dict:
+    """Digital employee, passo 2: contrata. Se faltar um campo obrigatório, NÃO cria nada e devolve created=false com
+    as perguntas (pergunte ao dono). Cria o agente (montado do catálogo), o cargo, a alçada, as tarefas de experiência
+    e o guia. Depois: start_probation.
+
+    Campos do cargo: title, mission, responsibilities (3+), manager (e-mail ou usuário), backups, team, systems (ou
+    peças: specialists, base, skills, new_skills, mcps, tools), instructions (extra), llm, memory, channels
+    (portal|mcp|schedule|webhook), authority ([{action_type, mode, conditions?, approver?, expires_in_min?}];
+    action_type: read|delegate|write_internal|send_external|speak_for_company|publish|financial|delete|prod_change;
+    mode: auto|notify|approve|approve_2|never) ou accept_default_authority=true, autonomy_level (intern|junior|pleno|
+    senior), probation_tasks ([{title, body, expected}], 3+), kpis, working_hours, task_budget_usd,
+    task_time_limit_min, report_webhook, report_hour."""
+    f = _employee_fields(title, mission, responsibilities, manager, backups, team, systems, specialists, base, skills,
+                         new_skills, mcps, tools, instructions, llm, memory, channels, authority, accept_default_authority,
+                         autonomy_level, probation_tasks, kpis, working_hours, task_budget_usd, task_time_limit_min,
+                         report_webhook, report_hour, name, visibility, plan_id)
+    return await _run(ctx, lambda db, acc: svc.employees.hire(db, acc, request, **f))
+
+
+
+
+@mcp.tool()
+async def start_probation(ctx: Context, slug: str) -> dict:
+    """Digital employee: sobe o agente em stage e coloca as tarefas de experiência na fila. Quando todas terminarem,
+    o gestor recebe o pedido de admissão (Decisões no portal, ou decide)."""
+    return await _run(ctx, lambda db, acc: svc.employees.start_probation(db, acc, slug))
+
+
+@mcp.tool()
+async def set_authority(ctx: Context, slug: str, rules: list[dict]) -> dict:
+    """Troca a alçada do Digital employee: [{action_type, mode, conditions?, approver?, expires_in_min?}]. O piso da
+    empresa sempre vale (a resposta avisa quando uma regra fica abaixo dele)."""
+    return await _run(ctx, lambda db, acc: svc.employees.set_authority(db, acc, slug, rules))
+
+
+@mcp.tool()
+async def assign_task(ctx: Context, slug: str, title: str, body: str = "", priority: int = 2) -> dict:
+    """Entrega uma tarefa a um Digital employee (priority 1 alta, 2 normal, 3 baixa). Ele trabalha em segundo plano;
+    acompanhe com task_status. Ações fora da alçada viram pedidos de decisão."""
+    return await _run(ctx, lambda db, acc: svc.employees.assign(db, acc, slug, title, body, priority, None, "mcp"))
+
+
+@mcp.tool()
+async def task_status(ctx: Context, task_id: int) -> dict:
+    """Situação de uma tarefa: status, resultado, linha do tempo (etapas, ferramentas, decisões) e pedidos abertos."""
+    return await _run(ctx, lambda db, acc: svc.employees.task_detail(db, acc, task_id))
+
+
+@mcp.tool()
+async def employee_status(ctx: Context, slug: str) -> dict:
+    """Cargo, status no ciclo de vida, alçada efetiva, tarefas, decisões abertas, custo e métricas de 30 dias."""
+    def go(db, acc):
+        e, _ = svc.employees.find(db, acc, slug)
+        return {**svc.employees.employee_dict(db, e, acc, detail=True), "metrics": svc.employees.metrics(db, e)}
+    return await _run(ctx, go)
+
+
+@mcp.tool()
+async def list_employees(ctx: Context) -> list:
+    """Os Digital employees que você pode ver, com status, tarefas, decisões abertas e custo."""
+    return await _run(ctx, lambda db, acc: svc.employees.list_employees(db, acc))
+
+
+@mcp.tool()
+async def my_pending_decisions(ctx: Context) -> list:
+    """Decisões que esperam por você: aprovações de ações exatas (com o porquê), perguntas dos Digital employees,
+    admissões e avisos."""
+    return await _run(ctx, lambda db, acc: svc.employee_tasks.pending_for(db, acc))
+
+
+@mcp.tool()
+async def decide(ctx: Context, request_id: int, decision: str, edit: dict | None = None, reason: str = "") -> dict:
+    """Decide um pedido. Aprovação: approve | approve_edited (edit = argumentos corrigidos) | reject (reason) |
+    instruct (reason = o que fazer). Pergunta: answer (reason = a resposta). Admissão: approve | reject. Aviso: ack."""
+    return await _run(ctx, lambda db, acc: svc.employee_tasks.decide(db, acc, request_id, decision, edit, reason))
+
+
+@mcp.tool()
+async def pause_employee(ctx: Context, slug: str, reason: str = "") -> dict:
+    """Para o Digital employee na hora: nenhuma ação passa pelo gate até retomar (resume_employee)."""
+    return await _run(ctx, lambda db, acc: svc.employees.set_status(db, acc, slug, "paused", reason))
+
+
+@mcp.tool()
+async def resume_employee(ctx: Context, slug: str) -> dict:
+    """Retoma um Digital employee pausado."""
+    return await _run(ctx, lambda db, acc: svc.employees.set_status(db, acc, slug, "active"))
+
+
+@mcp.tool()
+async def offboard_employee(ctx: Context, slug: str, reason: str = "") -> dict:
+    """Desliga o Digital employee: cancela tarefas e pedidos abertos e para os containers. O histórico fica."""
+    return await _run(ctx, lambda db, acc: svc.employees.set_status(db, acc, slug, "offboarded", reason))
 
 
 @mcp.tool()
