@@ -5,10 +5,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.16.1] — 2026-10-05
+
 ### Fixed
 - **Digital employee admission respects the team's four-eyes rule.** Before, the manager's admission published to
   production directly. Now it goes through the normal ship flow: when the team requires approval and the manager
   cannot publish, it opens a promotion request and the employee becomes active only after someone else approves it.
+  If you admitted a Digital employee on 0.16.0 in a team that requires approval, check its production version in
+  the audit log (`employee.admission.approved`).
 - Digital employees hired in English get the task prompt, the runtime instructions and the admission summary in
   English (they followed Portuguese before and sometimes mixed languages in their answers).
 - Portal: results of tasks and probation render Markdown, and the action to approve shows each argument on its own
