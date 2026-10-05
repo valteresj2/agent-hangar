@@ -23,6 +23,11 @@ const modePill = m => pillOf(MODE_LABEL, m);
 const lines = v => String(v || '').split('\n').map(x => x.trim()).filter(Boolean);
 const csv = v => String(v || '').split(',').map(x => x.trim()).filter(Boolean);
 const jsonBlock = v => `<pre class="code small" data-noi18n style="white-space:pre-wrap;margin:6px 0">${esc(JSON.stringify(v, null, 2))}</pre>`;
+/* a ação exata, legível: cada argumento numa linha, textos longos com as quebras de linha (o e-mail como será enviado) */
+const payloadView = v => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length
+  ? `<dl class="kv dc-payload" data-noi18n>${Object.entries(v).map(([k, x]) => `<dt><code class="inline">${esc(k)}</code></dt>
+      <dd style="white-space:pre-wrap">${esc(typeof x === 'string' ? x : JSON.stringify(x, null, 2))}</dd>`).join('')}</dl>`
+  : jsonBlock(v);
 
 /* ---------- lista ---------- */
 async function employeesPage() {
@@ -247,7 +252,7 @@ function empProbation(t, e) {
     ${e.status === 'onboarding' && e.can_manage ? '<div class="mt"><button id="pb-go">Começar experiência</button></div>' : ''}
     ${list.map(x => `<div class="card mt"><div class="row between"><a href="#/tasks/${x.id}"><b data-noi18n>${esc(x.title)}</b></a>${taskPill(x.status)}</div>
       <div class="grid g2 small mt"><div><div class="mute">Resultado esperado</div><div data-noi18n>${esc(x.expected || '—')}</div></div>
-      <div><div class="mute">O que ele entregou</div><div data-noi18n>${esc(x.result || x.error || '—')}</div></div></div></div>`).join('')}</div>`;
+      <div><div class="mute">O que ele entregou</div><div class="md small" data-noi18n>${x.result ? mdLite(x.result) : esc(x.error || '—')}</div></div></div></div>`).join('')}</div>`;
   const b = $('#pb-go');
   if (b) b.onclick = ev => act(ev.target, () => api(`/employees/${e.slug}/probation`, { method: 'POST' }).then(route), 'Experiência começou');
 }
@@ -303,7 +308,7 @@ async function taskPage(id) {
     · ${x.runs} rodada(s) · ${usd(x.cost_usd)}</div></div>
     ${['done', 'failed', 'cancelled', 'expired'].includes(x.status) ? '' : '<button class="ghost danger" id="t-cancel">Cancelar tarefa</button>'}</div>
   ${x.body ? `<div class="card"><h2>Pedido</h2><div data-noi18n style="white-space:pre-wrap">${esc(x.body)}</div>${x.expected ? `<div class="mute small mt">Esperado: <span data-noi18n>${esc(x.expected)}</span></div>` : ''}</div>` : ''}
-  ${x.result || x.error ? `<div class="card mt ${x.error ? 'bad-card' : ''}"><h2>${x.error ? 'Erro' : 'Resultado'}</h2><div data-noi18n style="white-space:pre-wrap">${esc(x.result || x.error)}</div></div>` : ''}
+  ${x.result || x.error ? `<div class="card mt ${x.error ? 'bad-card' : ''}"><h2>${x.error ? 'Erro' : 'Resultado'}</h2><div class="md" data-noi18n>${x.result ? mdLite(x.result) : esc(x.error)}</div></div>` : ''}
   ${open.length ? `<div class="mt">${open.map(decisionCard).join('')}</div>` : ''}
   <div class="card mt"><h2>Linha do tempo</h2>${(x.events || []).map(ev => `<div class="li small"><div class="row between"><b>${esc(EVENT_LABEL[ev.kind] || ev.kind)}</b><span class="mute">${ago(ev.at)}</span></div>
     <div class="mute one-line" data-noi18n title="${esc(JSON.stringify(ev.payload))}">${esc(JSON.stringify(ev.payload))}</div></div>`).join('') || '<div class="mute">—</div>'}</div>`;
@@ -326,7 +331,7 @@ function decisionCard(d) {
     body = `<div class="mt"><b>${esc(ACTION_LABEL[d.action_type] || d.action_type)}</b> com <code class="inline">${esc(d.tool)}</code> ${modePill(d.mode)}
       ${d.reversible ? '<span class="pill ok">reversível</span>' : '<span class="pill bad">irreversível</span>'}
       ${d.mode === 'approve_2' ? `<span class="pill">${(d.approvals || []).length}/2 aprovações</span>` : ''}</div>
-      ${d.rationale ? `<div class="small mt">Por quê: <span data-noi18n>${esc(d.rationale)}</span></div>` : ''}${jsonBlock(d.payload)}
+      ${d.rationale ? `<div class="small mt">Por quê: <span data-noi18n>${esc(d.rationale)}</span></div>` : ''}${payloadView(d.payload)}
       <textarea class="dc-edit code" rows="5" hidden data-noi18n>${esc(JSON.stringify(d.payload, null, 2))}</textarea>
       <input class="dc-reason mt" placeholder="Motivo ou instrução (para recusar ou instruir)">`;
     btns = `<button class="dc-go" data-d="approve">Aprovar</button><button class="ghost dc-edit-open">Editar e aprovar</button>
@@ -339,7 +344,7 @@ function decisionCard(d) {
       <input class="dc-reason mt" placeholder="Comentário (opcional)">`;
     btns = '<button class="dc-go" data-d="approve">Admitir em produção</button><button class="ghost danger dc-go" data-d="reject">Ainda não</button>';
   } else {
-    body = `<div class="mt small">Feito: <b>${esc(ACTION_LABEL[d.action_type] || d.action_type)}</b> com <code class="inline">${esc(d.tool)}</code></div>${jsonBlock(d.payload)}`;
+    body = `<div class="mt small">Feito: <b>${esc(ACTION_LABEL[d.action_type] || d.action_type)}</b> com <code class="inline">${esc(d.tool)}</code></div>${payloadView(d.payload)}`;
     btns = '<button class="ghost dc-go" data-d="ack">Ciente</button>';
   }
   return `<div class="card mt dc" data-id="${d.id}">${sel}${head}${body}<div class="row mt">${btns}</div></div>`;
@@ -360,6 +365,7 @@ function bindDecisions(root, after) {
       if (['reject', 'instruct', 'answer'].includes(d) && !why && d !== 'reject') return toast(d === 'answer' ? 'Escreva a resposta' : 'Escreva a instrução', true);
       act(b, () => api(`/decisions/${id}`, { method: 'POST', body: { decision: d, reason: why } }).then(r => {
         if (r.status === 'open') toast('Primeira aprovação registrada — falta a segunda, de outra pessoa');
+        if (r.message) toast(r.message);
         return after();
       }), { approve: 'Aprovado', reject: 'Recusado', instruct: 'Instrução enviada', answer: 'Resposta enviada', ack: 'Ok' }[d]);
     });

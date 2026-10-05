@@ -55,17 +55,28 @@ def checkpoint(db: Session, task: EmployeeTask, messages: list[dict]):
     event(db, task, "checkpoint", {"messages": len(messages)})
 
 
-def task_prompt(task: EmployeeTask) -> str:
-    parts = [f"TAREFA #{task.id}: {task.title}"]
+def lang_of(e: Employee | None) -> str:
+    """Idioma do cargo (pt | en): o prompt da tarefa e as instruções do runtime seguem a língua em que o cargo foi escrito."""
+    if e is None:
+        return "pt"
+    from .composer import _lang_pt
+    return "pt" if _lang_pt(" ".join([e.title or "", e.mission or "", *(e.responsibilities or [])])) else "en"
+
+
+def task_prompt(task: EmployeeTask, lang: str = "pt") -> str:
+    en = lang == "en"
+    parts = [f"{'TASK' if en else 'TAREFA'} #{task.id}: {task.title}"]
     if task.body:
         parts.append(task.body)
-    meta = [f"Pedida por: {task.requester or '—'}"]
+    meta = [f"{'Requested by' if en else 'Pedida por'}: {task.requester or '—'}"]
     if task.due_at:
-        meta.append(f"Prazo: {_aware(task.due_at).isoformat(timespec='minutes')}")
+        meta.append(f"{'Due' if en else 'Prazo'}: {_aware(task.due_at).isoformat(timespec='minutes')}")
     if task.probation:
-        meta.append("Esta é uma tarefa do período de experiência: faça como faria no trabalho real.")
+        meta.append("This is a probation task: do it as you would in real work." if en else
+                    "Esta é uma tarefa do período de experiência: faça como faria no trabalho real.")
     parts.append("\n".join(meta))
-    parts.append("Quando terminar, responda com o resultado final da tarefa. Se faltar informação, use ask_human.")
+    parts.append("When you finish, answer with the final result of the task. If information is missing, use ask_human."
+                 if en else "Quando terminar, responda com o resultado final da tarefa. Se faltar informação, use ask_human.")
     return "\n\n".join(parts)
 
 
@@ -82,7 +93,7 @@ def create_task(db: Session, e: Employee, title: str, body: str = "", source: st
     db.add(t)
     db.flush()
     event(db, t, "created", {"source": source, "requester": requester, "probation": probation})
-    db.add(TaskCheckpoint(task_id=t.id, seq=1, messages=[{"role": "user", "content": task_prompt(t)}]))
+    db.add(TaskCheckpoint(task_id=t.id, seq=1, messages=[{"role": "user", "content": task_prompt(t, lang_of(e))}]))
     db.commit()
     return t
 
@@ -286,13 +297,18 @@ def decide(db: Session, acc: Access, request_id: int, decision: str, edit: dict 
         if decision not in ("approve", "reject"):
             raise PlatformError("admissão: decision = approve | reject")
         from .employees import admit
-        admit(db, acc, e, decision == "approve", reason)  # se o ship falhar, o pedido continua aberto
+        outcome = admit(db, acc, e, decision == "approve", reason)  # se o ship falhar, o pedido continua aberto
         r.status, r.decision, r.reason, r.decided_by, r.decided_at = "decided", decision, reason, who, now()
         for dup in db.scalars(select(HumanRequest).where(HumanRequest.employee_id == e.id, HumanRequest.kind == "admission",
                                                          HumanRequest.status == "open", HumanRequest.id != r.id)):
             dup.status, dup.decided_by, dup.decided_at = "cancelled", who, now()
         db.commit()
-        return request_dict(db, r, e)
+        out = request_dict(db, r, e)
+        out["employee_status"] = outcome
+        if outcome == "approval_pending":
+            out["message"] = ("Admitido. O time exige a aprovação de outra pessoa para produção: o pedido está em "
+                              "Aprovações e ele fica ativo quando for aprovado.")
+        return out
 
     # aprovação de uma ação exata
     if decision not in ("approve", "approve_edited", "reject", "instruct"):
@@ -435,7 +451,7 @@ def run_task(task_id: int) -> EmployeeTask | None:
         if task.cost_usd > e.task_budget_usd:
             return _finish(db, task, "failed", error=f"orçamento da tarefa (US$ {e.task_budget_usd}) estourado")
         cp = last_checkpoint(db, task)
-        messages = list(cp.messages if cp else [{"role": "user", "content": task_prompt(task)}])
+        messages = list(cp.messages if cp else [{"role": "user", "content": task_prompt(task, lang_of(e))}])
         task.runs += 1
         event(db, task, "run", {"run": task.runs, "env": env})
         slug, limit_min = a.slug, e.task_time_limit_min

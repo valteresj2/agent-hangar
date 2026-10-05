@@ -519,6 +519,7 @@
     'Agentes:': 'Agents:', 'Times (': 'Teams (', 'Catálogo da empresa (': 'Company catalog (', 'Time “': 'Team “', ')? Não dá para desfazer.': ')? This cannot be undone.',
     'sem efeito (nova versão)': 'no effect (new version)', 'só este agente': 'this agent only', 'nenhum definido': 'none set', 'do agente.': 'of the agent.',
     // ---- Digital employee
+    'Admitido. O time exige a aprovação de outra pessoa para produção: o pedido está em Aprovações e ele fica ativo quando for aprovado.': 'Admitted. The team requires someone else to approve production: the request is in Approvals, and it becomes active once approved.',
     'Meus Digital employees': 'My Digital employees',
     'Decisões': 'Decisions',
     'Agentes com cargo, gestor humano e alçada: recebem tarefas, trabalham em segundo plano e pedem a sua decisão no que for sensível.': 'Agents with a job, a human manager and an authority level: they take tasks, work in the background and ask for your decision on anything sensitive.',

@@ -551,3 +551,40 @@ def test_lost_round_goes_back_to_the_queue(client, env, rt):
     work()
     assert task(client, env, tid)["status"] == "done"
     assert config.EMPLOYEE_MAX_RUNS >= 3
+
+
+def test_task_prompt_and_runtime_profile_follow_the_job_language(client, env):
+    slug = hire(client, env, title="Renewals analyst", mission="Make sure no customer renewal is missed.",
+                responsibilities=["track renewals", "flag risks", "draft proposals"])
+    with SessionLocal() as db:
+        e = db.query(Employee).filter(Employee.agent_id == svc.get_agent(db, slug).id).one()
+        assert tasksmod.lang_of(e) == "en"
+        assert empmod.runtime_profile(db, svc.get_agent(db, slug))["lang"] == "en"
+        t = db.query(EmployeeTask).filter(EmployeeTask.employee_id == e.id).first()
+        assert tasksmod.task_prompt(t, "en").startswith(f"TASK #{t.id}") and "probation task" in tasksmod.task_prompt(t, "en")
+        assert tasksmod.task_prompt(t).startswith(f"TAREFA #{t.id}")
+
+
+def test_admission_respects_the_teams_four_eyes_for_production(client, env, rt, monkeypatch):
+    monkeypatch.setattr(svc.runtime, "promote", lambda db, slug, actor="admin", **k: None)
+
+    def ship(db, slug, actor="admin", _seen=None, promote_prod=True):  # como o real: testes em stage aprovados
+        from app.models import TestRun
+        a = svc.get_agent(db, slug)
+        db.add(TestRun(agent_id=a.id, version=a.current_version, status="passed", summary="ok"))
+        db.commit()
+        return []
+    monkeypatch.setattr(svc.runtime, "ship", ship)
+    client.patch(f"/api/teams/{env['team']}", headers=ADMIN, json={"require_approval": True})
+    slug = hire(client, env)
+    assert client.post(f"/api/employees/{slug}/probation", headers=env["h"]["own"]).status_code == 200
+    work()
+    adm = next(d for d in client.get("/api/decisions", headers=env["h"]["mgr"]).json() if d["kind"] == "admission")
+    r = client.post(f"/api/decisions/{adm['id']}", headers=env["h"]["mgr"], json={"decision": "approve"}).json()
+    assert r["employee_status"] == "approval_pending" and "Aprovações" in r["message"]
+    assert client.get(f"/api/employees/{slug}", headers=env["h"]["own"]).json()["status"] == "probation"
+    promo = next(x for x in client.get("/api/approvals", headers=env["h"]["mt2"]).json()["to_decide"] if x["kind"] == "promotion")
+    assert client.post(f"/api/promotions/{promo['id']}/approve", headers=env["h"]["mgr"], json={}).status_code == 403  # quatro olhos
+    assert client.post(f"/api/promotions/{promo['id']}/approve", headers=env["h"]["mt2"], json={}).status_code == 200
+    d = client.get(f"/api/employees/{slug}", headers=env["h"]["own"]).json()
+    assert d["status"] == "active" and d["hired_at"]

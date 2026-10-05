@@ -76,6 +76,7 @@ h3{font-size:13px;font-weight:600;color:var(--mute);margin:18px 0 6px}
 .warn-card{border-color:#E7C77A;background:var(--mark-soft)}
 @media (prefers-color-scheme:dark){.warn-card{border-color:#6B5516}}
 .ok-card{border-color:var(--go);background:var(--go-bg)}
+.dc-payload{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin:8px 0;grid-template-columns:90px 1fr}
 .dc-pick{float:left;margin:4px 10px 0 0;min-height:auto}
 .bad-card{border-color:var(--stop);background:var(--stop-bg);color:var(--stop);margin-bottom:12px}
 .click-card{cursor:pointer;transition:border-color .15s}.click-card:hover{border-color:var(--ink)}

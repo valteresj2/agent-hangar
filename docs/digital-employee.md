@@ -25,7 +25,7 @@ onboarding ──► probation ──► (manager admits) ──► active ◄�
 |---|---|
 | `onboarding` | Hired: the agent, the job, the authority rules and the probation tasks exist. Nothing runs yet. |
 | `probation` | Runs in **stage** and does the probation tasks (3 or more real tasks of the job, each with an expected result). When they are all finished, the manager gets an **admission** request with each expected result next to what was delivered. |
-| `active` | Admitted by the manager: tested and published to **production** (the normal `ship` flow). It receives tasks. |
+| `active` | Admitted by the manager: tested and published to **production** through the team's normal flow. If the team requires four-eyes for production and the manager cannot publish directly, the admission opens a promotion request in *Approvals*, and the employee becomes active when someone else approves it. It receives tasks. |
 | `paused` | Nothing gets through the gate until someone resumes it. Any manager can pause their employee; an admin can pause all of them at once. |
 | `offboarded` | Open tasks and decisions are cancelled and containers stop. History, reports and the audit log stay. |
 

@@ -101,7 +101,7 @@
   </aside>
 </main>
 <script>
-// Real screens from a local install (v0.15.0, portal in English). The agents, tests, memory, answers and costs are
+// Real screens from a local install (v0.15.0 and v0.16.0, portal in English). The agents, tests, memory, answers and costs are
 // real; the people and customers are fictional.
 const STEPS = [
   { cover: "intro" },
@@ -143,6 +143,18 @@ const STEPS = [
     title: "Agents work on a schedule",
     body: `<p>Every weekday at 8:00, Deal Desk sends the <b>morning pipeline brief</b>, with customers ranked by urgency and the next step for each.</p>
       <p>It flags what is missing instead of making it up. Results can also go to Slack or Teams through a webhook.</p>` },
+  { img: "18-employee-probation", x: 75, y: 67, tip: "It asked, not guessed",
+    title: "Or hire an agent for a job",
+    body: `<p>Maya asked Claude for a <b>Renewals Analyst</b>. Claude asked her what was missing (the manager, the authority level, three real tasks for a probation period), then hired it as a <b>Digital employee</b>, reusing Account Memory and Proposal Writer.</p>
+      <p>It did the probation tasks in stage. When Northwind's renewal date wasn't on record, it asked Maya instead of guessing. She compared expected and delivered results and admitted it; an admin approved production, as the Sales team requires.</p>` },
+  { img: "20-decision", x: 52, y: 62, tip: "The exact email",
+    title: "It asks before it acts",
+    body: `<p>Maya gave it a task: send Northwind the renewal proposal. It pulled the facts, wrote the email, then <b>stopped</b>: e-mailing a customer needs her approval.</p>
+      <p>She sees the exact action (tool, recipient, text) and the reason, then approves, edits, rejects or tells it what to do instead. Unanswered, the request goes to a backup and then expires, and nothing is sent.</p>` },
+  { img: "21-authority", x: 37, y: 72, tip: "Company floor wins",
+    title: "The platform holds the line, not the prompt",
+    body: `<p>Every tool has an action type: read, send outside, money, delete… Each type is done on its own, done with a notice, approved by one or two people, or never done.</p>
+      <p>The runtime asks the Hangar before <b>every</b> tool call, and the company floor set by the admin always wins, so a looser rule or a clever prompt can't skip it.</p>` },
   { img: "15-connect-tools", x: 58, y: 47, tip: "Pick a tool",
     title: "Use it from any platform",
     body: `<p>The same agent plugs into Claude Code, Claude Desktop, Codex, OpenCode, Cursor, VS Code, Cline, Continue, LibreChat, Open WebUI, SDKs or any MCP client.</p>
@@ -165,9 +177,9 @@ const STEPS = [
 ];
 
 const COVERS = {
-  intro: { count: "Interactive demo · 2 minutes", title: "One home for every AI agent your company builds",
-    side: `<p>Follow Maya, an account executive, from a request in Claude to agents working in production, used from any platform.</p>
-      <p>These are real screens from a local install of Agent Hangar v0.15.0. The agents, tests, memory, answers and costs are real; the people and customers are fictional.</p>`,
+  intro: { count: "Interactive demo · 3 minutes", title: "One home for every AI agent your company builds",
+    side: `<p>Follow Maya, an account executive, from a request in Claude to agents working in production, used from any platform, and to a Digital employee that asks her before it acts.</p>
+      <p>These are real screens from a local install of Agent Hangar v0.16.0. The agents, tests, memory, answers and costs are real; the people and customers are fictional.</p>`,
     html: `<h2>One home for every AI agent<br>your company builds.</h2>
       <p>Build agents in Claude, ChatGPT, Cursor or VS Code. Agent Hangar tests them, runs each in its own container and makes them usable from any platform, over OpenAI-compatible, MCP, A2A and ACP.</p>
       <div class="cta"><a class="primary" href="#" data-go="1">Start the tour →</a><a href="https://github.com/valteresj2/agent-hangar">View on GitHub</a></div>` },

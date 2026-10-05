@@ -577,6 +577,9 @@ def decide_promotion(db: Session, acc: Access, request_id: int, approve: bool, n
     if note:
         r.note = (r.note + "\n— " + note).strip()[:2000]
     db.commit()
+    if approve:
+        from .employees import after_promotion
+        after_promotion(db, a, acc.p.name)
     audit(db, acc.p.name, "promotion.approve" if approve else "promotion.reject", a.slug, f"v{r.version}")
     return promotion_dict(db, r)
 

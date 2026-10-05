@@ -21,7 +21,13 @@ memory, answers and costs are real.
    answer in the Playground is generated live. In the Connect step, a Cursor connection is created, its key is masked
    on screen and revoked right after. `claude_chat.html` is a visual reconstruction of Claude built from
    `transcript.jsonl`; the demo says so.
-6. **Tour:** the screens are converted to WebP in `docs/demo/img/`, and `docs/demo/index.html` holds the steps,
+6. **Digital employee (v0.16.0, 2026-10-05):** `employee_live.py hire` hires a *Renewals Analyst* over MCP as Maya,
+   with Deal Desk's LLM and Account Memory and Proposal Writer as specialists. During probation it asked Maya twice
+   for Northwind's renewal date (not on record) instead of guessing; she answered in the portal. She admitted it, and
+   because Sales requires four-eyes, an admin approved production (`admin_token.txt`, deleted after). Then
+   `employee_live.py task` gives it the e-mail task, which pauses on the exact `send_email` call. `capture.py employee`
+   takes the probation, decision and authority screens. The e-mail was never approved or sent.
+7. **Tour:** the screens are converted to WebP in `docs/demo/img/`, and `docs/demo/index.html` holds the steps,
    captions and hotspots.
 
 ## Running it again

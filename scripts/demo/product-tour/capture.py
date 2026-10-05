@@ -1,6 +1,6 @@
 """Capturas da demo interativa (Product Hunt) como a Maya, com o portal em inglês. Uso: python capture.py <grupo>
 grupos: approval (antes de aprovar), main (depois de publicado e com memória/uso), extra (Guia e Conectar),
-reuse (reusar antes de construir), claude (conversa renderizada)."""
+reuse (reusar antes de construir), employee (Digital employee), claude (conversa renderizada)."""
 import pathlib
 import sys
 
@@ -94,6 +94,24 @@ def run(group: str):
             for k in conns:
                 r = pg.request.delete(f"{BASE}/api/keys/{k['id']}", headers={"X-CSRF-Token": csrf})
                 print("revogada", k["client_label"], r.status)
+        elif group == "employee":
+            # Digital employee (v0.16): contratado pelo MCP (employee_live.py); a tarefa espera a aprovação de um e-mail
+            go("#/employees/renewals-analyst/probation", "18-employee-probation.png", wait=".tabs", pause=1500)
+            go("#/employees/renewals-analyst/overview", "19-employee.png", wait=".tabs", pause=1500)
+            pg.goto(f"{BASE}/app/#/decisions")
+            pg.wait_for_selector(".dc button.dc-go[data-d='approve']", timeout=30000)
+            pg.wait_for_timeout(1200)
+            pg.eval_on_selector(".dc:has(.dc-edit-open)", "c => c.scrollIntoView({block: 'start'})")
+            pg.evaluate("window.scrollBy(0, -120)")
+            pg.wait_for_timeout(400)
+            pg.screenshot(path=str(OUT / "20-decision.png"))
+            pg.goto(f"{BASE}/app/#/employees/renewals-analyst/authority")
+            pg.wait_for_selector(".tabs")
+            pg.wait_for_timeout(1500)
+            pg.eval_on_selector(".tabs", "t => t.scrollIntoView({block: 'start'})")  # a tabela inteira, com o piso da empresa
+            pg.evaluate("window.scrollBy(0, -20)")
+            pg.wait_for_timeout(400)
+            pg.screenshot(path=str(OUT / "21-authority.png"))
         elif group == "reuse":
             # reusar antes de construir: o hangar procura no catálogo agentes e skills parecidos com o pedido
             pg.goto(f"{BASE}/app/#/agents/new")

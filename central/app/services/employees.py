@@ -350,17 +350,23 @@ def probation_progress(db: Session, e: Employee):
     if db.scalar(select(HumanRequest.id).where(HumanRequest.employee_id == e.id, HumanRequest.kind == "admission",
                                                HumanRequest.status == "open")):
         return
-    lines = [f"#{t.id} {t.title} — {t.status}\n  esperado: {t.expected[:300]}\n  resultado: {(t.result or t.error)[:500]}"
+    en = tasksmod.lang_of(e) == "en"
+    exp, res = ("expected", "result") if en else ("esperado", "resultado")
+    lines = [f"#{t.id} {t.title} — {t.status}\n  {exp}: {t.expected[:300]}\n  {res}: {(t.result or t.error)[:500]}"
              for t in tasks]
-    r = HumanRequest(employee_id=e.id, kind="admission", question="Período de experiência concluído:\n\n" + "\n\n".join(lines),
+    head = "Probation finished:" if en else "Período de experiência concluído:"
+    r = HumanRequest(employee_id=e.id, kind="admission", question=f"{head}\n\n" + "\n\n".join(lines),
                      assigned_user_id=e.manager_user_id, approvals=[])
     db.add(r)
     db.commit()
     tasksmod._notify_request(db, e, r)
 
 
-def admit(db: Session, acc: Access, e: Employee, approve: bool, reason: str = ""):
-    from .runtime import ship
+def admit(db: Session, acc: Access, e: Employee, approve: bool, reason: str = "") -> str:
+    """Decide a admissão. Aprovada, publica em produção pelo fluxo normal do time: se o time exige quatro olhos e o gestor
+    não pode publicar direto, vira um pedido de promoção e o funcionário só fica ativo quando outra pessoa aprovar
+    (after_promotion). Devolve "active" | "approval_pending" | "onboarding"."""
+    from .org import ship
     a = db.get(Agent, e.agent_id)
     if acc.p.user_id and acc.p.user_id != e.manager_user_id and not acc.p.is_admin:
         raise Forbidden("só o gestor (ou um admin) decide a admissão")
@@ -370,11 +376,29 @@ def admit(db: Session, acc: Access, e: Employee, approve: bool, reason: str = ""
         e.status = "onboarding"
         db.commit()
         audit(db, acc.p.name, "employee.admission.rejected", a.slug, reason[:300])
-        return
-    ship(db, a.slug, acc.p.name)  # testes do cargo em stage e produção; se reprovar, levanta e nada muda
+        return "onboarding"
+    # testes do cargo em stage e, se passarem, produção (ou o pedido de promoção); se reprovar, levanta e nada muda
+    out = ship(db, acc, a.slug, f"Admissão do Digital employee: {reason}".strip()[:500])
+    if out["status"] == "approval_pending":
+        audit(db, acc.p.name, "employee.admission.approved", a.slug, "aguardando a aprovação de produção do time")
+        return "approval_pending"
     e.status, e.hired_at = "active", now()
     db.commit()
     audit(db, acc.p.name, "employee.admission.approved", a.slug, reason[:300])
+    return "active"
+
+
+def after_promotion(db: Session, a: Agent, actor: str):
+    """Promoção aprovada (quatro olhos): um Digital employee já admitido pelo gestor passa a ativo."""
+    e = db.scalar(select(Employee).where(Employee.agent_id == a.id))
+    if e is None or e.status != "probation":
+        return
+    admitted = db.scalar(select(HumanRequest.id).where(HumanRequest.employee_id == e.id, HumanRequest.kind == "admission",
+                                                       HumanRequest.status == "decided", HumanRequest.decision == "approve"))
+    if admitted:
+        e.status, e.hired_at = "active", now()
+        db.commit()
+        audit(db, actor, "employee.active", a.slug, "produção aprovada")
 
 
 def set_status(db: Session, acc: Access, slug: str, to: str, reason: str = "") -> dict:
@@ -669,5 +693,5 @@ def runtime_profile(db: Session, agent: Agent) -> dict | None:
         return None
     m = db.get(User, e.manager_user_id)
     return {"title": e.title, "mission": e.mission, "responsibilities": e.responsibilities,
-            "manager": (m.name or m.email) if m else "", "autonomy_level": e.autonomy_level,
+            "manager": (m.name or m.email) if m else "", "autonomy_level": e.autonomy_level, "lang": tasksmod.lang_of(e),
             "authority": [{"action_type": s["action_type"], "mode": s["mode"]} for s in gatemod.summary(db, e)]}
