@@ -233,6 +233,12 @@ de só chamá-lo. Ele tem cargo, gestor humano e **alçada**; recebe tarefas e t
 - **Onde gerenciar:** donos e gestores têm o seu espaço no portal (*Digital employees*, *Decisões*); o admin tem a
   força de trabalho, o catálogo de ações e o piso da empresa no console. Os relatórios diários podem ir para o Slack
   ou o Teams, o que for da empresa.
+- **O dia a dia sozinho:**
+  - rotinas por cron;
+  - tarefas vindas de outros sistemas por um webhook de entrada, sem duplicar;
+  - metas medidas contra o alvo num relatório semanal;
+  - sugestões aprendidas com as decisões do gestor: afrouxar o que é sempre aprovado e transformar correções
+    repetidas em lições.
 
 Veja [docs/digital-employee.md](docs/digital-employee.md).
 

@@ -507,6 +507,12 @@ class Employee(Base):
     report_webhook: Mapped[str] = mapped_column(String(500), default="")
     report_hour: Mapped[int] = mapped_column(Integer, default=18)
     last_report_on: Mapped[str] = mapped_column(String(10), default="")  # AAAA-MM-DD do último relatório diário
+    report_weekday: Mapped[int] = mapped_column(Integer, default=0)  # relatório semanal: 0 = segunda … 6 = domingo; -1 = sem
+    last_weekly_on: Mapped[str] = mapped_column(String(10), default="")
+    webhook_token_hash: Mapped[str] = mapped_column(String(64), default="")  # sha256 do token do webhook de entrada
+    webhook_token_hint: Mapped[str] = mapped_column(String(12), default="")  # fim do token, para reconhecê-lo
+    lessons: Mapped[list | None] = mapped_column(JSON, nullable=True)  # [{id, text, source, added_by, at}]
+    dismissed: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # sugestões dispensadas: {id: AAAA-MM-DD}
     created_by: Mapped[str] = mapped_column(String(254), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     hired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -573,6 +579,9 @@ class EmployeeTask(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     runs: Mapped[int] = mapped_column(Integer, default=0)
     worker: Mapped[str] = mapped_column(String(80), default="")
+    not_before: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # espera entre tentativas
+    dedupe_key: Mapped[str] = mapped_column(String(200), default="")  # webhook: o mesmo evento não vira duas tarefas
+    routine_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -628,6 +637,26 @@ class HumanRequest(Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     grant_hash: Mapped[str] = mapped_column(String(64), default="")  # a ação exata liberada (uma vez)
     grant_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class EmployeeRoutine(Base):
+    """Trabalho recorrente de um Digital employee: a cada disparo do cron vira uma tarefa (só com ele ativo, e nunca
+    duas ao mesmo tempo: se a anterior ainda está aberta, o disparo é pulado)."""
+    __tablename__ = "employee_routines"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text, default="")
+    cron: Mapped[str] = mapped_column(String(120))
+    timezone: Mapped[str] = mapped_column(String(60), default="UTC")
+    priority: Mapped[int] = mapped_column(Integer, default=2)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_task_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    skipped: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[str] = mapped_column(String(254), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 

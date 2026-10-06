@@ -59,7 +59,8 @@ app = FastAPI(title=config.APP_NAME, version=config.VERSION, lifespan=lifespan)
 
 _GW = re.compile(r"^/gw(?:-stage)?/([^/]+)(?:/|$)")
 OPEN_PREFIXES = ("/ui", "/app", "/downloads/", "/api/health", "/internal", "/api/auth/", "/login", "/favicon.ico",
-                 "/.well-known/", "/oauth/")
+                 "/.well-known/", "/oauth/",
+                 "/hooks/")  # webhook de entrada do Digital employee: autenticado pelo token do próprio funcionário
 # descoberta e endpoints OAuth do MCP: clientes que rodam no navegador (ex.: MCP Inspector) precisam de CORS
 CORS_PREFIXES = ("/.well-known/", "/oauth/register", "/oauth/token", "/oauth/revoke")
 CORS_HEADERS = [(b"access-control-allow-origin", b"*"), (b"access-control-allow-methods", b"GET, POST, OPTIONS"),
@@ -185,6 +186,7 @@ def metrics(request: Request):
 app.include_router(access.router)
 app.include_router(admin.router)
 app.include_router(employees.router)
+app.include_router(employees.hooks)
 app.include_router(scim.router)
 app.include_router(schedules.router)
 app.include_router(remote_mcp.router)

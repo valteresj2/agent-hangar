@@ -16,6 +16,16 @@ const MODE_LABEL = { auto: ['Sozinho', 'ok'], notify: ['Faz e avisa', 'info'], a
 const LEVEL_LABEL = { intern: 'Estagiário', junior: 'Júnior', pleno: 'Pleno', senior: 'Sênior' };
 const KIND_LABEL = { approval: 'aprovação', question: 'pergunta', admission: 'admissão', notice: 'aviso' };
 const CHANNELS = ['portal', 'mcp', 'schedule', 'webhook'];
+const KPI_METRIC = { tasks_done: 'Tarefas concluídas (30 dias)', done_rate: '% concluídas com sucesso', on_time_rate: '% dentro do prazo',
+  approved_unedited_rate: '% aprovadas sem edição', avg_decision_min: 'Tempo médio de decisão (min)', cost_per_task: 'Custo por tarefa (US$)',
+  expired_decisions: 'Decisões expiradas (30 dias)' };
+const EMP_WEEKDAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+const CRON_PRESETS = [['0 9 * * 1-5', 'Dias úteis às 9h'], ['0 9 * * 1', 'Toda segunda às 9h'], ['0 17 * * 5', 'Toda sexta às 17h'],
+  ['0 8 1 * *', 'Dia 1 de cada mês às 8h'], ['0 */4 * * *', 'A cada 4 horas']];
+const SOURCE_LABEL = { routine: 'rotina', webhook: 'webhook' };
+const kpiVal = k => k.actual == null ? '—' : k.unit === 'US$' ? usd(k.actual) : `${fmt(k.actual)}${k.unit === '%' ? '%' : k.unit === 'min' ? ' min' : ''}`;
+const kpiPill = k => k.ok === true ? '<span class="pill ok">no alvo</span>' : k.ok === false ? '<span class="pill warn">fora do alvo</span>'
+  : `<span class="pill">${k.metric ? 'sem dados ainda' : 'não medida'}</span>`;
 const pillOf = (map, k) => { const [t, c] = map[k] || [k, '']; return `<span class="pill ${c}">${esc(t)}</span>`; };
 const empPill = s => pillOf(EMP_STATUS, s);
 const taskPill = s => pillOf(TASK_STATUS, s);
@@ -137,7 +147,7 @@ async function employeeHirePage() {
 /* ---------- página do Digital employee ---------- */
 async function employeeDetail(slug, tab = 'overview') {
   const e = await api('/employees/' + slug);
-  const tabs = { overview: 'Visão geral', tasks: 'Tarefas', decisions: 'Decisões', authority: 'Alçada', probation: 'Experiência', reports: 'Relatórios', settings: 'Configurações' };
+  const tabs = { overview: 'Visão geral', tasks: 'Tarefas', routines: 'Rotinas', decisions: 'Decisões', authority: 'Alçada', probation: 'Experiência', reports: 'Relatórios', settings: 'Configurações' };
   if (!e.can_manage) delete tabs.settings;
   const key = tabs[tab] ? tab : 'overview';
   main.innerHTML = `<div class="row between"><div><a href="#/employees" class="mute small">← Digital employees</a>
@@ -157,7 +167,7 @@ async function employeeDetail(slug, tab = 'overview') {
   on('#e-prob', ev => act(ev.target, () => api(`/employees/${slug}/probation`, { method: 'POST' }).then(route), 'Experiência começou: as tarefas estão na fila'));
   on('#e-pause', status('paused', 'Pausado', 'Pausar agora? Nenhuma ação passa até alguém retomar.'));
   on('#e-resume', status('active', 'Retomado'));
-  await ({ overview: empOverview, tasks: empTasks, decisions: empDecisions, authority: empAuthority, probation: empProbation, reports: empReports, settings: empSettings })[key]($('#tab'), e);
+  await ({ overview: empOverview, tasks: empTasks, routines: empRoutines, decisions: empDecisions, authority: empAuthority, probation: empProbation, reports: empReports, settings: empSettings })[key]($('#tab'), e);
 }
 
 function empOverview(t, e) {
@@ -166,6 +176,10 @@ function empOverview(t, e) {
   t.innerHTML = `<div class="board">${kpi(fmt(m.done), 'Concluídas (30 dias)')}${kpi(fmt(m.waiting), 'Aguardando decisão')}${kpi(fmt(m.failed), 'Com falha')}
     ${kpi(usd(m.cost_usd), 'Custo (30 dias)')}${kpi(m.approvals ? Math.round(100 * m.approved_unedited / m.approvals) + '%' : '—', 'Aprovado sem edição')}
     ${kpi(m.avg_decision_min == null ? '—' : m.avg_decision_min + ' min', 'Tempo de decisão')}</div>
+  ${(e.kpi_status || []).length ? `<div class="card mt"><h2>Metas</h2><table><tr><th>Meta</th><th>Medida</th><th>Agora</th><th>Alvo</th><th></th></tr>
+    ${e.kpi_status.map(k => `<tr><td data-noi18n>${esc(k.name)}</td><td class="small mute">${esc(KPI_METRIC[k.metric] || '—')}</td><td><b>${kpiVal(k)}</b></td>
+      <td class="small">${k.target == null ? '—' : `${k.higher_is_better ? '≥' : '≤'} ${fmt(k.target)}`}</td><td>${kpiPill(k)}</td></tr>`).join('')}</table>
+    <div class="mute small mt">Medidas pela plataforma nos últimos 30 dias. O relatório semanal compara cada meta com o alvo.</div></div>` : ''}
   <div class="grid g2 mt">
     <div class="card"><h2>Cargo</h2><dl class="kv guide-kv">
       <dt>Missão</dt><dd data-noi18n>${esc(e.mission)}</dd>
@@ -193,9 +207,62 @@ function empOverview(t, e) {
 async function empTasks(t, e) {
   const list = await api(`/employees/${e.slug}/tasks`);
   t.innerHTML = `<div class="card">${list.length ? `<table><tr><th>#</th><th>Tarefa</th><th>Status</th><th>Pedida por</th><th>Custo</th><th>Quando</th></tr>
-    ${list.map(x => `<tr><td><a href="#/tasks/${x.id}">#${x.id}</a></td><td><a href="#/tasks/${x.id}" data-noi18n>${esc(x.title)}</a>${x.probation ? ' <span class="pill">experiência</span>' : ''}</td>
+    ${list.map(x => `<tr><td><a href="#/tasks/${x.id}">#${x.id}</a></td><td><a href="#/tasks/${x.id}" data-noi18n>${esc(x.title)}</a>${x.probation ? ' <span class="pill">experiência</span>' : SOURCE_LABEL[x.source] ? ` <span class="chip">${esc(SOURCE_LABEL[x.source])}</span>` : ''}</td>
       <td>${taskPill(x.status)}</td><td class="small">${esc(x.requester)}</td><td class="small">${usd(x.cost_usd)}</td><td class="mute small">${ago(x.created_at)}</td></tr>`).join('')}</table>`
     : '<div class="mute">Nenhuma tarefa ainda.</div>'}</div>`;
+}
+
+function empRoutines(t, e) {
+  const rs = e.routines || [], w = e.webhook || {};
+  t.innerHTML = `<div class="card"><h2>Rotinas</h2>
+    <div class="mute small">Trabalho recorrente: a cada disparo vira uma tarefa, no fuso da empresa. Dispara só com ele <b>ativo</b>, e nunca duas
+      ao mesmo tempo: se a tarefa anterior da rotina ainda está aberta, o disparo é pulado.</div>
+    ${rs.length ? `<table class="mt"><tr><th>Rotina</th><th>Quando</th><th>Próxima</th><th>Última tarefa</th><th>Puladas</th><th></th></tr>
+      ${rs.map(r => `<tr data-id="${r.id}"><td><b data-noi18n>${esc(r.title)}</b>${r.body ? `<div class="mute small one-line" data-noi18n style="max-width:280px">${esc(r.body)}</div>` : ''}</td>
+        <td class="small"><code class="inline">${esc(r.cron)}</code><div class="mute">${esc(r.when)}</div></td>
+        <td class="small">${r.enabled ? esc(r.next_run_local || '—') : '<span class="pill">pausada</span>'}</td>
+        <td class="small">${r.last_task_id ? `<a href="#/tasks/${r.last_task_id}">#${r.last_task_id}</a> <span class="mute">${ago(r.last_run_at)}</span>` : '—'}</td>
+        <td class="small">${r.skipped}</td>
+        <td>${e.can_manage ? `<div class="row" style="gap:4px"><button class="ghost rt-run">Rodar agora</button>
+          <button class="ghost rt-toggle">${r.enabled ? 'Pausar' : 'Retomar'}</button><button class="ghost danger rt-del">×</button></div>` : ''}</td></tr>`).join('')}</table>`
+      : '<div class="mute mt">Nenhuma rotina ainda.</div>'}
+    ${e.can_manage ? `<h3 class="mt">Nova rotina</h3><div class="grid g2">
+      <label>Título (vira o título de cada tarefa)<input id="rt-title" placeholder="ex.: Revisar as renovações dos próximos 30 dias"></label>
+      <label>Quando<select id="rt-preset">${CRON_PRESETS.map(([c, l]) => `<option value="${c}">${l}</option>`).join('')}<option value="">Outro (cron)…</option></select></label>
+      <label>Detalhes<textarea id="rt-body" rows="3" placeholder="o que fazer em cada execução e o que entregar"></textarea></label>
+      <label>Cron<input id="rt-cron" data-noi18n value="${CRON_PRESETS[0][0]}" placeholder="min hora dia mês dia-da-semana"></label></div>
+      <div class="row mt"><button id="rt-add">Criar rotina</button></div>` : ''}</div>
+  <div class="card mt"><h2>Webhook de entrada</h2>
+    <div class="mute small">Outros sistemas (CRM, formulários, alertas) criam tarefas para ele com um POST. Mande um <code class="inline">dedupe_key</code>
+      por evento: o mesmo evento em ${7} dias não vira uma segunda tarefa.</div>
+    <dl class="kv mt"><dt>Status</dt><dd>${w.enabled ? `<span class="pill ok">ligado</span> token terminado em <code class="inline">…${esc(w.hint)}</code>` : '<span class="pill">desligado</span>'}</dd>
+      <dt>URL</dt><dd>${copyable(w.url || '')}</dd></dl>
+    <div id="wh-out"></div>
+    ${e.can_manage ? `<div class="row mt"><button id="wh-gen">${w.enabled ? 'Trocar o token' : 'Gerar token e ligar'}</button>
+      ${w.enabled ? '<button class="ghost danger" id="wh-off">Desligar o webhook</button>' : ''}</div>` : ''}</div>`;
+  if (!e.can_manage) return;
+  const base = `/employees/${e.slug}/routines`;
+  const pre = $('#rt-preset'), cron = $('#rt-cron');
+  pre.onchange = () => { if (pre.value) cron.value = pre.value; else cron.focus(); };
+  $('#rt-add').onclick = ev => act(ev.target, () => api(base, { method: 'POST', body: { title: $('#rt-title').value.trim(),
+    body: $('#rt-body').value.trim(), cron: cron.value.trim() } }).then(route), 'Rotina criada');
+  t.querySelectorAll('tr[data-id]').forEach(tr => {
+    const id = tr.dataset.id, r = rs.find(x => String(x.id) === id);
+    const on = (sel, fn) => { const b = $(sel, tr); if (b) b.onclick = fn; };
+    on('.rt-run', ev => act(ev.target, () => api(`${base}/${id}/run`, { method: 'POST' }).then(x => { location.hash = `#/tasks/${x.id}`; }), 'Tarefa criada'));
+    on('.rt-toggle', ev => act(ev.target, () => api(`${base}/${id}`, { method: 'PATCH', body: { enabled: !r.enabled } }).then(route)));
+    on('.rt-del', ev => confirm(`Remover a rotina "${r.title}"? As tarefas que ela já criou ficam.`) &&
+      act(ev.target, () => api(`${base}/${id}`, { method: 'DELETE' }).then(route), 'Rotina removida'));
+  });
+  $('#wh-gen').onclick = ev => (!w.enabled || confirm('Trocar o token? O token atual para de funcionar na hora.')) &&
+    act(ev.target, async () => {
+      const r = await api(`/employees/${e.slug}/webhook`, { method: 'POST', body: { enabled: true } });
+      $('#wh-out').innerHTML = `<div class="card warn-card mt"><b>Copie agora: o token não aparece de novo.</b>
+        <div class="mt">${copyable(r.token)}</div><div class="mute small mt">Exemplo:</div><pre class="code small" data-noi18n style="white-space:pre-wrap">${esc(r.example)}</pre></div>`;
+    }, 'Token gerado');
+  const off = $('#wh-off');
+  if (off) off.onclick = ev => confirm('Desligar o webhook? Os sistemas que usam o token param de criar tarefas.') &&
+    act(ev.target, () => api(`/employees/${e.slug}/webhook`, { method: 'POST', body: { enabled: false } }).then(route), 'Webhook desligado');
 }
 
 async function empDecisions(t, e) {
@@ -204,7 +271,17 @@ async function empDecisions(t, e) {
   bindDecisions(t, () => route());
 }
 
-function empAuthority(t, e) {
+function suggestionCard(s, can) {
+  const body = s.kind === 'authority'
+    ? `<div class="mt">${modePill(s.from)} → ${modePill(s.to)} em <b>${esc(ACTION_LABEL[s.action_type] || s.action_type)}</b></div>`
+    : `<ul class="small mt">${(s.examples || []).map(x => `<li><a href="#/decisions">#${x.request}</a> ${esc({ approve_edited: 'editada', reject: 'recusada', instruct: 'instruída' }[x.decision] || x.decision)}${x.reason || x.edit ? ` — <span data-noi18n>${esc(x.reason || x.edit)}</span>` : ''}</li>`).join('')}</ul>
+      ${can ? `<label class="mt">Lição (vai no prompt de cada tarefa nova)<textarea class="sg-text" rows="2" data-noi18n>${esc(s.lesson)}</textarea></label>` : `<div class="small mt" data-noi18n>${esc(s.lesson)}</div>`}`;
+  return `<div class="card mt sg" data-id="${esc(s.id)}"><div class="row between"><b data-noi18n>${esc(s.text)}</b><span class="pill info">${s.evidence} decisões</span></div>${body}
+    ${can ? `<div class="row mt"><button class="sg-apply">${s.kind === 'authority' ? 'Aplicar' : 'Virar lição'}</button><button class="ghost sg-dismiss">Dispensar</button></div>` : ''}</div>`;
+}
+
+async function empAuthority(t, e) {
+  const sugs = await api(`/employees/${e.slug}/suggestions`).catch(() => []);
   const rules = (e.rules || []).map(r => ({ ...r }));
   const row = (r, i) => `<tr data-i="${i}"><td><select class="r-type">${Object.entries(ACTION_LABEL).map(([k, v]) => `<option value="${k}" ${k === r.action_type ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
     <td><select class="r-mode">${Object.entries(MODE_LABEL).map(([k, [v]]) => `<option value="${k}" ${k === r.mode ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
@@ -213,7 +290,10 @@ function empAuthority(t, e) {
     <td><input class="r-exp" type="number" value="${r.expires_in_min || 240}" style="width:90px"></td>
     <td><button class="ghost r-del">×</button></td></tr>`;
   const draw = () => {
-    t.innerHTML = `<div class="grid g2"><div class="card"><h2>Alçada efetiva</h2><div class="mute small">O que vale agora para cada tipo de ação — regras do cargo, padrão do nível e o piso da empresa (o mais restritivo ganha). Quem aplica é a plataforma, não o prompt.</div>
+    t.innerHTML = `${sugs.length ? `<div class="card ok-card"><h2>O que as decisões ensinaram (${sugs.length})</h2>
+      <div class="mute small">Sugestões a partir das decisões dos últimos 30 dias. Nada muda sozinho: o gestor aplica ou dispensa.</div>
+      ${sugs.map(s => suggestionCard(s, e.can_manage)).join('')}</div>` : ''}
+    <div class="grid g2 ${sugs.length ? 'mt' : ''}"><div class="card"><h2>Alçada efetiva</h2><div class="mute small">O que vale agora para cada tipo de ação — regras do cargo, padrão do nível e o piso da empresa (o mais restritivo ganha). Quem aplica é a plataforma, não o prompt.</div>
       <table class="mt"><tr><th>Tipo de ação</th><th>Modo</th><th>De onde vem</th></tr>${(e.authority || []).map(a => `<tr><td>${esc(ACTION_LABEL[a.action_type] || a.action_type)}</td>
         <td>${modePill(a.mode)}${a.separation ? ' <span class="pill">separação de funções</span>' : ''}</td><td class="mute small">${esc(a.source)}</td></tr>`).join('')}</table></div>
       <div class="card"><h2>Como ler</h2><ul class="small">
@@ -226,6 +306,14 @@ function empAuthority(t, e) {
       <div class="row mt"><button class="ghost" id="r-add">+ regra</button><button id="r-save">Salvar alçada</button></div>
       <div class="mute small mt">Quem aprova: manager, team_maintainer ou user:&lt;e-mail&gt;. Condições: field + op (&gt;, &gt;=, &lt;, &lt;=, ==, !=, contains, not_contains, domain_not) + value.</div><div id="r-warn"></div>`
       : (rules.length ? `<table>${rules.map(r => `<tr><td>${esc(ACTION_LABEL[r.action_type])}</td><td>${modePill(r.mode)}</td><td data-noi18n class="small">${esc(JSON.stringify(r.conditions))}</td></tr>`).join('')}</table>` : '<div class="mute">Sem regras próprias: vale o padrão do nível.</div>')}</div>`;
+    t.querySelectorAll('.sg').forEach(c => {
+      const id = c.dataset.id, txt = $('.sg-text', c);
+      const ap = $('.sg-apply', c), dm = $('.sg-dismiss', c);
+      if (ap) ap.onclick = ev => act(ev.target, () => api(`/employees/${e.slug}/suggestions/${encodeURIComponent(id)}/apply`,
+        { method: 'POST', body: { text: txt ? txt.value.trim() : '' } }).then(route), 'Aplicado');
+      if (dm) dm.onclick = ev => act(ev.target, () => api(`/employees/${e.slug}/suggestions/${encodeURIComponent(id)}/dismiss`,
+        { method: 'POST' }).then(route), 'Dispensada');
+    });
     if (!e.can_manage) return;
     const read = () => [...t.querySelectorAll('tr[data-i]')].map(tr => ({ action_type: $('.r-type', tr).value, mode: $('.r-mode', tr).value,
       conditions: JSON.parse($('.r-cond', tr).value || '[]'), approver: $('.r-appr', tr).value.trim(), expires_in_min: Number($('.r-exp', tr).value) || 240 }));
@@ -259,12 +347,14 @@ function empProbation(t, e) {
 
 async function empReports(t, e) {
   const list = await api(`/employees/${e.slug}/reports`);
-  t.innerHTML = `<div class="card"><div class="row between"><h2>Relatórios</h2>${e.can_manage ? '<button class="ghost" id="rp-now">Gerar agora</button>' : ''}</div>
-    <div class="mute small">Um por dia, na hora configurada (fuso da empresa). Com webhook configurado (Slack ou Teams, o que for da empresa), o resumo também é enviado para lá.</div>
-    ${list.length ? list.map(r => `<div class="li"><div class="row between"><span class="pill">${esc(r.period)}</span><span class="mute small">${ago(r.at)} ${r.delivered ? '· enviado' : ''}</span></div>
+  t.innerHTML = `<div class="card"><div class="row between"><h2>Relatórios</h2>${e.can_manage ? '<div class="row"><button class="ghost" id="rp-now">Gerar diário agora</button><button class="ghost" id="rp-week">Gerar semanal agora</button></div>' : ''}</div>
+    <div class="mute small">Um por dia, na hora configurada (fuso da empresa), e um por semana com as metas comparadas ao alvo. Com webhook configurado (Slack ou Teams, o que for da empresa), o resumo também é enviado para lá.</div>
+    ${list.length ? list.map(r => `<div class="li"><div class="row between"><span class="pill ${r.period === 'weekly' ? 'info' : ''}">${esc({ daily: 'diário', weekly: 'semanal' }[r.period] || r.period)}</span><span class="mute small">${ago(r.at)} ${r.delivered ? '· enviado' : ''}</span></div>
       <div class="small" data-noi18n style="white-space:pre-wrap">${esc(r.summary)}</div></div>`).join('') : '<div class="mute mt">Nenhum relatório ainda.</div>'}</div>`;
   const b = $('#rp-now');
   if (b) b.onclick = ev => act(ev.target, () => api(`/employees/${e.slug}/reports`, { method: 'POST' }).then(route), 'Relatório gerado');
+  const bw = $('#rp-week');
+  if (bw) bw.onclick = ev => act(ev.target, () => api(`/employees/${e.slug}/reports?period=weekly`, { method: 'POST' }).then(route), 'Relatório gerado');
 }
 
 function empSettings(t, e) {
@@ -278,14 +368,37 @@ function empSettings(t, e) {
     <label>Orçamento por tarefa (US$)<input id="s-budget" type="number" step="0.1" value="${e.task_budget_usd}"></label>
     <label>Tempo limite por tarefa (min)<input id="s-limit" type="number" value="${e.task_time_limit_min}"></label>
     <label>Webhook dos relatórios ${e.report_webhook ? '(configurado; deixe vazio para manter)' : ''}<input id="s-hook" placeholder="https://hooks…"></label>
-    <label>Hora do relatório diário<input id="s-hour" type="number" min="0" max="23" value="${e.report_hour ?? 18}"></label></div>
+    <label>Hora do relatório diário<input id="s-hour" type="number" min="0" max="23" value="${e.report_hour ?? 18}"></label>
+    <label>Relatório semanal<select id="s-week">${EMP_WEEKDAYS.map((d, i) => `<option value="${i}" ${i === (e.report_weekday ?? 0) ? 'selected' : ''}>${d}</option>`).join('')}
+      <option value="-1" ${e.report_weekday === -1 ? 'selected' : ''}>Sem relatório semanal</option></select></label></div>
+    <h3 class="mt">Metas</h3><div class="mute small">Com uma medida, a plataforma acompanha a meta sozinha e compara com o alvo.</div>
+    <div id="s-kpis"></div><button class="ghost small" id="s-kpi-add">+ meta</button>
     <div class="row mt"><button id="s-save">Salvar</button></div></div>
+  <div class="card mt"><h2>Lições (${(e.lessons || []).length})</h2>
+    <div class="mute small">Vão no prompt de cada tarefa nova. Vêm das sugestões aprovadas na aba Alçada, ou escreva uma aqui.</div>
+    ${(e.lessons || []).map(l => `<div class="row between li" data-id="${esc(l.id)}"><span><span data-noi18n>${esc(l.text)}</span>
+      <div class="mute small">${esc(l.source === 'manual' ? 'escrita' : 'aprendida')} por ${esc(l.added_by)} · ${ago(l.at)}</div></span>
+      <button class="ghost ls-del">Remover</button></div>`).join('') || '<div class="mute mt">Nenhuma lição ainda.</div>'}
+    <div class="row mt"><input id="ls-text" placeholder="ex.: sempre copie vendas@empresa.com em e-mails para clientes" style="flex:1"><button class="ghost" id="ls-add">Adicionar</button></div></div>
   <div class="card mt bad-card"><h2>Desligar</h2><div class="mute small">Cancela as tarefas e as decisões abertas e para os containers. O histórico, os relatórios e a auditoria ficam.</div>
     <div class="row mt"><button class="danger" id="s-off" ${e.status === 'offboarded' ? 'disabled' : ''}>${window.t('Desligar')} ${esc(e.name)}</button></div></div>`;
+  const kbox = $('#s-kpis');
+  const addKpi = k => kbox.insertAdjacentHTML('beforeend', `<div class="grid g3 mt s-kpi">
+    <input class="k-name" placeholder="Meta" value="${esc(k.name || '')}" data-noi18n>
+    <select class="k-metric"><option value="">— sem medida —</option>${Object.entries(KPI_METRIC).map(([m, l]) => `<option value="${m}" ${m === k.metric ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <input class="k-target" type="number" step="any" placeholder="Alvo" value="${k.target ?? ''}"></div>`);
+  (e.kpis || []).forEach(k => addKpi(typeof k === 'string' ? { name: k } : k));
+  $('#s-kpi-add').onclick = () => addKpi({});
+  const readKpis = () => [...document.querySelectorAll('.s-kpi')].map(r => ({ name: $('.k-name', r).value.trim(), metric: $('.k-metric', r).value,
+    target: $('.k-target', r).value === '' ? null : Number($('.k-target', r).value) })).filter(k => k.name || k.metric);
+  $('#ls-add').onclick = ev => act(ev.target, () => api(`/employees/${e.slug}/lessons`, { method: 'POST', body: { text: $('#ls-text').value.trim() } }).then(route), 'Lição adicionada');
+  t.querySelectorAll('.ls-del').forEach(b => b.onclick = ev => act(ev.target, () => api(`/employees/${e.slug}/lessons/${b.closest('[data-id]').dataset.id}`,
+    { method: 'DELETE' }).then(route), 'Lição removida'));
   $('#s-save').onclick = ev => {
     const body = { title: $('#s-title').value.trim(), mission: $('#s-mission').value.trim(), responsibilities: lines($('#s-resp').value),
       systems: lines($('#s-systems').value), working_hours: $('#s-hours').value.trim(), task_budget_usd: Number($('#s-budget').value),
-      task_time_limit_min: Number($('#s-limit').value), report_hour: Number($('#s-hour').value) };
+      task_time_limit_min: Number($('#s-limit').value), report_hour: Number($('#s-hour').value),
+      report_weekday: Number($('#s-week').value), kpis: readKpis() };
     if ($('#s-manager').value.trim()) body.manager = $('#s-manager').value.trim();
     if ($('#s-hook').value.trim()) body.report_webhook = $('#s-hook').value.trim();
     if ($('#s-level').value !== e.autonomy_level) body.autonomy_level = $('#s-level').value;

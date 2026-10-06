@@ -548,6 +548,12 @@ def test_lost_round_goes_back_to_the_queue(client, env, rt):
         t.status, t.started_at = "in_progress", now() - timedelta(hours=2)  # a réplica caiu no meio da rodada
         db.commit()
         assert tasksmod.sweep(db)["requeued"] == 1
+        assert db.get(EmployeeTask, tid).not_before is not None  # volta com espera, não na hora
+    work()
+    assert task(client, env, tid)["status"] == "new"
+    with SessionLocal() as db:
+        db.get(EmployeeTask, tid).not_before = now() - timedelta(seconds=1)  # a espera passou
+        db.commit()
     work()
     assert task(client, env, tid)["status"] == "done"
     assert config.EMPLOYEE_MAX_RUNS >= 3

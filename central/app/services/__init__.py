@@ -7,6 +7,7 @@ from . import (  # noqa: F401  (svc.access.Access, svc.connect.snippet, svc.org.
                       connect,
                       employee_gate,
                       employee_tasks,
+                      employee_work,
                       employees,
                       guides,
                       home,

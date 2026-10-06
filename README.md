@@ -301,6 +301,12 @@ background.
 - **Where to manage it:** owners and managers have their own space in the portal (*Digital employees*, *Decisions*);
   admins have the workforce view, the action catalog and the company floor in the console. Daily reports can go to
   Slack or Teams, whichever your company uses.
+- **Day-to-day work on its own:**
+  - routines from a cron;
+  - tasks from other systems through an inbound webhook, without duplicates;
+  - goals measured against targets in a weekly report;
+  - suggestions learned from the manager's decisions: loosen what is always approved, and turn repeated corrections
+    into lessons.
 
 See [docs/digital-employee.md](docs/digital-employee.md).
 

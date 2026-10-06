@@ -5,6 +5,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Digital employee, phase F2** ([docs/digital-employee.md](docs/digital-employee.md)).
+  - **Routines:** recurring work from a cron. It runs only while the employee is active, never two at once (a run is
+    skipped while the previous task is open), and is safe with several central replicas. Routines can be created at
+    hire, over MCP (`set_routine`, `list_routines`, `delete_routine`) or in the new *Routines* tab.
+  - **Inbound webhook:** `POST /hooks/employees/{slug}` with a per-employee token (shown once, stored hashed,
+    rotatable). A `dedupe_key` seen in the last 7 days does not create a second task.
+  - **Measured goals:** each KPI can point to a platform metric (`done_rate`, `on_time_rate`,
+    `approved_unedited_rate`, `avg_decision_min`, `cost_per_task`, `tasks_done`, `expired_decisions`) with a target.
+    The *Overview* shows on/off target.
+  - **Weekly report** on a chosen weekday, with each goal compared with its target.
+  - **Learning from decisions:**
+    - suggests moving an action type from *approve* to *notify* after repeated approvals without edits, never below
+      the company floor;
+    - turns repeated corrections on one tool into a lesson that goes into every new task's prompt;
+    - the manager applies or dismisses each suggestion (*Authority* tab, or `employee_suggestions` /
+      `apply_suggestion`).
+  - **Growing waits between retries** when a round fails (30 s, 60 s, 120 s…). Migration `0014_employee_f2`.
+  - Settings: `EMPLOYEE_RETRY_BASE_S`, `EMPLOYEE_DEDUPE_DAYS`, `LEARN_MIN_APPROVALS`, `LEARN_MIN_CORRECTIONS`.
+
 ## [0.16.1] — 2026-10-05
 
 ### Fixed

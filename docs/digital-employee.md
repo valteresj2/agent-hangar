@@ -11,7 +11,9 @@ The person stays in the loop for everything sensitive, and **the platform enforc
 prompt**. Before every tool call, the agent's runtime asks the central (`/internal/gate`). If the central does not
 answer, the action does not run (it fails closed).
 
-This is phase F1. Integrations with the company's chat tool are planned for F3; see [Roadmap](#roadmap).
+Phases F1 (the job, authority and decisions) and F2 (recurring work, inbound webhooks, measured goals, weekly
+reports and learning from decisions) are done. Integrations with the company's chat tool are planned for F3; see
+[Roadmap](#roadmap).
 
 ## Lifecycle
 
@@ -55,9 +57,10 @@ Required fields:
 | `channels` | At least one of `portal`, `mcp`, `schedule`, `webhook` |
 | `probation_tasks` | 3 or more, each with `title`, `body` and `expected` |
 
-Optional fields: `backups`, `team`, `kpis`, `autonomy_level` (default `intern`), `working_hours`, `task_budget_usd`
-(default 1.00), `task_time_limit_min` (default 30), `report_webhook`, `report_hour` (default 18), `llm`, `memory`,
-`instructions`.
+Optional fields: `backups`, `team`, `kpis` (see [Goals](#goals)), `routines` (see [Routines](#routines)),
+`autonomy_level` (default `intern`), `working_hours`, `task_budget_usd` (default 1.00), `task_time_limit_min`
+(default 30), `report_webhook`, `report_hour` (default 18), `report_weekday` (default 0, Monday; -1 for no weekly
+report), `llm`, `memory`, `instructions`.
 
 The questions follow the language of the request (Portuguese or English).
 
@@ -143,14 +146,66 @@ Decisions appear:
 
 ## Tasks
 
-- Tasks come from the portal (*Give it a task*) and MCP (`assign_task`), with priority 1 to 3. Schedules and inbound
-  webhooks as task sources come in F2; the `schedule` and `webhook` channels can already be declared on the job.
+- Tasks come from the portal (*Give it a task*), MCP (`assign_task`), [routines](#routines) and the
+  [inbound webhook](#inbound-webhook), with priority 1 to 3.
 - A runner in the central claims queued tasks and calls the agent: stage during probation, production afterwards.
 - Every round saves a **checkpoint** and events (tool calls, gate results, decisions), shown as a timeline on the
   task page.
 - **Limits per task:** a budget (`task_budget_usd`), a time limit, and at most `EMPLOYEE_MAX_RUNS` rounds.
-- A round that fails (the agent is unreachable or returns an error) or is lost to a crash goes back to the queue. After
-  3 attempts the task fails.
+- A round that fails (the agent is unreachable or returns an error) or is lost to a crash goes back to the queue
+  **with a growing wait**: 30 s, then 60 s, then 120 s (`EMPLOYEE_RETRY_BASE_S`, at most 10 minutes). After 3 attempts
+  the task fails. A decision resumes the task right away, without the wait.
+- [Lessons](#learning-from-decisions) approved by the manager go into the prompt of every new task.
+
+## Routines
+
+Recurring work: each run of a cron becomes a task.
+
+- Example: `0 9 * * 1` is every Monday at 9am, in the company time zone. Runs must be at least
+  `SCHEDULE_MIN_INTERVAL_MIN` minutes apart (default 5).
+- A routine runs only while the employee is **active** (not during onboarding, probation or a pause).
+- **Never two at once:** if the routine's previous task is still open, the run is skipped and counted.
+- Several central replicas never fire the same run twice (the run is claimed with a conditional update).
+- Create them at hire (`routines=[{title, body, cron}]`), over MCP (`set_routine`, `list_routines`,
+  `delete_routine`) or in the portal (*Routines* tab, with presets and *Run now*). Creating a routine turns on the
+  `schedule` channel.
+
+## Inbound webhook
+
+Other systems (CRM, forms, alerts) create tasks with a POST:
+
+```bash
+curl -X POST https://hangar.example.com/hooks/employees/<slug> \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"title": "New ticket #881", "body": "customer cannot log in", "dedupe_key": "zendesk-881", "source": "Zendesk"}'
+```
+
+- Each employee has its own token. The manager generates or rotates it in the *Routines* tab; it is shown **once** and
+  stored only as a hash. Rotating it stops the old one at once; turning the webhook off closes the `webhook` channel.
+- The token also works in an `X-Hangar-Token` header.
+- **Deduplication:** a `dedupe_key` seen in the last `EMPLOYEE_DEDUPE_DAYS` days (default 7) returns the existing
+  task with `"duplicate": true` instead of creating another.
+- Answers: `200` with `{id, status, duplicate}`; `401` for a missing or wrong token or a closed channel; `409` when the
+  employee does not take tasks now (onboarding or offboarded).
+- The token is never shown over MCP, so it never lands in an AI tool's conversation.
+
+## Goals
+
+Each goal (`kpis`) can point to a metric the platform measures, with a target:
+
+| Metric | Measures (30 days) | Better |
+|---|---|---|
+| `tasks_done` | Tasks done | higher |
+| `done_rate` | % of finished tasks that were done | higher |
+| `on_time_rate` | % done before their due date | higher |
+| `approved_unedited_rate` | % of decided actions approved without edits | higher |
+| `avg_decision_min` | Average time people take to decide | lower |
+| `cost_per_task` | Cost per done task (US$) | lower |
+| `expired_decisions` | Decisions that expired | lower |
+
+Example: `{"name": "Finish what it starts", "metric": "done_rate", "target": 90}`. A goal without a metric is kept as
+text. The *Overview* tab shows each goal as *on target*, *off target* or *no data yet*, and the weekly report compares
+them.
 
 ## Reports
 
@@ -158,6 +213,9 @@ Decisions appear:
   - tasks done, failed and waiting;
   - open decisions;
   - cost.
+- **A weekly report** on `report_weekday` (default Monday), covering 7 days, with each [goal](#goals) compared with
+  its target. The *Reports* tab can also generate either one now.
+- Reports follow the language the job was written in.
 - It is stored in the **Reports** tab and, when `report_webhook` is set, posted there. Slack and Teams incoming
   webhooks both work, so use whichever your company runs on.
 - **30-day metrics:**
@@ -165,17 +223,35 @@ Decisions appear:
   - approvals approved unedited, rejected and expired;
   - average time to decide.
 
+## Learning from decisions
+
+The decisions of the last 30 days turn into **suggestions**. Nothing changes on its own: the manager applies or
+dismisses them (*Authority* tab, or `employee_suggestions` / `apply_suggestion` over MCP).
+
+- **Loosen an action type.** Suppose the manager approved `LEARN_MIN_APPROVALS` (default 8) or more actions of one type
+  in 30 days, all without edits. The suggestion is to move that type from *approve* to *notify*: it does the action and
+  sends a notice.
+  - It is never suggested below the company floor. For example, sending outside stays at *approve* by default.
+  - Only the manager (or an admin) applies it.
+- **Turn corrections into a lesson.** Suppose `LEARN_MIN_CORRECTIONS` (default 3) or more actions of the same tool were
+  edited, rejected or redirected. The suggestion is a lesson built from the reasons and the edited fields; the manager
+  can rewrite it before applying.
+  - Lessons go into the prompt of every new task, under "Lessons from your manager".
+  - The *Settings* tab lists them (at most 20), removes them and accepts lessons written by hand.
+- A dismissed suggestion stays hidden for 30 days.
+
 ## Where it lives
 
 **Portal (owner and manager)**
 - **Digital employees** lists them. Each has a page with these tabs:
   - *Overview*: job, metrics, give a task;
-  - *Tasks*: each task links to its timeline;
+  - *Tasks*: each task links to its timeline, marked when it came from a routine or the webhook;
+  - *Routines*: routines (presets, *Run now*, pause) and the inbound webhook (token, URL, example);
   - *Decisions*;
-  - *Authority*: effective authority and the job rules editor;
+  - *Authority*: suggestions from decisions, effective authority and the job rules editor;
   - *Probation*: expected vs. delivered;
   - *Reports*;
-  - *Settings*: job, limits, webhook, autonomy level, offboarding.
+  - *Settings*: job, limits, report webhook and days, goals, lessons, autonomy level, offboarding.
 - **Decisions** is the inbox for everything waiting for you.
 
 Only the manager (or an admin) changes the autonomy level and decides the admission.
@@ -193,6 +269,10 @@ Only the manager (or an admin) changes the autonomy level and decides the admiss
 | `EMPLOYEE_WORKERS` | 3 | Tasks run in parallel per central replica |
 | `EMPLOYEE_MAX_RUNS` | 12 | Rounds per task before it fails |
 | `DECISION_EXPIRES_MIN` | 240 | Default time to decide before escalation and expiry |
+| `EMPLOYEE_RETRY_BASE_S` | 30 | First wait after a failed round; it doubles each attempt, up to 10 minutes |
+| `EMPLOYEE_DEDUPE_DAYS` | 7 | How long a webhook `dedupe_key` is remembered |
+| `LEARN_MIN_APPROVALS` | 8 | Approvals without edits before suggesting to loosen an action type |
+| `LEARN_MIN_CORRECTIONS` | 3 | Corrections on one tool before suggesting a lesson |
 
 ## API and MCP
 
@@ -201,12 +281,14 @@ Only the manager (or an admin) changes the autonomy level and decides the admiss
   - hiring: `plan_employee`, `hire_employee`, `start_probation`, `set_authority`;
   - work: `assign_task`, `task_status`, `employee_status`, `list_employees`;
   - decisions: `my_pending_decisions`, `decide`;
-  - lifecycle: `pause_employee`, `resume_employee`, `offboard_employee`.
+  - lifecycle: `pause_employee`, `resume_employee`, `offboard_employee`;
+  - recurring work: `set_routine`, `list_routines`, `delete_routine`;
+  - learning: `employee_suggestions`, `apply_suggestion` (only with the manager's explicit OK).
 
 ## Roadmap
 
-- **F2:** recurring work from schedules and inbound webhooks with deduplication; KPI tracking against goals; weekly
-  reports; a learning loop from edited approvals.
+- **F2 (done):** routines, the inbound webhook with deduplication, measured goals, weekly reports, learning from
+  decisions and growing waits between retries.
 - **F3:** decisions inside the company's chat tool. **Slack or Microsoft Teams is optional:** each company turns on the
   one that is core to it (or neither, keeping the portal and MCP). It will offer interactive approval buttons and
   tasks assigned from a message.

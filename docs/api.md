@@ -136,7 +136,15 @@ an admin.
 | POST | `/api/employees/{slug}/status` | Manage: `{to: paused \| active \| offboarded, reason}` |
 | PUT | `/api/employees/{slug}/authority` | Manage: `{rules: [...]}`; the answer includes `warnings` for rules below the company floor |
 | GET / POST | `/api/employees/{slug}/tasks` | List (`?status=`) or give a task `{title, body, priority, due_at}` |
-| GET / POST | `/api/employees/{slug}/reports` | List reports, or generate one now (manage) |
+| GET / POST | `/api/employees/{slug}/reports` | List reports, or generate one now (manage; `?period=daily\|weekly`) |
+| GET / POST | `/api/employees/{slug}/routines` | List, or create `{title, body, cron, timezone?, priority?, enabled?}` (manage) |
+| PATCH / DELETE | `/api/employees/{slug}/routines/{id}` | Change (`enabled=false` pauses it) or remove a routine (manage) |
+| POST | `/api/employees/{slug}/routines/{id}/run` | Create the routine's task now, unless its previous task is still open (manage) |
+| POST | `/api/employees/{slug}/webhook` | `{enabled}`: generates or rotates the inbound token (shown once) or turns the webhook off (manage) |
+| GET | `/api/employees/{slug}/suggestions` | What the decisions of the last 30 days suggest (loosen an action type, or a lesson) |
+| POST | `/api/employees/{slug}/suggestions/{id}/apply` | `{text?}` (manage; loosening authority: manager or admin only) |
+| POST | `/api/employees/{slug}/suggestions/{id}/dismiss` | Hides it for 30 days (manage) |
+| POST / DELETE | `/api/employees/{slug}/lessons[/{id}]` | Add `{text}` or remove a lesson (manage) |
 | GET | `/api/tasks/{id}` | Task with its events (timeline) and decision requests |
 | POST | `/api/tasks/{id}/cancel` | The requester or someone who manages the employee |
 | GET | `/api/decisions` | Open decisions you can take (yours first) |
@@ -148,6 +156,10 @@ an admin.
 | GET / PUT | `/api/admin/authority-floor` | Company floor (`{items: [{action_type, min_mode, separation}]}`) |
 
 `GET /api/me` also returns `decisions`: how many decisions wait for you (notices excluded).
+
+**Inbound webhook** (outside `/api`, no session): `POST /hooks/employees/{slug}` with `Authorization: Bearer <token>`
+(or `X-Hangar-Token`) and `{title, body?, dedupe_key?, priority?, due_at?, source?}`. It returns `{id, status,
+duplicate}`; `401` for a bad token or a closed channel, `409` when the employee does not take tasks now.
 
 ## User portal
 

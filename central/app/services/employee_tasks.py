@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
 import httpx
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from .. import config, deploy
@@ -63,7 +63,12 @@ def lang_of(e: Employee | None) -> str:
     return "pt" if _lang_pt(" ".join([e.title or "", e.mission or "", *(e.responsibilities or [])])) else "en"
 
 
-def task_prompt(task: EmployeeTask, lang: str = "pt") -> str:
+def retry_at(attempts: int):
+    """Espera crescente entre tentativas de uma rodada que falhou: 30 s, 60 s, 120 s… até 10 min."""
+    return now() + timedelta(seconds=min(config.EMPLOYEE_RETRY_BASE_S * 2 ** max(attempts - 1, 0), 600))
+
+
+def task_prompt(task: EmployeeTask, lang: str = "pt", lessons: list | None = None) -> str:
     en = lang == "en"
     parts = [f"{'TASK' if en else 'TAREFA'} #{task.id}: {task.title}"]
     if task.body:
@@ -75,6 +80,9 @@ def task_prompt(task: EmployeeTask, lang: str = "pt") -> str:
         meta.append("This is a probation task: do it as you would in real work." if en else
                     "Esta é uma tarefa do período de experiência: faça como faria no trabalho real.")
     parts.append("\n".join(meta))
+    if lessons:  # o que o gestor ensinou (aplicado a partir das sugestões de aprendizado)
+        head = "Lessons from your manager (follow them):" if en else "Lições do seu gestor (siga-as):"
+        parts.append(head + "\n" + "\n".join(f"- {x['text']}" for x in lessons if x.get("text")))
     parts.append("When you finish, answer with the final result of the task. If information is missing, use ask_human."
                  if en else "Quando terminar, responda com o resultado final da tarefa. Se faltar informação, use ask_human.")
     return "\n\n".join(parts)
@@ -82,18 +90,23 @@ def task_prompt(task: EmployeeTask, lang: str = "pt") -> str:
 
 def create_task(db: Session, e: Employee, title: str, body: str = "", source: str = "portal", requester: str = "",
                 requester_user_id: int | None = None, priority: int = 2, due_at=None, probation: bool = False,
-                expected: str = "", status: str = "new") -> EmployeeTask:
+                expected: str = "", status: str = "new", dedupe_key: str = "",
+                routine_id: int | None = None) -> EmployeeTask:
     if not (title or "").strip():
         raise PlatformError("a tarefa precisa de um título")
     if e.status == "offboarded":
         raise PlatformError("este Digital employee foi desligado")
     t = EmployeeTask(employee_id=e.id, title=title.strip()[:300], body=body or "", source=source, requester=requester,
                      requester_user_id=requester_user_id, priority=max(1, min(int(priority or 2), 3)), due_at=due_at,
-                     probation=probation, expected=expected or "", status=status)
+                     probation=probation, expected=expected or "", status=status, dedupe_key=(dedupe_key or "")[:200],
+                     routine_id=routine_id)
     db.add(t)
     db.flush()
-    event(db, t, "created", {"source": source, "requester": requester, "probation": probation})
-    db.add(TaskCheckpoint(task_id=t.id, seq=1, messages=[{"role": "user", "content": task_prompt(t, lang_of(e))}]))
+    event(db, t, "created", {"source": source, "requester": requester, "probation": probation,
+                             **({"routine": routine_id} if routine_id else {}),
+                             **({"dedupe_key": t.dedupe_key} if t.dedupe_key else {})})
+    db.add(TaskCheckpoint(task_id=t.id, seq=1, messages=[{"role": "user", "content": task_prompt(
+        t, lang_of(e), None if probation else e.lessons)}]))
     db.commit()
     return t
 
@@ -257,7 +270,7 @@ def _resume(db: Session, task: EmployeeTask, message: str):
     blocking = db.scalar(select(HumanRequest.id).where(HumanRequest.task_id == task.id, HumanRequest.status == "open",
                                                        HumanRequest.kind.in_(("approval", "question"))))
     if task.status == "waiting_human" and not blocking:
-        task.status = "new"
+        task.status, task.not_before = "new", None
 
 
 def _call_text(r: HumanRequest, payload: dict) -> str:
@@ -407,7 +420,7 @@ def sweep(db: Session) -> dict:
                 task.status, task.error, task.finished_at = "failed", "tempo esgotado em 3 tentativas", t
                 out["failed"] += 1
             else:
-                task.status = "new"
+                task.status, task.not_before = "new", retry_at(task.attempts)
                 out["requeued"] += 1
             event(db, task, "error", {"error": "rodada sem resposta: volta para a fila", "attempt": task.attempts})
             db.commit()
@@ -420,9 +433,12 @@ def tick() -> list[int]:
     claimed = []
     with SessionLocal() as db:
         sweep(db)
+        from .employee_work import fire_routines
+        fire_routines(db)
         rows = db.execute(select(EmployeeTask.id, EmployeeTask.probation, Employee.status)
                           .join(Employee, Employee.id == EmployeeTask.employee_id)
-                          .where(EmployeeTask.status == "new", Employee.status.in_(("probation", "active")))
+                          .where(EmployeeTask.status == "new", Employee.status.in_(("probation", "active")),
+                                 or_(EmployeeTask.not_before.is_(None), EmployeeTask.not_before <= now()))
                           .order_by(EmployeeTask.priority, EmployeeTask.created_at).limit(config.EMPLOYEE_WORKERS * 2)).all()
         for tid, probation, est in rows:
             if est == "active" and probation:
@@ -477,7 +493,8 @@ def run_task(task_id: int) -> EmployeeTask | None:
             event(db, task, "error", {"error": err, "attempt": task.attempts})
             if task.attempts >= 3:
                 return _finish(db, task, "failed", error=err)
-            task.status = "new"
+            task.status, task.not_before = "new", retry_at(task.attempts)
+            event(db, task, "note", {"retry_at": iso(task.not_before)})
             db.commit()
             return task
         usage = data.get("usage") or {}

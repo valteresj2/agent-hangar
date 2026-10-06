@@ -2,13 +2,14 @@
 para o admin, a força de trabalho digital (catálogo de ações, piso da empresa e parada geral)."""
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .. import services as svc
 from .deps import acc, db_dep, guard
 
 router = APIRouter(prefix="/api")
+hooks = APIRouter(prefix="/hooks")
 
 
 class HireBody(BaseModel):
@@ -36,12 +37,14 @@ class HireBody(BaseModel):
     accept_default_authority: bool = False
     autonomy_level: str = "intern"
     probation_tasks: list[dict] = Field(default_factory=list)
-    kpis: list[dict] = Field(default_factory=list)
+    kpis: list[dict | str] = Field(default_factory=list)
     working_hours: str = ""
     task_budget_usd: float | None = None
     task_time_limit_min: int | None = None
     report_webhook: str = ""
     report_hour: int | None = None
+    report_weekday: int | None = None
+    routines: list[dict] = Field(default_factory=list)
     plan_id: str = ""
 
 
@@ -86,6 +89,36 @@ class FloorBody(BaseModel):
 
 class StopBody(BaseModel):
     reason: str = ""
+
+
+class RoutineBody(BaseModel):
+    title: str = ""
+    body: str = ""
+    cron: str = ""
+    timezone: str = ""
+    priority: int = 2
+    enabled: bool = True
+
+
+class WebhookBody(BaseModel):
+    enabled: bool = True
+
+
+class ApplyBody(BaseModel):
+    text: str = ""
+
+
+class LessonBody(BaseModel):
+    text: str
+
+
+class InboundBody(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    body: str = Field(default="", max_length=20000)
+    dedupe_key: str = Field(default="", max_length=200)
+    priority: int = 2
+    due_at: datetime | None = None
+    source: str = Field(default="", max_length=60)
 
 
 def _fields(b: HireBody) -> dict:
@@ -153,12 +186,74 @@ def reports(slug: str, request: Request, db=Depends(db_dep)):
 
 
 @router.post("/employees/{slug}/reports")
-def report_now(slug: str, request: Request, db=Depends(db_dep)):
+def report_now(slug: str, request: Request, period: str = "daily", db=Depends(db_dep)):
     def go():
         e, _ = svc.employees.find(db, acc(request, db), slug, "manage")
-        r = svc.employees.make_report(db, e, "daily")
+        if period not in ("daily", "weekly"):
+            raise svc.PlatformError("period: daily | weekly")
+        r = svc.employees.make_report(db, e, period)
         return {"id": r.id, "summary": r.summary, "delivered": r.delivered, "metrics": r.metrics}
     return guard(go)
+
+
+# ------------------------------------------------------------------ F2: rotinas, webhook, aprendizado
+@router.get("/employees/{slug}/routines")
+def routines(slug: str, request: Request, db=Depends(db_dep)):
+    def go():
+        e, _ = svc.employees.find(db, acc(request, db), slug)
+        return svc.employee_work.routines_of(db, e)
+    return guard(go)
+
+
+@router.post("/employees/{slug}/routines")
+def routine_add(slug: str, body: RoutineBody, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_work.set_routine(db, acc(request, db), slug, **body.model_dump()))
+
+
+@router.patch("/employees/{slug}/routines/{routine_id}")
+def routine_edit(slug: str, routine_id: int, body: RoutineBody, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_work.set_routine(db, acc(request, db), slug, routine_id=routine_id,
+                                                       **body.model_dump()))
+
+
+@router.delete("/employees/{slug}/routines/{routine_id}")
+def routine_del(slug: str, routine_id: int, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_work.delete_routine(db, acc(request, db), slug, routine_id))
+
+
+@router.post("/employees/{slug}/routines/{routine_id}/run")
+def routine_run(slug: str, routine_id: int, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_work.run_routine_now(db, acc(request, db), slug, routine_id))
+
+
+@router.post("/employees/{slug}/webhook")
+def webhook(slug: str, body: WebhookBody, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_work.set_webhook(db, acc(request, db), slug, body.enabled))
+
+
+@router.get("/employees/{slug}/suggestions")
+def suggestions(slug: str, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_work.suggestions_for(db, acc(request, db), slug))
+
+
+@router.post("/employees/{slug}/suggestions/{sid}/apply")
+def suggestion_apply(slug: str, sid: str, body: ApplyBody, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_work.apply_suggestion(db, acc(request, db), slug, sid, body.text))
+
+
+@router.post("/employees/{slug}/suggestions/{sid}/dismiss")
+def suggestion_dismiss(slug: str, sid: str, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_work.dismiss_suggestion(db, acc(request, db), slug, sid))
+
+
+@router.post("/employees/{slug}/lessons")
+def lesson_add(slug: str, body: LessonBody, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_work.lesson_manual(db, acc(request, db), slug, body.text))
+
+
+@router.delete("/employees/{slug}/lessons/{lesson_id}")
+def lesson_del(slug: str, lesson_id: str, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_work.remove_lesson(db, acc(request, db), slug, lesson_id))
 
 
 @router.get("/tasks/{task_id}")
@@ -225,3 +320,19 @@ def floor(request: Request, db=Depends(db_dep)):
 @router.put("/admin/authority-floor")
 def set_floor(body: FloorBody, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.employees.set_floor(db, acc(request, db), body.items))
+
+
+# ------------------------------------------------------------------ webhook de entrada (outros sistemas criam tarefas)
+@hooks.post("/employees/{slug}")
+def inbound(slug: str, body: InboundBody, request: Request, db=Depends(db_dep)):
+    auth = request.headers.get("authorization", "")
+    token = auth[7:].strip() if auth.lower().startswith("bearer ") else request.headers.get("x-hangar-token", "")
+    if not token:
+        raise HTTPException(401, "token ausente: Authorization: Bearer <token do webhook>")
+    try:
+        return svc.employee_work.inbound(db, slug, token, body.title, body.body, body.dedupe_key, body.priority,
+                                         body.due_at, body.source)
+    except svc.access.Forbidden as e:
+        raise HTTPException(401, str(e)) from None
+    except svc.PlatformError as e:
+        raise HTTPException(409, str(e)) from None

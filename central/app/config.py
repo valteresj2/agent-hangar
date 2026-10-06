@@ -84,6 +84,10 @@ GUIDE_AUTOGEN = _env("GUIDE_AUTOGEN", "1") == "1"
 EMPLOYEE_WORKERS = int(_env("EMPLOYEE_WORKERS", "3"))
 EMPLOYEE_MAX_RUNS = int(_env("EMPLOYEE_MAX_RUNS", "12"))
 DECISION_EXPIRES_MIN = int(_env("DECISION_EXPIRES_MIN", "240"))
+EMPLOYEE_RETRY_BASE_S = int(_env("EMPLOYEE_RETRY_BASE_S", "30"))  # espera entre tentativas: 30 s, 60 s, 120 s… (até 10 min)
+EMPLOYEE_DEDUPE_DAYS = int(_env("EMPLOYEE_DEDUPE_DAYS", "7"))  # janela de deduplicação do webhook de entrada
+LEARN_MIN_APPROVALS = int(_env("LEARN_MIN_APPROVALS", "8"))  # aprovações sem edição para sugerir afrouxar a alçada
+LEARN_MIN_CORRECTIONS = int(_env("LEARN_MIN_CORRECTIONS", "3"))  # edições/recusas na mesma ferramenta para sugerir lição
 JOB_WORKERS = int(_env("JOB_WORKERS", "8"))
 
 # Agendamentos (execuções de agentes em produção por cron ou data única)

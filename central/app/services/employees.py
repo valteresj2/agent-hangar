@@ -27,6 +27,7 @@ from ..models import (
 )
 from . import employee_gate as gatemod
 from . import employee_tasks as tasksmod
+from . import employee_work as workmod
 from .access import Access, Forbidden
 from .common import PlatformError, audit, get_agent, iso
 
@@ -64,10 +65,16 @@ Q_EN = {
     "probation_tasks": "For the probation period: describe at least 3 real tasks of the job and the expected result of "
                        "each one.",
 }
-OPTIONAL_PT = {"kpis": "Quer definir metas (KPIs) para acompanhar o desempenho? (opcional)",
+OPTIONAL_PT = {"kpis": "Quer definir metas (KPIs) para acompanhar o desempenho? Cada meta pode ter uma métrica medida "
+                       "pela plataforma e um alvo, ex.: done_rate >= 90. (opcional)",
+               "routines": "Ele tem trabalho recorrente? Ex.: toda segunda às 9h, revisar as renovações dos próximos 30 dias. "
+                           "(opcional; roda só depois da admissão)",
                "report_webhook": "Quer receber os relatórios e avisos no Slack/Teams? Informe o webhook. (opcional)",
                "task_budget_usd": "Orçamento por tarefa (padrão US$ 1,00) e tempo limite (padrão 30 min) servem? (opcional)"}
-OPTIONAL_EN = {"kpis": "Do you want goals (KPIs) to track performance? (optional)",
+OPTIONAL_EN = {"kpis": "Do you want goals (KPIs) to track performance? Each goal can have a metric the platform "
+                       "measures and a target, e.g. done_rate >= 90. (optional)",
+               "routines": "Does it have recurring work? E.g. every Monday at 9am, review the renewals due in the next 30 "
+                           "days. (optional; runs only after admission)",
                "report_webhook": "Do you want reports and notices in Slack/Teams? Give the webhook. (optional)",
                "task_budget_usd": "Are the per-task budget (default US$ 1.00) and time limit (default 30 min) fine? (optional)"}
 
@@ -214,12 +221,13 @@ def hire(db: Session, acc: Access, request: str = "", **f) -> dict:
     a = get_agent(db, out["slug"])
     e = Employee(agent_id=a.id, team_id=a.team_id, title=f["title"].strip(), mission=f["mission"].strip(),
                  responsibilities=[str(r).strip() for r in f["responsibilities"] if str(r).strip()],
-                 kpis=f.get("kpis") or [], systems=f.get("systems") or [], channels=[c for c in f["channels"] if c in CHANNELS],
+                 kpis=workmod.validate_kpis(f.get("kpis")), systems=f.get("systems") or [],
+                 channels=[c for c in f["channels"] if c in CHANNELS],
                  owner_user_id=acc.p.user_id, manager_user_id=manager.id, backup_user_ids=backups, autonomy_level=level,
                  status="onboarding", working_hours=f.get("working_hours") or "",
                  task_budget_usd=float(f.get("task_budget_usd") or 1.0),
                  task_time_limit_min=int(f.get("task_time_limit_min") or 30), report_hour=int(f.get("report_hour") or 18),
-                 created_by=acc.p.name)
+                 report_weekday=_weekday(f.get("report_weekday")), created_by=acc.p.name)
     if f.get("report_webhook"):
         from .schedules import check_webhook
         e.report_webhook = check_webhook(f["report_webhook"])
@@ -231,6 +239,9 @@ def hire(db: Session, acc: Access, request: str = "", **f) -> dict:
         tasksmod.create_task(db, e, t.get("title") or (t.get("body") or "")[:80], t.get("body") or "", "probation",
                              acc.p.name, acc.p.user_id, probation=True, expected=t["expected"], status="draft")
     db.commit()
+    for r in f.get("routines") or []:  # trabalho recorrente: só dispara depois da admissão (ativo)
+        workmod.set_routine(db, acc, a.slug, r.get("title") or "", r.get("body") or "", r.get("cron") or "",
+                            r.get("timezone") or "", r.get("priority") or 2, r.get("enabled", True))
     from .guides import set_text
     set_text(db, acc, a.slug, _guide_text(e, a, manager, gatemod.summary(db, e), pt), acc.p.name,
              version=a.current_version)
@@ -298,7 +309,9 @@ def employee_dict(db: Session, e: Employee, acc: Access | None = None, detail: b
         d.update(responsibilities=e.responsibilities, kpis=e.kpis, systems=e.systems, channels=e.channels,
                  working_hours=e.working_hours, task_budget_usd=e.task_budget_usd,
                  task_time_limit_min=e.task_time_limit_min, report_webhook=bool(e.report_webhook),
-                 report_hour=e.report_hour,
+                 report_hour=e.report_hour, report_weekday=e.report_weekday, lessons=e.lessons or [],
+                 kpi_status=workmod.kpi_status(db, e), routines=workmod.routines_of(db, e),
+                 webhook=workmod.webhook_info(e, a.slug),
                  rules=[{"action_type": r.action_type, "mode": r.mode, "conditions": r.conditions, "approver": r.approver,
                          "expires_in_min": r.expires_in_min, "note": r.note}
                         for r in db.scalars(select(AuthorityRule).where(AuthorityRule.employee_id == e.id))],
@@ -442,9 +455,12 @@ def update(db: Session, acc: Access, slug: str, changes: dict) -> dict:
         if len(rs) < 3:
             raise PlatformError("mantenha pelo menos 3 responsabilidades")
         e.responsibilities = rs
-    for k in ("kpis", "systems"):
-        if k in changes:
-            setattr(e, k, changes[k] or [])
+    if "kpis" in changes:
+        e.kpis = workmod.validate_kpis(changes["kpis"])
+    if "systems" in changes:
+        e.systems = changes["systems"] or []
+    if "report_weekday" in changes:
+        e.report_weekday = _weekday(changes["report_weekday"])
     if "channels" in changes:
         e.channels = [c for c in changes["channels"] or [] if c in CHANNELS] or e.channels
     if "manager" in changes:
@@ -565,10 +581,26 @@ def make_report(db: Session, e: Employee, period: str = "daily") -> EmployeeRepo
         HumanRequest.employee_id == e.id, HumanRequest.status == "open", HumanRequest.kind != "notice")) or 0
     stuck = [t.title for t in db.scalars(select(EmployeeTask).where(EmployeeTask.employee_id == e.id,
                                                                      EmployeeTask.status == "waiting_human").limit(5))]
-    summary = (f"*{a.name}* ({e.title}) — {'hoje' if period == 'daily' else 'semana'}: {m['done']} concluída(s), "
-               f"{m['failed']} com falha, {m['waiting']} aguardando decisão; {open_req} decisão(ões) aberta(s); "
-               f"custo US$ {m['cost_usd']:.4f}." + (f"\nAguardando você: {'; '.join(stuck)}" if stuck else "")
-               + f"\n{config.PUBLIC_BASE_URL}/app/#/employees/{a.slug}")
+    en = tasksmod.lang_of(e) == "en"
+    if en:
+        summary = (f"*{a.name}* ({e.title}) — {'today' if period == 'daily' else 'this week'}: {m['done']} done, "
+                   f"{m['failed']} failed, {m['waiting']} waiting for a decision; {open_req} open decision(s); "
+                   f"cost US$ {m['cost_usd']:.4f}." + (f"\nWaiting for you: {'; '.join(stuck)}" if stuck else ""))
+    else:
+        summary = (f"*{a.name}* ({e.title}) — {'hoje' if period == 'daily' else 'semana'}: {m['done']} concluída(s), "
+                   f"{m['failed']} com falha, {m['waiting']} aguardando decisão; {open_req} decisão(ões) aberta(s); "
+                   f"custo US$ {m['cost_usd']:.4f}." + (f"\nAguardando você: {'; '.join(stuck)}" if stuck else ""))
+    kpis = workmod.kpi_status(db, e)
+    if kpis and period == "weekly":
+        lines = []
+        for k in kpis:
+            mark = "✅" if k["ok"] else "⚠️" if k["ok"] is False else "•"
+            val = "—" if k["actual"] is None else k["actual"]
+            tgt = f" / {'target' if en else 'alvo'} {k['target']}" if k["target"] is not None else ""
+            lines.append(f"{mark} {k['name']}: {val}{tgt}")
+        summary += ("\nGoals (30 days):\n" if en else "\nMetas (30 dias):\n") + "\n".join(lines)
+    summary += f"\n{config.PUBLIC_BASE_URL}/app/#/employees/{a.slug}"
+    m = {**m, "kpis": kpis} if kpis else m
     rep = EmployeeReport(employee_id=e.id, period=period, summary=summary, metrics=m, sent_to=e.report_webhook or "")
     if e.report_webhook:
         from .schedules import HTTP as SHTTP
@@ -584,16 +616,36 @@ def make_report(db: Session, e: Employee, period: str = "daily") -> EmployeeRepo
     return rep
 
 
+def _weekday(v) -> int:
+    if v in (None, ""):
+        return 0
+    try:
+        d = int(v)
+    except (TypeError, ValueError):
+        raise PlatformError("report_weekday: 0 (segunda) … 6 (domingo), ou -1 para não ter relatório semanal") from None
+    if d < -1 or d > 6:
+        raise PlatformError("report_weekday: 0 (segunda) … 6 (domingo), ou -1 para não ter relatório semanal")
+    return d
+
+
 def daily_reports(db: Session, at=None) -> int:
     org = db.get(Organization, 1)
     tz = zone(org.timezone if org else "UTC")
     local = (at or now()).astimezone(tz)
     today, sent = local.date().isoformat(), 0
+    week = (local.date() - timedelta(days=local.weekday())).isoformat()  # a segunda-feira desta semana
     for e in db.scalars(select(Employee).where(Employee.status.in_(("probation", "active")))):
-        if local.hour >= (18 if e.report_hour is None else e.report_hour) and e.last_report_on != today:
+        hour_ok = local.hour >= (18 if e.report_hour is None else e.report_hour)
+        if hour_ok and e.last_report_on != today:
             e.last_report_on = today
             db.commit()
             make_report(db, e)
+            sent += 1
+        wd = 0 if e.report_weekday is None else e.report_weekday
+        if hour_ok and wd >= 0 and local.weekday() == wd and e.last_weekly_on != week:
+            e.last_weekly_on = week
+            db.commit()
+            make_report(db, e, "weekly")
             sent += 1
     return sent
 
