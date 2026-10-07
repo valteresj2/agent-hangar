@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.17.1] — 2026-10-06
+
 ### Added
 - **Digital employees delegate code work to a harness** ([docs/digital-employee.md](docs/digital-employee.md#code-work-harness)).
   The employee stays a chat agent (the gate sees every tool call); an agent with a harness (Claude Code, Codex…) in
