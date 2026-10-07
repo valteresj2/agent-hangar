@@ -17,7 +17,7 @@ export const Tarmac: React.FC<{children?: React.ReactNode; dashes?: boolean}> = 
       {dashes && (
         <svg width={width} height={height} style={{position: 'absolute', opacity: 0.18}}>
           {vertical ? (
-            <line x1={width / 2} y1={-120 + offset} x2={width / 2} y2={height} stroke={C.mark} strokeWidth={6}
+            <line x1={width - 110} y1={-120 + offset} x2={width - 110} y2={height} stroke={C.mark} strokeWidth={6}
                   strokeDasharray="60 60" />
           ) : (
             <line x1={-120 + offset} y1={height - 140} x2={width} y2={height - 140} stroke={C.mark} strokeWidth={6}

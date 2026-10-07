@@ -108,23 +108,39 @@ MOTIF = [A1, A1, C2, A1, D2, C2, E2, G1]  # oito colcheias por compasso
 AMIN = [220.0, 261.63, 329.63]
 
 CUES = {
-    "test": {"bars": 7, "kick": (1, 7), "hats": (2, 7), "bass": (3, 7), "whoosh": [3, 5, 7], "hit": [3],
+    "test": {"bars": 7, "kick": [(1, 7)], "hats": [(2, 7)], "bass": [(3, 7)], "whoosh": [3, 5, 7], "hit": [3],
              "ticks": [(6, 1)], "resolve": 7},
+    # 60 s: respira no compasso 16 ("What if an agent had a job?"), cresce e volta com mais energia
+    "launch": {"bars": 30, "kick": [(1, 15), (17, 27)], "hats": [(2, 15), (17, 27)], "hats16": [(17, 27)],
+               "bass": [(4, 15), (17, 27)], "whoosh": [2, 3, 4, 6, 9, 11, 13, 14, 16, 17, 19, 22, 24, 26, 28],
+               "hit": [4, 28], "ticks": [(10, 1), (12, 1), (13, 2), (18, 1), (20, 1), (21, 1), (22, 3), (23, 1), (25, 1)],
+               "swell": [16], "resolve": 28},
+    "vertical": {"bars": 15, "kick": [(1, 4), (6, 12)], "hats": [(2, 4), (6, 12)], "hats16": [(6, 12)],
+                 "bass": [(3, 4), (6, 12)], "whoosh": [2, 3, 5, 6, 9, 11, 13], "hit": [3, 13],
+                 "ticks": [(7, 1), (8, 1), (9, 3), (10, 1), (12, 1)], "swell": [5], "resolve": 13},
 }
 
 
 def build(name: str) -> Path:
     c = CUES[name]
     mix = Mix(c["bars"] * BAR + 1.5)
-    for bar in range(c["kick"][0], c["kick"][1] + 1):
-        for beat in range(1, 5):
-            mix.add(t_at(bar, beat), kick(), 0.9)
-    for bar in range(c["hats"][0], c["hats"][1] + 1):
-        for beat in range(1, 5):
-            mix.add(t_at(bar, beat + 0.5), hat(), 0.35)
-    for bar in range(c["bass"][0], c["bass"][1] + 1):
-        for k, f in enumerate(MOTIF):
-            mix.add(t_at(bar) + k * BEAT / 2, bass(f, BEAT / 2 * 0.95), 0.55)
+    for a, b in c["kick"]:
+        for bar in range(a, b + 1):
+            for beat in range(1, 5):
+                mix.add(t_at(bar, beat), kick(), 0.9)
+    for a, b in c["hats"]:
+        for bar in range(a, b + 1):
+            for beat in range(1, 5):
+                mix.add(t_at(bar, beat + 0.5), hat(), 0.35)
+    for a, b in c.get("hats16", []):  # semicolcheias: mais energia depois da virada
+        for bar in range(a, b + 1):
+            for k in range(16):
+                if k % 2:
+                    mix.add(t_at(bar) + k * BEAT / 4, hat(0.03), 0.16)
+    for a, b in c["bass"]:
+        for bar in range(a, b + 1):
+            for k, f in enumerate(MOTIF):
+                mix.add(t_at(bar) + k * BEAT / 2, bass(f, BEAT / 2 * 0.95), 0.55)
     for bar in c["whoosh"]:
         mix.add(t_at(bar) - 0.45, whoosh(), 0.35)
     for bar in c["hit"]:
@@ -132,11 +148,14 @@ def build(name: str) -> Path:
         mix.add(t_at(bar), pad([f * 2 for f in AMIN], 1.6, 0.005, 0.5), 0.45)
     for bar, beat in c["ticks"]:
         mix.add(t_at(bar, beat), tick(), 0.6)
-    mix.add(t_at(c["resolve"]), pad(AMIN, 3.0, 0.08, 1.8), 0.5)
+    for bar in c.get("swell", []):  # um compasso que sobe até a volta da batida
+        mix.add(t_at(bar), pad([110.0, 164.81, 220.0, 261.63], BAR, BAR * 0.95, 9), 0.55)
+    mix.add(t_at(c["resolve"]), pad(AMIN, BAR * (c["bars"] - c["resolve"] + 1), 0.08, 2.4), 0.5)
     out = Path(__file__).resolve().parent.parent / "public" / "audio" / f"{name}.wav"
     mix.save(out)
     return out
 
 
 if __name__ == "__main__":
-    print(build(sys.argv[1] if len(sys.argv) > 1 else "test"))
+    for n in (sys.argv[1:] or ["test", "launch", "vertical"]):
+        print(build(n))

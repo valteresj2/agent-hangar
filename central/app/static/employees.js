@@ -274,7 +274,7 @@ async function empDecisions(t, e) {
 function suggestionCard(s, can) {
   const body = s.kind === 'authority'
     ? `<div class="mt">${modePill(s.from)} → ${modePill(s.to)} em <b>${esc(ACTION_LABEL[s.action_type] || s.action_type)}</b></div>`
-    : `<ul class="small mt">${(s.examples || []).map(x => `<li><a href="#/decisions">#${x.request}</a> ${esc({ approve_edited: 'editada', reject: 'recusada', instruct: 'instruída' }[x.decision] || x.decision)}${x.reason || x.edit ? ` — <span data-noi18n>${esc(x.reason || x.edit)}</span>` : ''}</li>`).join('')}</ul>
+    : `<ul class="small mt">${(s.examples || []).map(x => `<li><a href="#/decisions">#${x.request}</a> ${esc(window.t({ approve_edited: 'editada', reject: 'recusada', instruct: 'instruída' }[x.decision] || x.decision))}${x.reason || x.edit ? ` — <span data-noi18n>${esc(x.reason || x.edit)}</span>` : ''}</li>`).join('')}</ul>
       ${can ? `<label class="mt">Lição (vai no prompt de cada tarefa nova)<textarea class="sg-text" rows="2" data-noi18n>${esc(s.lesson)}</textarea></label>` : `<div class="small mt" data-noi18n>${esc(s.lesson)}</div>`}`;
   return `<div class="card mt sg" data-id="${esc(s.id)}"><div class="row between"><b data-noi18n>${esc(s.text)}</b><span class="pill info">${s.evidence} decisões</span></div>${body}
     ${can ? `<div class="row mt"><button class="sg-apply">${s.kind === 'authority' ? 'Aplicar' : 'Virar lição'}</button><button class="ghost sg-dismiss">Dispensar</button></div>` : ''}</div>`;

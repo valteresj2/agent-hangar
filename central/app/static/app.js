@@ -569,7 +569,7 @@ function versions(t, a) {
 }
 
 function testCard(r) {
-  return `<div class="card mt"><div class="row between"><div>${pill(r.status)} <b>v${r.version}</b> · ${esc(r.env)} · <span data-noi18n>${esc(r.summary)}</span></div>
+  return `<div class="card mt"><div class="row between"><div>${pill(r.status)} <b>v${r.version}</b> · ${esc(r.env)} · <span data-noi18n>${esc(window.tr ? window.tr(r.summary) : r.summary)}</span></div>
     <span class="mute small">${ago(r.created_at)} atrás · ${r.duration_ms}ms</span></div>
     <table>${r.results.map(x => `<tr><td style="width:24px">${x.passed ? `${icon('check', 'ok-ic')}` : `${icon('x', 'bad-ic')}`}</td><td data-noi18n>${esc(x.name)}</td><td class="mute small" data-noi18n>${esc(x.detail)}</td><td class="mute small">${x.latency_ms}ms</td></tr>`).join('')}</table></div>`;
 }
