@@ -81,6 +81,7 @@ Every tool call has an **action type**:
 | `read` | Look up, search, `GET` |
 | `delegate` | Ask another agent |
 | `write_internal` | Change internal data |
+| `run_code` | Delegate a task to an agent with a harness (Claude Code, Codex…), which runs a code job in a sandbox |
 | `send_external` | E-mail, message to a customer |
 | `speak_for_company` | Public statements |
 | `publish` | Publish, deploy, merge |
@@ -109,7 +110,7 @@ The effective mode comes from three layers, and the strictest one wins:
 3. **The company floor.** It is set by the admin and always applies. By default:
    - `financial` needs two approvals;
    - `delete` and `prod_change` need approval with separation of duties;
-   - `send_external`, `speak_for_company` and `publish` need approval.
+   - `run_code`, `send_external`, `speak_for_company` and `publish` need approval.
 
    A job rule looser than the floor is saved with a warning but does not apply.
 
@@ -117,6 +118,29 @@ The effective mode comes from three layers, and the strictest one wins:
 - `GET` is `read` and `DELETE` is `delete`; agents are `delegate`; memory recall is `read`.
 - Other HTTP and MCP tools are classified by name (`pay_invoice` is `financial`, `send_email` is `send_external`,
   and so on) and marked for **admin review**.
+
+## Code work (harness)
+
+A Digital employee is always a **chat agent**: the authority can only be enforced when every tool call goes through
+the runtime's gate. A harness (Claude Code CLI, Codex…) runs its own tools inside a sandbox, where the gate cannot
+see them. So the employee itself is never a harness: `hire_employee` refuses one.
+
+To give it code work, put an agent with a harness in its `specialists`:
+
+1. The employee decides it needs code changed and calls that specialist with the full instruction: what to change,
+   where and how to check it.
+2. The call is the action type **`run_code`**. By default it needs the manager's approval, on the company floor too,
+   so the manager approves the **exact** instruction before any job runs.
+3. After approval, the platform runs a **harness job** (an ephemeral container, the code governance rules of the
+   harness agent apply). The call waits up to `JOB_MAX_TIMEOUT_S` (not the 3 minutes of a chat delegation).
+4. The job number and its diff come back in the tool result. They show in the task's timeline, and the employee
+   reports them in its result.
+
+Notes:
+- A `delegate` to a chat agent stays `delegate`. An agent that gains a harness later is reclassified as `run_code`
+  on its next call.
+- The job's own cost is recorded on the harness agent (its usage page), not in the employee's task budget.
+- The harness agent must be in production to be a specialist, like any other piece.
 
 ## Human in the loop
 
@@ -283,6 +307,7 @@ Only the manager (or an admin) changes the autonomy level and decides the admiss
   - decisions: `my_pending_decisions`, `decide`;
   - lifecycle: `pause_employee`, `resume_employee`, `offboard_employee`;
   - recurring work: `set_routine`, `list_routines`, `delete_routine`;
+  - code work: put an agent with a harness in `specialists` (see [Code work](#code-work-harness));
   - learning: `employee_suggestions`, `apply_suggestion` (only with the manager's explicit OK).
 
 ## Roadmap

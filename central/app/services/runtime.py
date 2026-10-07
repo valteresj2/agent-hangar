@@ -45,8 +45,10 @@ def resolve_spec(db: Session, agent: Agent, env: str, version: int | None = None
         # harness (sem container fixo), e a central confere o token interno de quem chama. Peças só de leitura
         # (especialistas de um agente montado) são sempre chamadas na versão de PRODUÇÃO, a aprovada pelo dono.
         gw = "gw" if env == "prod" or sub.slug in pieces else "gw-stage"
+        harness = bool(spec_of(sub).get("harness"))
         subs.append({"slug": sub.slug, "name": sub.name, "objective": sub.objective,
-                     "url": f"{config.INTERNAL_BASE_URL}/internal/{gw}/{sub.slug}"})
+                     "url": f"{config.INTERNAL_BASE_URL}/internal/{gw}/{sub.slug}",
+                     **({"harness": True, "timeout_s": config.JOB_MAX_TIMEOUT_S + 60} if harness else {})})
     from .employees import runtime_profile  # Digital employee: o runtime passa toda ferramenta pelo gate da central
     profile = runtime_profile(db, agent)
     if profile:

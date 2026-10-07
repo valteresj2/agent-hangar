@@ -8,7 +8,7 @@ const EMP_STATUS = { onboarding: ['Contratação', ''], probation: ['Em experiê
 const TASK_STATUS = { draft: ['Rascunho', ''], new: ['Na fila', 'info'], in_progress: ['Trabalhando', 'info'],
   waiting_human: ['Aguardando decisão', 'warn'], done: ['Concluída', 'ok'], failed: ['Falhou', 'bad'],
   cancelled: ['Cancelada', ''], expired: ['Expirou', 'bad'] };
-const ACTION_LABEL = { read: 'Ler e consultar', delegate: 'Delegar a outro agente', write_internal: 'Alterar dados internos',
+const ACTION_LABEL = { read: 'Ler e consultar', delegate: 'Delegar a outro agente', write_internal: 'Alterar dados internos', run_code: 'Executar código (harness)',
   send_external: 'Enviar para fora', speak_for_company: 'Falar em nome da empresa', publish: 'Publicar',
   financial: 'Dinheiro', delete: 'Apagar', prod_change: 'Mudar produção' };
 const MODE_LABEL = { auto: ['Sozinho', 'ok'], notify: ['Faz e avisa', 'info'], approve: ['Pede aprovação', 'warn'],
@@ -412,7 +412,7 @@ function empSettings(t, e) {
 
 /* ---------- tarefa: linha do tempo ---------- */
 const EVENT_LABEL = { created: 'Criada', run: 'Rodada', tool: 'Ferramenta', gate: 'Alçada', human_request: 'Pedido de decisão',
-  decision: 'Decisão', checkpoint: 'Checkpoint', done: 'Concluída', error: 'Erro', note: 'Nota' };
+  decision: 'Decisão', job: 'Job de código', checkpoint: 'Checkpoint', done: 'Concluída', error: 'Erro', note: 'Nota' };
 async function taskPage(id) {
   const x = await api('/tasks/' + id);
   const open = (x.requests || []).filter(r => r.status === 'open');

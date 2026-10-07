@@ -5,6 +5,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Digital employees delegate code work to a harness** ([docs/digital-employee.md](docs/digital-employee.md#code-work-harness)).
+  The employee stays a chat agent (the gate sees every tool call); an agent with a harness (Claude Code, Codex…) in
+  its `specialists` runs the code jobs.
+  - The call is the new action type **`run_code`**. It needs approval by default, on the company floor too
+    (migration `0015_employee_run_code`), so the manager approves the exact instruction before a job runs.
+  - The call waits up to `JOB_MAX_TIMEOUT_S` instead of the 3 minutes of a chat delegation.
+  - The job number and diff come back in the tool result and the task's timeline.
+
+### Fixed
+- Runtime mock mode (`mock/*` models, used in tests and demos): a Digital employee no longer delegates to its
+  sub-agents without going through the gate, and tool names with hyphens are recognised. The real LLM loop always
+  went through the gate.
+
 ## [0.17.0] — 2026-10-06
 
 ### Added

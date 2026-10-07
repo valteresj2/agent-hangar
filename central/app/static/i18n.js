@@ -519,7 +519,7 @@
     'Agentes:': 'Agents:', 'Times (': 'Teams (', 'Catálogo da empresa (': 'Company catalog (', 'Time “': 'Team “', ')? Não dá para desfazer.': ')? This cannot be undone.',
     'sem efeito (nova versão)': 'no effect (new version)', 'só este agente': 'this agent only', 'nenhum definido': 'none set', 'do agente.': 'of the agent.',
     // ---- Digital employee
-    'Rotina': 'Routine', 'Desligar o webhook': 'Turn the webhook off',
+    'Rotina': 'Routine', 'Job de código': 'Code job', 'Executar código (harness)': 'Run code (harness)', 'Desligar o webhook': 'Turn the webhook off',
     'Um por dia, na hora configurada (fuso da empresa), e um por semana com as metas comparadas ao alvo. Com webhook configurado (Slack ou Teams, o que for da empresa), o resumo também é enviado para lá.': 'One a day at the set hour (company time zone), and one a week with each goal compared with its target. With a webhook set (Slack or Teams, whichever the company uses), the summary is also sent there.',
     'Admitido. O time exige a aprovação de outra pessoa para produção: o pedido está em Aprovações e ele fica ativo quando for aprovado.': 'Admitted. The team requires someone else to approve production: the request is in Approvals, and it becomes active once approved.',
     'Meus Digital employees': 'My Digital employees',

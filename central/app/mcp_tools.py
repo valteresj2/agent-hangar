@@ -91,6 +91,9 @@ DIGITAL EMPLOYEE (agente como funcionário: cargo, gestor, alçada, tarefas e hu
 - Trabalho recorrente: routines=[{title, body, cron}] no hire_employee, ou set_routine depois (cron com intervalo
   mínimo; dispara só com ele ativo e nunca duas ao mesmo tempo). Outros sistemas criam tarefas pelo webhook de entrada,
   cujo token o gestor gera no portal (nunca peça nem mostre o token na conversa).
+- Trabalho de código: o funcionário é sempre um agente de chat; ponha um agente com harness (Claude Code, Codex…) em
+  specialists. Cada job de código passa pela alçada como run_code (pede aprovação por padrão) e o job/diff fica na
+  linha do tempo da tarefa.
 - Metas: kpis=[{name, metric, target}] com metric em tasks_done | done_rate | on_time_rate | approved_unedited_rate |
   avg_decision_min | cost_per_task | expired_decisions; a plataforma mede e compara no relatório semanal.
 - Aprendizado: employee_suggestions mostra o que as decisões ensinaram (afrouxar um tipo de ação sempre aprovado sem

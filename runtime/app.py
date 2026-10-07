@@ -270,22 +270,28 @@ async def _mcp_list(url):
 
 
 async def _ask_sub(sub, args):
-    res = await _a2a_call(sub["url"], args.get("message", ""))
+    res = await _a2a_call(sub["url"], args.get("message", ""), sub.get("timeout_s", 180))
     return res
 
 
-async def _a2a_call(base_url, message):
+async def _a2a_call(base_url, message, timeout_s: float = 180):
     body = {"jsonrpc": "2.0", "id": str(uuid.uuid4()), "method": "message/send",
             "params": {"message": {"kind": "message", "role": "user", "messageId": str(uuid.uuid4()),
                                    "parts": [{"kind": "text", "text": message}]}}}
-    async with httpx.AsyncClient(timeout=180) as c:
+    async with httpx.AsyncClient(timeout=timeout_s) as c:
         r = await c.post(f"{base_url.rstrip('/')}/a2a", json=body, headers=INTERNAL_HEADERS)
     if r.status_code >= 400:
         return f"[erro do sub-agente: HTTP {r.status_code} {r.text[:200]}]"
     data = r.json()
     if "error" in data:
         return f"[erro do sub-agente: {data['error'].get('message')}]"
-    return "".join(p.get("text", "") for p in data["result"].get("parts", []))
+    text = "".join(p.get("text", "") for p in data["result"].get("parts", []))
+    meta = data["result"].get("metadata") or {}
+    if meta.get("job_id"):  # agente com harness: o job de código (e o diff) ficam rastreáveis na tarefa
+        diff = meta.get("diff") or ""
+        lines = diff.count("\n") + 1 if diff else 0
+        text += f"\n\n[job #{meta['job_id']}" + (f" · diff de {lines} linha(s)]\n{diff[:4000]}" if diff else " · sem diff]")
+    return text
 
 
 def _closure(fn, *a):
@@ -361,7 +367,9 @@ async def build_tools() -> tuple[list[Tool], bool]:
             print(f"[warn] MCP {m['name']} indisponível: {e}", flush=True)
     for s in SPEC.get("sub_agents_resolved", []):
         tools.append(Tool(_safe(f"ask_{s['slug']}"),
-                          f"Delega ao agente '{s['name']}': {s.get('objective', '')}",
+                          (f"Executa um job de código com o agente '{s['name']}' (harness, num sandbox): {s.get('objective', '')}."
+                           " Mande a tarefa completa: o que mudar, onde e como verificar." if s.get("harness") else
+                           f"Delega ao agente '{s['name']}': {s.get('objective', '')}"),
                           {"type": "object", "properties": {"message": {"type": "string"}},
                            "required": ["message"]}, _closure(_ask_sub, s), ref=f"agent:{s['slug']}"))
     if EMPLOYEE:
@@ -499,7 +507,7 @@ async def mock_llm(messages, tools, client_tools=None):
             await _run_server_call({"id": "mock", "function": {"name": "ask_human",
                                                               "arguments": json.dumps({"question": q.group(1)})}},
                                    by_name, [], [])
-        u = next((m for m in re.finditer(r"\buse\s+([A-Za-z0-9_]+)(?:\s+(\{.*\}))?", last, re.S)
+        u = next((m for m in re.finditer(r"\buse\s+([A-Za-z0-9_-]+)(?:\s+(\{.*\}))?", last, re.S)
                   if m.group(1) in by_name and m.group(1) != "ask_human"), None)  # o prompt da tarefa cita "use ask_human"
         if u:
             args = {}
@@ -523,7 +531,7 @@ async def mock_llm(messages, tools, client_tools=None):
     subs = [t for t in tools if t.ref.startswith("agent:")]  # sub-agentes (não o ask_human)
     if last.lower().startswith("calc:"):
         return f"[mock:{SLUG}] {_calc(last[5:].strip())}"
-    if subs:
+    if subs and not EMPLOYEE:  # Digital employee: nada chama sub-agente sem passar pelo gate (só via "use <ferramenta>")
         outs = []
         for t in subs:
             outs.append(f"{t.name}: {await t.fn({'message': last})}")

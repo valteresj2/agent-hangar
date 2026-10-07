@@ -28,6 +28,7 @@ from .usage import record_usage
 
 log = logging.getLogger("hangar.employees")
 WAIT_MARK = re.compile(r"^\[\[HANGAR_WAITING:(\d+)\]\]\s*", re.S)
+JOB_MARK = re.compile(r"\[job #(\d+)")  # resultado de um job de código (runtime: _a2a_call)
 TERMINAL = ("done", "failed", "cancelled", "expired")
 WORKER = f"{os.environ.get('REPLICA_ID') or os.environ.get('HOSTNAME') or 'central'}-{os.getpid()}"
 HTTP = lambda: httpx.Client(timeout=900)  # noqa: E731  (os testes trocam)
@@ -61,6 +62,12 @@ def lang_of(e: Employee | None) -> str:
         return "pt"
     from .composer import _lang_pt
     return "pt" if _lang_pt(" ".join([e.title or "", e.mission or "", *(e.responsibilities or [])])) else "en"
+
+
+def task_jobs(db: Session, task: EmployeeTask) -> list[int]:
+    """Jobs de código já registrados na linha do tempo da tarefa."""
+    return [int(ev.payload.get("job")) for ev in db.scalars(select(TaskEvent).where(
+        TaskEvent.task_id == task.id, TaskEvent.kind == "job")) if ev.payload.get("job")]
 
 
 def retry_at(attempts: int):
@@ -504,6 +511,11 @@ def run_task(task_id: int) -> EmployeeTask | None:
             if step.get("tool"):
                 event(db, task, "tool", {"tool": step["tool"], "args": step.get("args"), "result": str(step.get("result"))[:300]})
         content = (data["choices"][0]["message"].get("content") or "").strip()
+        # jobs de código (agente com harness) ficam na linha do tempo, venham do rastro ou só da resposta
+        seen = {int(j) for j in task_jobs(db, task)}
+        for jid in dict.fromkeys(JOB_MARK.findall(content + " ".join(str(s.get("result")) for s in data.get("x_trace") or []))):
+            if int(jid) not in seen:
+                event(db, task, "job", {"job": int(jid)})
         m = WAIT_MARK.match(content)
         note = WAIT_MARK.sub("", content)
         messages = messages + ([{"role": "assistant", "content": note}] if note else [])

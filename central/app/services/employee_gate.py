@@ -22,16 +22,17 @@ from ..models import ActionCatalog, AuthorityRule, Employee, OrgAuthorityFloor, 
 
 MODES = ("auto", "notify", "approve", "approve_2", "never")
 RANK = {m: i for i, m in enumerate(MODES)}
-ACTION_TYPES = ("read", "delegate", "write_internal", "send_external", "speak_for_company", "publish", "financial",
-                "delete", "prod_change")
-RISK = {"read": 1, "delegate": 2, "write_internal": 3, "send_external": 4, "speak_for_company": 4, "publish": 4,
-        "financial": 5, "delete": 5, "prod_change": 5}
+ACTION_TYPES = ("read", "delegate", "write_internal", "run_code", "send_external", "speak_for_company", "publish",
+                "financial", "delete", "prod_change")
+# run_code: delegar uma tarefa a um agente com harness (Claude Code, Codex…), que roda um job de código num sandbox
+RISK = {"read": 1, "delegate": 2, "write_internal": 3, "run_code": 4, "send_external": 4, "speak_for_company": 4,
+        "publish": 4, "financial": 5, "delete": 5, "prod_change": 5}
 # padrão de cada nível de autonomia quando o cargo não tem regra para o tipo de ação (o piso ainda vale por cima)
 AUTONOMY_DEFAULTS = {
     "intern": {"read": "auto", "delegate": "notify"},
     "junior": {"read": "auto", "delegate": "auto", "write_internal": "notify"},
     "pleno": {"read": "auto", "delegate": "auto", "write_internal": "auto"},
-    "senior": {"read": "auto", "delegate": "auto", "write_internal": "auto", "send_external": "notify"},
+    "senior": {"read": "auto", "delegate": "auto", "write_internal": "auto", "run_code": "notify", "send_external": "notify"},
 }
 OPS = (">", ">=", "<", "<=", "==", "!=", "contains", "not_contains", "domain_not")
 
@@ -71,14 +72,29 @@ def _by_name(name: str, read: bool = True) -> str:
     return "write_internal"
 
 
+def _harness_agent(db: Session, ref: str) -> bool:
+    """agent:<slug> de um agente com harness: a chamada vira um job de código, não uma conversa."""
+    if not ref.startswith("agent:"):
+        return False
+    from ..models import Agent
+    from .common import spec_of
+    a = db.scalar(select(Agent).where(Agent.slug == ref.split(":", 1)[1]))
+    return bool(a and spec_of(a).get("harness"))
+
+
 def classify(db: Session, ref: str) -> ActionCatalog:
     row = db.scalar(select(ActionCatalog).where(ActionCatalog.tool_ref == ref))
     if row is None:
         t, review = auto_classify(ref)
+        if t == "delegate" and _harness_agent(db, ref):
+            t = "run_code"
         row = ActionCatalog(tool_ref=ref, action_type=t, risk=RISK[t], reversible=False,
                             classified_by="auto" if review else "auto:rule", updated_at=now())
         db.add(row)
         db.commit()
+    elif row.action_type == "delegate" and row.classified_by.startswith("auto") and _harness_agent(db, ref):
+        row.action_type, row.risk, row.classified_by, row.updated_at = "run_code", RISK["run_code"], "auto:rule", now()
+        db.commit()  # o agente delegado passou a ter harness: a chamada roda código
     return row
 
 

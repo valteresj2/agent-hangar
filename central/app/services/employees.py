@@ -198,7 +198,9 @@ def hire(db: Session, acc: Access, request: str = "", **f) -> dict:
         return {"created": False, "missing": p["missing"], "optional": p["optional"],
                 "next": "pergunte ao dono e chame hire_employee de novo com as respostas"}
     if f.get("harness"):
-        raise PlatformError("Digital employee com harness de código ainda não é suportado (F1): use um agente de chat")
+        raise PlatformError("o Digital employee é um agente de chat (a alçada é aplicada antes de cada ferramenta). "
+                            "Para trabalho de código, ponha um agente com harness em specialists: cada job dele passa "
+                            "pela alçada como run_code")
     pt = _pt(" ".join([request, f["title"], f["mission"]]))
     rules = [gatemod.validate_rule(r) for r in f.get("authority") or []]
     backups = []
