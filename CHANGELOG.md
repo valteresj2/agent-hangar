@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-10-06
+
 ### Added
 - **Digital employee, phase F2** ([docs/digital-employee.md](docs/digital-employee.md)).
   - **Routines:** recurring work from a cron. It runs only while the employee is active, never two at once (a run is
