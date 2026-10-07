@@ -1,0 +1,23 @@
+{
+  "name": "agent-hangar-motion",
+  "private": true,
+  "description": "Agent Hangar launch videos, written as a Remotion program (see CLAUDE.md)",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render:test": "remotion render src/index.ts Test out/test.mp4",
+    "render:launch": "remotion render src/index.ts Launch out/agent-hangar-launch-16x9.mp4",
+    "render:vertical": "remotion render src/index.ts LaunchVertical out/agent-hangar-launch-9x16.mp4",
+    "stills": "node stills.mjs"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.533",
+    "@remotion/google-fonts": "4.0.533",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.533"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "5.9.3"
+  }
+}
