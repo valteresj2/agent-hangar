@@ -30,6 +30,7 @@ log = logging.getLogger("hangar.employees")
 WAIT_MARK = re.compile(r"^\[\[HANGAR_WAITING:(\d+)\]\]\s*", re.S)
 JOB_MARK = re.compile(r"\[job #(\d+)")  # resultado de um job de código (runtime: _a2a_call)
 TERMINAL = ("done", "failed", "cancelled", "expired")
+BLOCKING = ("approval", "question", "capability")  # pedidos que pausam a tarefa até alguém decidir
 WORKER = f"{os.environ.get('REPLICA_ID') or os.environ.get('HOSTNAME') or 'central'}-{os.getpid()}"
 HTTP = lambda: httpx.Client(timeout=900)  # noqa: E731  (os testes trocam)
 _pool = ThreadPoolExecutor(max_workers=max(1, config.EMPLOYEE_WORKERS), thread_name_prefix="employee")
@@ -90,8 +91,10 @@ def task_prompt(task: EmployeeTask, lang: str = "pt", lessons: list | None = Non
     if lessons:  # o que o gestor ensinou (aplicado a partir das sugestões de aprendizado)
         head = "Lessons from your manager (follow them):" if en else "Lições do seu gestor (siga-as):"
         parts.append(head + "\n" + "\n".join(f"- {x['text']}" for x in lessons if x.get("text")))
-    parts.append("When you finish, answer with the final result of the task. If information is missing, use ask_human."
-                 if en else "Quando terminar, responda com o resultado final da tarefa. Se faltar informação, use ask_human.")
+    parts.append("When you finish, answer with the final result of the task. If information is missing, use ask_human. "
+                 "If you lack a tool or specialist the task needs, use request_capability instead of improvising."
+                 if en else "Quando terminar, responda com o resultado final da tarefa. Se faltar informação, use ask_human. "
+                 "Se faltar uma ferramenta ou especialista que a tarefa exige, use request_capability em vez de improvisar.")
     return "\n\n".join(parts)
 
 
@@ -185,6 +188,28 @@ def gate(db: Session, agent: Agent, task_id: int | None, tool: str, ref: str, ar
         return {"status": "waiting", "request_id": r.id,
                 "message": f"Pergunta #{r.id} enviada ao gestor; a tarefa continua quando ele responder."}
 
+    if kind == "capability":  # falta uma ferramenta/especialista: o gestor decide (nunca o agente se dá poderes)
+        if task is None:
+            return {"status": "denied", "message": "pedidos de capacidade só dentro de uma tarefa"}
+        from .employee_work import capability_options
+        need = str(args.get("need") or "").strip()[:2000]
+        why = str(args.get("why") or rationale or "").strip()[:4000]
+        if not need:
+            return {"status": "denied", "message": "diga o que falta (need)"}
+        assigned, fallback = _route(db, e, "manager")
+        r = HumanRequest(employee_id=e.id, task_id=task.id, kind="capability", question=need, rationale=why,
+                         assigned_user_id=assigned, fallback_user_id=fallback,
+                         action_payload={"need": need, "why": why, "options": capability_options(db, e, need)},
+                         expires_at=now() + timedelta(minutes=config.DECISION_EXPIRES_MIN), approvals=[])
+        db.add(r)
+        db.flush()
+        task.status = "waiting_human"
+        event(db, task, "human_request", {"id": r.id, "kind": "capability", "need": need[:300]})
+        db.commit()
+        _notify_request(db, e, r)
+        return {"status": "waiting", "request_id": r.id,
+                "message": f"Pedido de capacidade #{r.id} enviado ao gestor; a tarefa continua quando ele decidir."}
+
     cat = gatemod.classify(db, ref)
     ev = gatemod.evaluate(db, e, cat.action_type, args)
     mode = ev["mode"]
@@ -257,6 +282,61 @@ def request_dict(db: Session, r: HumanRequest, e: Employee | None = None) -> dic
             "created_at": iso(_aware(r.created_at))}
 
 
+def _decide_capability(db: Session, acc: Access, r: HumanRequest, e: Employee, task, decision: str, edit: dict,
+                       reason: str, who: str) -> dict:
+    """attach (edit={"specialist": slug}) | build (devolve o pedido pronto; segue aberto) | reject | instruct."""
+    from . import employee_work as workmod
+    if decision not in ("attach", "build", "reject", "instruct"):
+        raise PlatformError("capacidade: decision = attach (edit={'specialist': slug}) | build | reject | instruct")
+    slug = _slug(db, e)
+    if decision == "build":
+        prompt = workmod.build_prompt(e, slug, r.question, lang_of(e) == "en")
+        r.action_payload = {**(r.action_payload or {}), "build_requested_by": who}
+        r.expires_at = now() + timedelta(days=7)  # construir um agente leva mais que o prazo de uma decisão
+        db.commit()
+        if task:
+            event(db, task, "note", {"capability": r.id, "build": who})
+            db.commit()
+        audit(db, who, "employee.capability.build", slug, f"#{r.id}")
+        return {**request_dict(db, r, e), "build_prompt": prompt}
+    if decision in ("reject", "instruct") and not reason and decision == "instruct":
+        raise PlatformError("escreva a instrução em reason")
+    if decision == "attach":
+        target = str(edit.get("specialist") or "").strip()
+        if not target:
+            raise PlatformError("diga qual agente anexar: edit={'specialist': '<slug>'}")
+        from .employees import find
+        find(db, acc, slug, "manage")
+        outcome = workmod.attach_specialist(db, acc, e, target)
+        r.status, r.decision, r.reason, r.decided_by, r.decided_at = "decided", "attach", reason, who, now()
+        r.edited_payload = {"specialist": target}
+        r.action_payload = {**(r.action_payload or {}), "pending": outcome == "approval_pending"}
+        db.commit()
+        if task:
+            event(db, task, "decision", {"id": r.id, "decision": "attach", "specialist": target, "by": who})
+            db.commit()
+        if outcome != "approval_pending":
+            workmod.resume_after_attach(db, e, r)
+        audit(db, who, "employee.decision.attach", slug, f"#{r.id} {target} {outcome}")
+        out = request_dict(db, r, e)
+        out["attach"] = outcome
+        if outcome == "approval_pending":
+            out["message"] = ("Anexado numa versão nova. O time exige a aprovação de outra pessoa para produção: a tarefa "
+                              "continua quando o pedido em Aprovações for aprovado.")
+        return out
+    r.status, r.decision, r.reason, r.decided_by, r.decided_at = "decided", decision, reason, who, now()
+    if task:
+        event(db, task, "decision", {"id": r.id, "decision": decision, "by": who})
+        if decision == "reject":
+            _resume(db, task, f"CAPACIDADE #{r.id}: RECUSADO por {who}" + (f" ({reason})" if reason else "") +
+                    ". NÃO tente contornar. Conclua o que for possível sem ela e explique o que ficou faltando.")
+        else:
+            _resume(db, task, f"INSTRUÇÃO de {who} sobre a capacidade #{r.id}: {reason}")
+    db.commit()
+    audit(db, who, f"employee.decision.{decision}", slug, f"#{r.id}")
+    return request_dict(db, r, e)
+
+
 def pending_for(db: Session, acc: Access) -> list[dict]:
     """Decisões abertas que esta pessoa pode tomar (as atribuídas a ela primeiro)."""
     rows = db.scalars(select(HumanRequest).where(HumanRequest.status == "open").order_by(HumanRequest.created_at)).all()
@@ -275,7 +355,7 @@ def _resume(db: Session, task: EmployeeTask, message: str):
     cp = last_checkpoint(db, task)
     checkpoint(db, task, [*(cp.messages if cp else []), {"role": "user", "content": message}])
     blocking = db.scalar(select(HumanRequest.id).where(HumanRequest.task_id == task.id, HumanRequest.status == "open",
-                                                       HumanRequest.kind.in_(("approval", "question"))))
+                                                       HumanRequest.kind.in_(BLOCKING)))
     if task.status == "waiting_human" and not blocking:
         task.status, task.not_before = "new", None
 
@@ -312,6 +392,9 @@ def decide(db: Session, acc: Access, request_id: int, decision: str, edit: dict 
             _resume(db, task, f"RESPOSTA de {who} à sua pergunta #{r.id}: {reason}\nContinue a tarefa com essa informação.")
         audit(db, who, "employee.decision.answer", _slug(db, e), f"#{r.id}")
         return request_dict(db, r, e)
+
+    if r.kind == "capability":
+        return _decide_capability(db, acc, r, e, task, decision, edit or {}, reason, who)
 
     if r.kind == "admission":
         if decision not in ("approve", "reject"):
@@ -393,7 +476,7 @@ def sweep(db: Session) -> dict:
     out = {"escalated": 0, "expired": 0, "requeued": 0, "failed": 0}
     t = now()
     for r in db.scalars(select(HumanRequest).where(HumanRequest.status == "open",
-                                                   HumanRequest.kind.in_(("approval", "question")),
+                                                   HumanRequest.kind.in_(BLOCKING),
                                                    HumanRequest.expires_at.is_not(None))).all():
         if _aware(r.expires_at) > t:
             continue
@@ -412,7 +495,7 @@ def sweep(db: Session) -> dict:
         r.status, r.decided_at, r.decided_by = "expired", t, "prazo"
         if task:
             event(db, task, "decision", {"id": r.id, "decision": "expired"})
-            what = _call_text(r, r.action_payload) if r.kind == "approval" else f"a pergunta #{r.id}"
+            what = _call_text(r, r.action_payload) if r.kind == "approval" else f"o pedido #{r.id}"
             _resume(db, task, f"DECISÃO #{r.id}: EXPIROU sem resposta. NÃO execute {what}. Encerre a tarefa explicando o "
                               "que ficou pendente e por quê.")
         db.commit()
@@ -522,7 +605,7 @@ def run_task(task_id: int) -> EmployeeTask | None:
         checkpoint(db, task, messages)
         if m:
             open_req = db.scalar(select(HumanRequest.id).where(HumanRequest.task_id == task.id, HumanRequest.status == "open",
-                                                               HumanRequest.kind.in_(("approval", "question"))))
+                                                               HumanRequest.kind.in_(BLOCKING)))
             task.status = "waiting_human" if open_req else "new"  # decidido enquanto a rodada terminava: segue
             db.commit()
             return task

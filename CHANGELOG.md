@@ -5,6 +5,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Missing capability flow for Digital employees** ([docs](docs/digital-employee.md#missing-capability)). When a task
+  needs a tool or specialist the employee does not have, it calls `request_capability` instead of improvising, and the
+  task pauses.
+  - The manager gets a decision with catalog options, seen with the manager's access.
+  - The manager can **attach** a specialist. That makes a new version with tests and the team's four-eyes, and the task
+    resumes after production approval.
+  - Or **build**: a ready self-mode request for the manager's AI tool, with the decision kept open for 7 days.
+  - Or **reject** / **instruct**.
+  - An agent never attaches or builds agents by itself.
+
 ## [0.17.1] — 2026-10-06
 
 ### Added

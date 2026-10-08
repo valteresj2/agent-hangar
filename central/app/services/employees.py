@@ -404,8 +404,11 @@ def admit(db: Session, acc: Access, e: Employee, approve: bool, reason: str = ""
 
 
 def after_promotion(db: Session, a: Agent, actor: str):
-    """Promoção aprovada (quatro olhos): um Digital employee já admitido pelo gestor passa a ativo."""
+    """Promoção aprovada (quatro olhos): um Digital employee já admitido pelo gestor passa a ativo, e tarefas que
+    esperavam um especialista anexado retomam."""
     e = db.scalar(select(Employee).where(Employee.agent_id == a.id))
+    if e is not None and e.status in ("active", "paused"):
+        workmod.after_promotion_capabilities(db, e)
     if e is None or e.status != "probation":
         return
     admitted = db.scalar(select(HumanRequest.id).where(HumanRequest.employee_id == e.id, HumanRequest.kind == "admission",

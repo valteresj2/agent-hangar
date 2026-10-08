@@ -14,7 +14,7 @@ const ACTION_LABEL = { read: 'Ler e consultar', delegate: 'Delegar a outro agent
 const MODE_LABEL = { auto: ['Sozinho', 'ok'], notify: ['Faz e avisa', 'info'], approve: ['Pede aprovação', 'warn'],
   approve_2: ['Duas aprovações', 'warn'], never: ['Nunca', 'bad'] };
 const LEVEL_LABEL = { intern: 'Estagiário', junior: 'Júnior', pleno: 'Pleno', senior: 'Sênior' };
-const KIND_LABEL = { approval: 'aprovação', question: 'pergunta', admission: 'admissão', notice: 'aviso' };
+const KIND_LABEL = { approval: 'aprovação', question: 'pergunta', admission: 'admissão', notice: 'aviso', capability: 'capacidade' };
 const CHANNELS = ['portal', 'mcp', 'schedule', 'webhook'];
 const KPI_METRIC = { tasks_done: 'Tarefas concluídas (30 dias)', done_rate: '% concluídas com sucesso', on_time_rate: '% dentro do prazo',
   approved_unedited_rate: '% aprovadas sem edição', avg_decision_min: 'Tempo médio de decisão (min)', cost_per_task: 'Custo por tarefa (US$)',
@@ -456,6 +456,21 @@ function decisionCard(d) {
     body = `<div class="mt">Terminou o período de experiência. <a href="#/employees/${esc(d.employee)}/probation">Ver os resultados</a> e decidir se ele vai para produção.</div>
       <input class="dc-reason mt" placeholder="Comentário (opcional)">`;
     btns = '<button class="dc-go" data-d="approve">Admitir em produção</button><button class="ghost danger dc-go" data-d="reject">Ainda não</button>';
+  } else if (d.kind === 'capability') {
+    const p = d.payload || {}, opts = p.options || [];
+    body = `<div class="mt"><b>Falta uma capacidade:</b> <span data-noi18n>${esc(d.question)}</span></div>
+      ${d.rationale ? `<div class="small mt">Por quê: <span data-noi18n>${esc(d.rationale)}</span></div>` : ''}
+      <div class="small mute mt">O que o catálogo já tem:</div>
+      ${opts.length ? `<div class="mt">${opts.map(o => `<div class="row between li" style="gap:10px"><span><b data-noi18n>${esc(o.name)}</b>
+          ${o.harness ? '<span class="chip">harness</span>' : ''}<div class="mute small one-line" data-noi18n style="max-width:620px">${esc(o.objective || '')}</div></span>
+          ${o.can_use && o.in_production ? `<button class="ghost dc-attach" data-s="${esc(o.slug)}">Anexar</button>`
+            : `<span class="pill">${o.in_production ? 'peça acesso ao time dono' : 'fora de produção'}</span>`}</div>`).join('')}</div>`
+        : '<div class="small mute">Nada parecido no catálogo.</div>'}
+      ${p.build_requested_by ? `<div class="small mt"><span class="pill info">construção pedida</span> por ${esc(p.build_requested_by)}</div>` : ''}
+      <div class="dc-build-out"></div>
+      <input class="dc-reason mt" placeholder="Motivo ou instrução (para recusar ou instruir)">`;
+    btns = `<button class="ghost dc-build">Construir com a sua ferramenta de IA</button>
+      <button class="ghost dc-go" data-d="instruct">Instruir</button><button class="ghost danger dc-go" data-d="reject">Recusar</button>`;
   } else {
     body = `<div class="mt small">Feito: <b>${esc(ACTION_LABEL[d.action_type] || d.action_type)}</b> com <code class="inline">${esc(d.tool)}</code></div>${payloadView(d.payload)}`;
     btns = '<button class="ghost dc-go" data-d="ack">Ciente</button>';
@@ -473,6 +488,14 @@ function bindDecisions(root, after) {
       let payload; try { payload = JSON.parse(edit.value); } catch (err) { return toast('JSON inválido', true); }
       act(openEdit, () => api(`/decisions/${id}`, { method: 'POST', body: { decision: 'approve_edited', edit: payload, reason: reason ? reason.value : '' } }).then(after), 'Aprovado com edição');
     };
+    card.querySelectorAll('.dc-attach').forEach(b => b.onclick = () => confirm('Anexar este especialista? Vira uma versão nova do agente, com testes (e a aprovação de produção, se o time exigir).') &&
+      act(b, () => api(`/decisions/${id}`, { method: 'POST', body: { decision: 'attach', edit: { specialist: b.dataset.s } } })
+        .then(r => { if (r.message) toast(r.message); return after(); }), 'Anexado'));
+    const build = $('.dc-build', card);
+    if (build) build.onclick = () => act(build, () => api(`/decisions/${id}`, { method: 'POST', body: { decision: 'build' } }).then(r => {
+      $('.dc-build-out', card).innerHTML = `<div class="card warn-card mt"><b>Peça isto na sua ferramenta de IA (modo self):</b>
+        <div class="mt">${copyable(r.build_prompt)}</div><div class="mute small mt">Quando o agente estiver em produção, volte aqui e anexe-o. O pedido fica aberto por 7 dias.</div></div>`;
+    }));
     card.querySelectorAll('.dc-go').forEach(b => b.onclick = () => {
       const d = b.dataset.d, why = reason ? reason.value.trim() : '';
       if (['reject', 'instruct', 'answer'].includes(d) && !why && d !== 'reject') return toast(d === 'answer' ? 'Escreva a resposta' : 'Escreva a instrução', true);

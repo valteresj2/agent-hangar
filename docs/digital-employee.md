@@ -142,6 +142,31 @@ Notes:
 - The job's own cost is recorded on the harness agent (its usage page), not in the employee's task budget.
 - The harness agent must be in production to be a specialist, like any other piece.
 
+## Missing capability
+
+A Digital employee works only with what its job gives it: its LLM, its tools, skills and MCPs, and its specialists. It
+never builds or attaches agents by itself. An agent that could give itself new agents could also give itself more power
+than its authority allows.
+
+When a task needs something it does not have, it calls **`request_capability(need, why)`** instead of improvising:
+
+1. The task pauses, and the manager gets a **capability** decision. It shows:
+   - what is missing and why;
+   - what the catalog already has: the same search as "reuse before you build", seen with the manager's access.
+2. The manager decides:
+
+   | Decision | What happens |
+   |---|---|
+   | **Attach** (`attach`, `edit={"specialist": slug}`) | The agent is added to the employee's specialists as a read-only piece. This creates a new version, which is tested and published through the team's normal flow. With four-eyes, the task resumes when someone else approves production; otherwise it resumes right away. The manager must be allowed to use that agent, and it must be in production. |
+   | **Build** (`build`) | The Hangar returns a ready request for the manager's AI tool (self mode). The decision stays open for 7 days, and the manager attaches the new agent when it is in production. |
+   | **Reject** / **Instruct** | The task resumes without the capability, and the employee explains what was left undone or follows the instruction. |
+
+3. On resume, the employee gets the new tool's name and continues. If the new specialist has a harness, each job still
+   goes through `run_code`.
+
+In the portal, the capability card in *Decisions* lists the catalog options with an *Attach* button and a *Build it with
+your AI tool* button. Over MCP, use `my_pending_decisions` and `decide`.
+
 ## Human in the loop
 
 When an action needs a person, the agent's round stops and the task becomes `waiting_human`. A **decision request**
@@ -155,6 +180,7 @@ is created with:
 | Question (`ask_human` tool) | `answer` |
 | Admission | `approve` (ship to production) or `reject` (back to onboarding) |
 | Notice | `ack` |
+| Capability (`request_capability` tool) | `attach`, `build`, `reject`, `instruct` (see [Missing capability](#missing-capability)) |
 
 - An approval grants a **one-time** permission for that exact tool and those exact arguments. The task resumes from
   its last checkpoint; the same action later needs a new approval.

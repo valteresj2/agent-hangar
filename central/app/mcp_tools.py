@@ -94,6 +94,10 @@ DIGITAL EMPLOYEE (agente como funcionário: cargo, gestor, alçada, tarefas e hu
 - Trabalho de código: o funcionário é sempre um agente de chat; ponha um agente com harness (Claude Code, Codex…) em
   specialists. Cada job de código passa pela alçada como run_code (pede aprovação por padrão) e o job/diff fica na
   linha do tempo da tarefa.
+- Capacidade faltando: quando a tarefa exige algo que ele não tem, o funcionário pede (request_capability) e a tarefa
+  pausa. O pedido traz `options` do catálogo. Com o OK do gestor: decide(attach, edit={"specialist": slug}) — versão
+  nova com testes e quatro olhos — ou decide(build) para construir pelo modo self e anexar depois. Nunca anexe sem o
+  gestor.
 - Metas: kpis=[{name, metric, target}] com metric em tasks_done | done_rate | on_time_rate | approved_unedited_rate |
   avg_decision_min | cost_per_task | expired_decisions; a plataforma mede e compara no relatório semanal.
 - Aprendizado: employee_suggestions mostra o que as decisões ensinaram (afrouxar um tipo de ação sempre aprovado sem
@@ -524,7 +528,9 @@ async def my_pending_decisions(ctx: Context) -> list:
 @mcp.tool()
 async def decide(ctx: Context, request_id: int, decision: str, edit: dict | None = None, reason: str = "") -> dict:
     """Decide um pedido. Aprovação: approve | approve_edited (edit = argumentos corrigidos) | reject (reason) |
-    instruct (reason = o que fazer). Pergunta: answer (reason = a resposta). Admissão: approve | reject. Aviso: ack."""
+    instruct (reason = o que fazer). Pergunta: answer (reason = a resposta). Admissão: approve | reject. Aviso: ack.
+    Capacidade faltando: attach (edit={"specialist": slug}, de options) | build (devolve o pedido pronto para construir
+    pelo modo self) | reject | instruct."""
     return await _run(ctx, lambda db, acc: svc.employee_tasks.decide(db, acc, request_id, decision, edit, reason))
 
 

@@ -148,7 +148,7 @@ an admin.
 | GET | `/api/tasks/{id}` | Task with its events (timeline) and decision requests |
 | POST | `/api/tasks/{id}/cancel` | The requester or someone who manages the employee |
 | GET | `/api/decisions` | Open decisions you can take (yours first) |
-| POST | `/api/decisions/{id}` | `{decision, edit?, reason?}`: `approve`, `approve_edited`, `reject`, `instruct`, `answer`, `ack` |
+| POST | `/api/decisions/{id}` | `{decision, edit?, reason?}`: `approve`, `approve_edited`, `reject`, `instruct`, `answer`, `ack`; for a missing capability, `attach` (`edit={"specialist": slug}`) or `build` (returns `build_prompt`) |
 | POST | `/api/decisions/batch` | `{ids, decision, reason?}`; errors are returned per item |
 | GET | `/api/admin/workforce` | Admin or auditor: every employee, decisions by age, approvals by type, expired, unclassified tools |
 | POST | `/api/admin/workforce/stop-all` | Admin: pauses every employee on probation or active |

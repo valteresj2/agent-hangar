@@ -61,6 +61,11 @@ class FakeRuntime:
             agent = svc.get_agent(db, slug)
             if re.search(r"(RECUSADO|EXPIROU|INSTRUÇÃO)", last):
                 return "não executei a ação; encerrando com o que ficou pendente"
+            nd = re.search(r"\bneed:\s*(.+)", last)
+            if nd and "CAPACIDADE" not in last:
+                g = tasksmod.gate(db, agent, task_id, "request_capability", "hangar:request_capability",
+                                  {"need": nd.group(1).strip()}, "", "capability")
+                return f"[[HANGAR_WAITING:{g['request_id']}]] {g['message']}"
             q = re.search(r"\bask:\s*(.+)", last)
             if q and "RESPOSTA de" not in last:
                 g = tasksmod.gate(db, agent, task_id, "ask_human", "hangar:ask_human", {"question": q.group(1)}, "", "ask_human")

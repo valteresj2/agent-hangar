@@ -9,6 +9,7 @@
   sempre aprova sem editar (nunca abaixo do piso da empresa) e transformar correções repetidas numa lição, que passa a
   ir no prompt de cada tarefa nova. Nada muda sozinho: o gestor aplica ou dispensa."""
 import hashlib
+import json
 import secrets
 from datetime import timedelta
 
@@ -429,3 +430,122 @@ def remove_lesson(db: Session, acc: Access, slug: str, lesson_id: str) -> dict:
     audit(db, acc.p.name, "employee.lesson.remove", a.slug, lesson_id)
     return {"lessons": e.lessons}
 
+
+
+# ------------------------------------------------------------------ capacidade faltando
+# Quando a tarefa pede algo que o funcionário não tem (uma ferramenta, um especialista, executar código), ele não
+# improvisa nem se dá poderes: chama request_capability. Vira uma decisão para o gestor, com o que o catálogo já tem
+# (a mesma busca do "reuse before you build", vista com o acesso do gestor). O gestor anexa um especialista (versão
+# nova do agente, com testes e quatro olhos), pede para construir (pelo modo self, na ferramenta de IA dele), recusa
+# ou instrui. Um agente nunca cria nem anexa agentes sozinho: isso seria escapar da própria alçada.
+
+def manager_access(db: Session, e: Employee) -> Access | None:
+    from .. import auth
+    from ..models import User
+    u = db.get(User, e.manager_user_id)
+    p = auth._user_principal(u, "employee") if u else None
+    return Access(db, p) if p else None
+
+
+def capability_options(db: Session, e: Employee, need: str) -> list[dict]:
+    """O que o catálogo já tem para a necessidade, com o que o gestor pode usar e o que já está em produção."""
+    from .common import get_agent, spec_of
+    from .composer import _prod_version
+    from .composer import plan as cplan
+    acc = manager_access(db, e)
+    if acc is None or not (need or "").strip():
+        return []
+    from ..models import Agent
+    own = db.get(Agent, e.agent_id)
+    current = set(spec_of(own).get("sub_agents") or []) | {own.slug}
+    try:
+        p = cplan(db, acc, need, None, 6)
+    except Exception:  # noqa: BLE001 — sem sugestão o pedido segue, o gestor decide do mesmo jeito
+        return []
+    out = []
+    for x in p.get("agents") or []:
+        if x["slug"] in current:
+            continue
+        a = get_agent(db, x["slug"])
+        out.append({"slug": a.slug, "name": a.name, "objective": a.objective, "match": x.get("match"),
+                    "why": x.get("why"), "can_use": acc.can("consume", a), "harness": bool(spec_of(a).get("harness")),
+                    "in_production": bool(_prod_version(a))})
+    return out[:5]
+
+
+def build_prompt(e: Employee, slug: str, need: str, en: bool) -> str:
+    """O pedido pronto para o gestor construir o que falta pela ferramenta de IA dele (modo self, pelo MCP)."""
+    if en:
+        return (f"In Agent Hangar, build an agent for this capability my Digital employee '{slug}' is missing: {need}. "
+                "Reuse the catalog first (plan_agent), ask me what is missing, add tests and ship it. Then attach it to "
+                f"'{slug}' from the capability request in Decisions.")
+    return (f"No Agent Hangar, construa um agente para esta capacidade que falta ao meu Digital employee '{slug}': "
+            f"{need}. Reaproveite o catálogo primeiro (plan_agent), me pergunte o que faltar, crie testes e publique. "
+            f"Depois, anexe-o a '{slug}' pelo pedido de capacidade em Decisões.")
+
+
+def attach_specialist(db: Session, acc: Access, e: Employee, slug: str) -> str:
+    """Anexa um especialista ao funcionário: versão nova do agente (sub_agents), registrada como peça só leitura, e
+    publicada pelo fluxo normal do time. Devolve "active" | "approval_pending" | "stage" | "ready"."""
+    from ..models import Agent, AgentLineage
+    from .common import get_agent, spec_of
+    from .composer import _prod_version, check_sub_agents
+    from .org import ship
+    from .registry import design_agent
+    from .runtime import deploy_env
+    a = db.get(Agent, e.agent_id)
+    target = get_agent(db, slug)
+    if target.id == a.id:
+        raise PlatformError("um Digital employee não pode ser especialista de si mesmo")
+    spec = spec_of(a)
+    subs = list(spec.get("sub_agents") or [])
+    if slug in subs:
+        return "ready"
+    check_sub_agents(db, acc, spec, {"sub_agents": [*subs, slug]})  # o gestor precisa poder USAR o especialista
+    prod = _prod_version(target)
+    if not prod:
+        raise PlatformError(f"'{slug}' ainda não está em produção: publique-o antes de anexar")
+    design_agent(db, a.slug, {"sub_agents": [*subs, slug]}, acc.p.name, acc)
+    row = db.scalar(select(AgentLineage).where(AgentLineage.agent_id == a.id))
+    if row is None:
+        row = AgentLineage(agent_id=a.id, mode="specialists", specialists=[])
+        db.add(row)
+    row.specialists = [*(row.specialists or []), {"slug": slug, "version": prod}]  # peça: usada como está, nunca publicada por ele
+    db.commit()
+    audit(db, acc.p.name, "employee.capability.attach", a.slug, slug)
+    if e.status == "probation":
+        deploy_env(db, a.slug, "stage", acc.p.name)
+        return "stage"
+    out = ship(db, acc, a.slug, f"Capacidade anexada ao Digital employee: {slug}")
+    return out["status"] if out["status"] == "approval_pending" else "active"
+
+
+def resume_after_attach(db: Session, e: Employee, r: HumanRequest):
+    """A capacidade chegou (deploy direto ou promoção aprovada): a tarefa retoma com a ferramenta nova."""
+    from ..models import Agent
+    task = db.get(EmployeeTask, r.task_id) if r.task_id else None
+    slug = (r.edited_payload or {}).get("specialist", "")
+    if task is None or task.status in tasksmod.TERMINAL:
+        return
+    target = db.scalar(select(Agent).where(Agent.slug == slug))
+    tool = "ask_" + slug
+    need = (r.action_payload or {}).get("need", "")
+    en = tasksmod.lang_of(e) == "en"
+    msg = (f"CAPACIDADE #{r.id}: your manager attached '{target.name if target else slug}' (tool {tool}). Continue the "
+           f"task with it, for example: use {tool} {json.dumps({'message': need}, ensure_ascii=False)}") if en else (
+           f"CAPACIDADE #{r.id}: o gestor anexou '{target.name if target else slug}' (ferramenta {tool}). Continue a "
+           f"tarefa com ela, por exemplo: use {tool} {json.dumps({'message': need}, ensure_ascii=False)}")
+    tasksmod._resume(db, task, msg)
+    tasksmod.event(db, task, "note", {"capability": r.id, "attached": slug})
+    db.commit()
+
+
+def after_promotion_capabilities(db: Session, e: Employee):
+    """Promoção aprovada: retoma as tarefas cujos especialistas anexados esperavam os quatro olhos."""
+    rows = db.scalars(select(HumanRequest).where(HumanRequest.employee_id == e.id, HumanRequest.kind == "capability",
+                                                 HumanRequest.decision == "attach"))
+    for r in rows:
+        if (r.action_payload or {}).get("pending"):
+            r.action_payload = {**r.action_payload, "pending": False}
+            db.commit()
+            resume_after_attach(db, e, r)
