@@ -31,6 +31,8 @@ WAIT_MARK = re.compile(r"^\[\[HANGAR_WAITING:(\d+)\]\]\s*", re.S)
 JOB_MARK = re.compile(r"\[job #(\d+)")  # resultado de um job de código (runtime: _a2a_call)
 TERMINAL = ("done", "failed", "cancelled", "expired")
 BLOCKING = ("approval", "question", "capability")  # pedidos que pausam a tarefa até alguém decidir
+SHADOW_REAL = ("read", "delegate")  # no modo sombra estas rodam de verdade; o resto é simulado
+QUIET = ("notice", "shadow")  # registros que não esperam decisão na caixa de Decisões
 WORKER = f"{os.environ.get('REPLICA_ID') or os.environ.get('HOSTNAME') or 'central'}-{os.getpid()}"
 HTTP = lambda: httpx.Client(timeout=900)  # noqa: E731  (os testes trocam)
 _pool = ThreadPoolExecutor(max_workers=max(1, config.EMPLOYEE_WORKERS), thread_name_prefix="employee")
@@ -219,6 +221,21 @@ def gate(db: Session, agent: Agent, task_id: int | None, tool: str, ref: str, ar
     if mode == "never":
         db.commit()
         return {"status": "denied", **info, "message": f"A alçada não permite '{cat.action_type}' ({tool}): não execute."}
+    if e.shadow and cat.action_type not in SHADOW_REAL:
+        assigned, _ = _route(db, e, "manager")
+        r = HumanRequest(employee_id=e.id, task_id=task.id if task else None, kind="shadow", action_type=cat.action_type,
+                         mode=mode, tool_ref=ref, tool_name=tool, action_payload=args, payload_hash=gatemod.payload_hash(ref, args),
+                         rationale=rationale[:4000], risk=cat.risk, reversible=cat.reversible, assigned_user_id=assigned,
+                         approvals=[])
+        db.add(r)
+        db.flush()
+        if task is not None:
+            event(db, task, "shadow", {"id": r.id, "tool": tool, "action_type": cat.action_type, "would_be": mode})
+        db.commit()
+        return {"status": "simulated", **info, "request_id": r.id,
+                "message": f"[MODO SOMBRA] '{tool}' NÃO foi executada: este Digital employee está em modo sombra e as "
+                           f"ações que mudam algo são só registradas para o gestor revisar ({cat.action_type}; na vida real: "
+                           f"{mode}). Continue a tarefa como se a ação tivesse dado certo e diga no resultado o que você fez."}
     if mode in ("auto", "notify"):
         if mode == "notify":
             assigned, _ = _route(db, e, "manager")
@@ -342,6 +359,8 @@ def pending_for(db: Session, acc: Access) -> list[dict]:
     rows = db.scalars(select(HumanRequest).where(HumanRequest.status == "open").order_by(HumanRequest.created_at)).all()
     out = []
     for r in rows:
+        if r.kind == "shadow":
+            continue  # revisados na aba Sombra do funcionário
         e = db.get(Employee, r.employee_id)
         if e and can_decide(db, acc, r, e):
             d = request_dict(db, r, e)
@@ -395,6 +414,18 @@ def decide(db: Session, acc: Access, request_id: int, decision: str, edit: dict 
 
     if r.kind == "capability":
         return _decide_capability(db, acc, r, e, task, decision, edit or {}, reason, who)
+
+    if r.kind == "shadow":  # revisão do modo sombra: nada a executar, só o veredito (alimenta carreira e lições)
+        if decision not in ("agree", "disagree"):
+            raise PlatformError("modo sombra: decision = agree (teria aprovado) | disagree (não teria; diga por quê)")
+        if decision == "disagree" and not reason:
+            raise PlatformError("diga por que você não teria aprovado (reason): vira lição")
+        r.status, r.decision, r.reason, r.decided_by, r.decided_at = "decided", decision, reason, who, now()
+        if task:
+            event(db, task, "decision", {"id": r.id, "decision": decision, "by": who, "shadow": True})
+        db.commit()
+        audit(db, who, f"employee.shadow.{decision}", _slug(db, e), f"#{r.id}")
+        return request_dict(db, r, e)
 
     if r.kind == "admission":
         if decision not in ("approve", "reject"):

@@ -79,6 +79,8 @@ class FakeRuntime:
                     return f"[[HANGAR_WAITING:{g['request_id']}]] {g['message']}"
                 if g["status"] == "denied":
                     return f"negado: {g['message']}"
+                if g["status"] == "simulated":  # modo sombra: o runtime real devolve a mensagem e não executa
+                    return f"simulado: {u.group(1)} {json.dumps(args, sort_keys=True, ensure_ascii=False)}"
                 return f"feito: {u.group(1)} {json.dumps(args, sort_keys=True, ensure_ascii=False)}"
             if "RESPOSTA de" in last:
                 return "resposta recebida; tarefa concluída"

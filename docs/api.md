@@ -141,6 +141,9 @@ an admin.
 | PATCH / DELETE | `/api/employees/{slug}/routines/{id}` | Change (`enabled=false` pauses it) or remove a routine (manage) |
 | POST | `/api/employees/{slug}/routines/{id}/run` | Create the routine's task now, unless its previous task is still open (manage) |
 | POST | `/api/employees/{slug}/webhook` | `{enabled}`: generates or rotates the inbound token (shown once) or turns the webhook off (manage) |
+| GET | `/api/employees/{slug}/shadow` | Simulated actions (`?status=open` to review) and agreement stats |
+| POST | `/api/employees/{slug}/shadow` | `{on, reason}`: switch shadow mode (manager or admin) |
+| GET | `/api/employees/{slug}/career` | Level, criteria for the next one with values, warning signs, shadow stats, history |
 | GET | `/api/employees/{slug}/suggestions` | What the decisions of the last 30 days suggest (loosen an action type, or a lesson) |
 | POST | `/api/employees/{slug}/suggestions/{id}/apply` | `{text?}` (manage; loosening authority: manager or admin only) |
 | POST | `/api/employees/{slug}/suggestions/{id}/dismiss` | Hides it for 30 days (manage) |

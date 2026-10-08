@@ -56,7 +56,7 @@ function empCard(e) {
   const working = (t.new || 0) + (t.in_progress || 0);
   return `<div class="card agent-card">
     <div class="row between"><a href="#/employees/${esc(e.slug)}"><b>${esc(e.name)}</b></a>${empPill(e.status)}</div>
-    <div class="small" data-noi18n>${esc(e.title)}</div>
+    <div class="small"><span data-noi18n>${esc(e.title)}</span>${e.shadow ? ' <span class="pill info">modo sombra</span>' : ''}</div>
     <div class="mute small one-line" data-noi18n title="${esc(e.mission)}">${esc(e.mission)}</div>
     <div class="row small mt" style="gap:6px;flex-wrap:wrap"><span class="chip">${icon('user')}${esc(e.manager || '—')}</span>
       <span class="pill">${esc(LEVEL_LABEL[e.autonomy_level] || e.autonomy_level)}</span>
@@ -98,6 +98,7 @@ async function employeeHirePage() {
     <div id="h-prob"></div><button class="ghost small" id="h-prob-add">+ tarefa</button>
     <h3 class="mt">Alçada</h3><div id="h-auth" class="mute small">Clique em Verificar para ver a alçada padrão do nível escolhido, já com o piso da empresa.</div>
     <label class="row mt" style="gap:6px"><input type="checkbox" id="h-accept"> Aceito a alçada padrão (posso mudar depois, na aba Alçada)</label>
+    <label class="row mt" style="gap:6px"><input type="checkbox" id="h-shadow" checked> Começar em modo sombra (recomendado): as ações que mudam algo são só simuladas até você confiar nele</label>
     <details class="mt"><summary>Opcional: metas, relatórios e limites</summary><div class="grid g2 mt">
       <label>Metas (KPIs), uma por linha<textarea id="h-kpis" rows="3"></textarea></label>
       <label>Webhook dos relatórios (Slack ou Teams, se for a ferramenta da empresa)<input id="h-hook" placeholder="https://hooks…"></label>
@@ -120,7 +121,7 @@ async function employeeHirePage() {
       responsibilities: lines($('#h-resp').value), systems: lines($('#h-systems').value), specialists: csv($('#h-specialists').value),
       skills: pieces.filter(p => !p.startsWith('mcp:')).map(p => p.replace(/^skill:/, '')), mcps: pieces.filter(p => p.startsWith('mcp:')).map(p => p.slice(4)),
       backups: csv($('#h-backups').value), team: $('#h-team').value, autonomy_level: $('#h-level').value,
-      channels: [...document.querySelectorAll('.h-ch:checked')].map(c => c.value), accept_default_authority: $('#h-accept').checked,
+      channels: [...document.querySelectorAll('.h-ch:checked')].map(c => c.value), accept_default_authority: $('#h-accept').checked, shadow: $('#h-shadow').checked,
       probation_tasks: [...document.querySelectorAll('.h-pt')].map(r => ({ title: $('.pt-title', r).value.trim(), body: $('.pt-body', r).value.trim(), expected: $('.pt-exp', r).value.trim() }))
         .filter(t => t.title),
       kpis: lines($('#h-kpis').value).map(k => ({ name: k })), report_webhook: $('#h-hook').value.trim(), working_hours: $('#h-hours').value.trim(),
@@ -147,8 +148,10 @@ async function employeeHirePage() {
 /* ---------- página do Digital employee ---------- */
 async function employeeDetail(slug, tab = 'overview') {
   const e = await api('/employees/' + slug);
-  const tabs = { overview: 'Visão geral', tasks: 'Tarefas', routines: 'Rotinas', decisions: 'Decisões', authority: 'Alçada', probation: 'Experiência', reports: 'Relatórios', settings: 'Configurações' };
+  const tabs = { overview: 'Visão geral', tasks: 'Tarefas', routines: 'Rotinas', decisions: 'Decisões', shadow: 'Sombra', authority: 'Alçada', probation: 'Experiência', reports: 'Relatórios', settings: 'Configurações' };
   if (!e.can_manage) delete tabs.settings;
+  const sh = (e.career || {}).shadow || {};
+  if (!e.shadow && !sh.simulated) delete tabs.shadow;
   const key = tabs[tab] ? tab : 'overview';
   main.innerHTML = `<div class="row between"><div><a href="#/employees" class="mute small">← Digital employees</a>
     <h1>${esc(e.name)} ${empPill(e.status)}</h1><div class="sub" data-noi18n>${e.title !== e.name ? `${esc(e.title)} — ` : ''}${esc(e.mission)}</div>
@@ -167,19 +170,40 @@ async function employeeDetail(slug, tab = 'overview') {
   on('#e-prob', ev => act(ev.target, () => api(`/employees/${slug}/probation`, { method: 'POST' }).then(route), 'Experiência começou: as tarefas estão na fila'));
   on('#e-pause', status('paused', 'Pausado', 'Pausar agora? Nenhuma ação passa até alguém retomar.'));
   on('#e-resume', status('active', 'Retomado'));
-  await ({ overview: empOverview, tasks: empTasks, routines: empRoutines, decisions: empDecisions, authority: empAuthority, probation: empProbation, reports: empReports, settings: empSettings })[key]($('#tab'), e);
+  await ({ overview: empOverview, tasks: empTasks, routines: empRoutines, decisions: empDecisions, shadow: empShadow, authority: empAuthority, probation: empProbation, reports: empReports, settings: empSettings })[key]($('#tab'), e);
+}
+
+const KIND_CAREER = { promote: 'promovido', demote: 'rebaixado', shadow: 'modo sombra' };
+function careerCard(e, c) {
+  if (!c.level) return '';
+  const val = x => x.value == null ? '—' : `${fmt(x.value)}${/^%/.test(x.label) ? '%' : ''}`;
+  return `<div class="card mt"><div class="row between"><h2>Carreira</h2>
+      <span><span class="pill">${esc(LEVEL_LABEL[c.level] || c.level)}</span>${c.next ? ` → <span class="pill ${c.ready ? 'ok' : ''}">${esc(LEVEL_LABEL[c.next] || c.next)}</span>` : ''}</span></div>
+    ${c.next ? `<div class="mute small">Critérios para o próximo nível nos últimos 30 dias (${c.met}/${c.criteria.length}). A plataforma mede e sugere; o gestor decide na aba
+        <a href="#/employees/${esc(e.slug)}/authority">Alçada</a>.</div>
+      <table class="mt">${c.criteria.map(x => `<tr><td style="width:28px">${x.ok ? icon('check', 'ok-ic') : icon('x', 'bad-ic')}</td>
+        <td>${esc(x.label)}</td><td><b>${val(x)}</b></td><td class="mute small">${x.key === 'fail' || x.key === 'clean' || x.key === 'kpis' ? '≤' : '≥'} ${fmt(x.target)}</td></tr>`).join('')}</table>`
+      : '<div class="mute small">Nível mais alto.</div>'}
+    ${(c.demotion_signals || []).length ? `<div class="card bad-card mt"><b>Sinais de alerta:</b> ${c.demotion_signals.map(esc).join('; ')}</div>` : ''}
+    ${(c.history || []).length ? `<h3 class="mt">Histórico</h3>${c.history.slice(0, 5).map(h => `<div class="li small"><span class="pill">${esc(KIND_CAREER[h.kind] || h.kind)}</span>
+        ${h.kind === 'shadow' ? (h.to ? 'ligado' : 'desligado') : `${esc(LEVEL_LABEL[h.from] || h.from)} → ${esc(LEVEL_LABEL[h.to] || h.to)}`}
+        <span class="mute">por ${esc(h.by)} · ${ago(h.at)}</span>${h.reason ? ` <span class="mute" data-noi18n>— ${esc(h.reason)}</span>` : ''}</div>`).join('')}` : ''}</div>`;
 }
 
 function empOverview(t, e) {
   const m = e.metrics || {};
   const canAssign = ['probation', 'active', 'paused'].includes(e.status);
-  t.innerHTML = `<div class="board">${kpi(fmt(m.done), 'Concluídas (30 dias)')}${kpi(fmt(m.waiting), 'Aguardando decisão')}${kpi(fmt(m.failed), 'Com falha')}
+  const c = e.career || {};
+  t.innerHTML = `${e.shadow ? `<div class="card warn-card"><b>Modo sombra.</b> Ele trabalha de verdade, mas toda ação que muda algo
+      (fora ler e delegar) é simulada e fica para você revisar na aba <a href="#/employees/${esc(e.slug)}/shadow">Sombra</a>.</div>` : ''}
+  <div class="board ${e.shadow ? 'mt' : ''}">${kpi(fmt(m.done), 'Concluídas (30 dias)')}${kpi(fmt(m.waiting), 'Aguardando decisão')}${kpi(fmt(m.failed), 'Com falha')}
     ${kpi(usd(m.cost_usd), 'Custo (30 dias)')}${kpi(m.approvals ? Math.round(100 * m.approved_unedited / m.approvals) + '%' : '—', 'Aprovado sem edição')}
     ${kpi(m.avg_decision_min == null ? '—' : m.avg_decision_min + ' min', 'Tempo de decisão')}</div>
   ${(e.kpi_status || []).length ? `<div class="card mt"><h2>Metas</h2><table><tr><th>Meta</th><th>Medida</th><th>Agora</th><th>Alvo</th><th></th></tr>
     ${e.kpi_status.map(k => `<tr><td data-noi18n>${esc(k.name)}</td><td class="small mute">${esc(KPI_METRIC[k.metric] || '—')}</td><td><b>${kpiVal(k)}</b></td>
       <td class="small">${k.target == null ? '—' : `${k.higher_is_better ? '≥' : '≤'} ${fmt(k.target)}`}</td><td>${kpiPill(k)}</td></tr>`).join('')}</table>
     <div class="mute small mt">Medidas pela plataforma nos últimos 30 dias. O relatório semanal compara cada meta com o alvo.</div></div>` : ''}
+  ${careerCard(e, c)}
   <div class="grid g2 mt">
     <div class="card"><h2>Cargo</h2><dl class="kv guide-kv">
       <dt>Missão</dt><dd data-noi18n>${esc(e.mission)}</dd>
@@ -265,6 +289,40 @@ function empRoutines(t, e) {
     act(ev.target, () => api(`/employees/${e.slug}/webhook`, { method: 'POST', body: { enabled: false } }).then(route), 'Webhook desligado');
 }
 
+async function empShadow(t, e) {
+  const d = await api(`/employees/${e.slug}/shadow`);
+  const st = d.stats || {};
+  const isMgr = e.can_manage;
+  t.innerHTML = `<div class="card"><div class="row between"><h2>Modo sombra ${d.shadow ? '<span class="pill info">ligado</span>' : '<span class="pill">desligado</span>'}</h2>
+      ${isMgr ? `<button class="${d.shadow ? 'ghost' : ''}" id="sh-toggle">${d.shadow ? 'Desligar o modo sombra' : 'Ligar o modo sombra'}</button>` : ''}</div>
+    <div class="mute small">Ele trabalha de verdade, mas toda ação que muda algo (fora ler e delegar) é simulada: fica registrada aqui, com o que a alçada
+      faria na vida real. Diga se teria aprovado; a concordância conta para a carreira e as discordâncias viram lições.</div>
+    <div class="board mt">${kpi(fmt(st.simulated), 'Ações simuladas (30 dias)')}${kpi(fmt(st.to_review), 'Para revisar')}
+      ${kpi(st.agree_rate == null ? '—' : st.agree_rate + '%', 'Concordância')}${kpi(fmt(st.disagree), 'Discordâncias')}</div></div>
+  ${(d.actions || []).length ? d.actions.map(a => `<div class="card mt dc sh" data-id="${a.id}">
+      <div class="row between"><div><b>${esc(ACTION_LABEL[a.action_type] || a.action_type)}</b> com <code class="inline">${esc(a.tool)}</code>
+        · ${window.t('na vida real:')} ${modePill(a.mode)} ${a.task ? `<div class="small">Tarefa <a href="#/tasks/${a.task.id}" data-noi18n>#${a.task.id} ${esc(a.task.title)}</a></div>` : ''}</div>
+        <span class="mute small">${when(a.created_at)}</span></div>
+      ${a.rationale ? `<div class="small mt">Por quê: <span data-noi18n>${esc(a.rationale)}</span></div>` : ''}${payloadView(a.payload)}
+      ${a.status === 'open' && isMgr ? `<input class="dc-reason mt" placeholder="Se não teria aprovado, diga por quê (vira lição)">
+        <div class="row mt"><button class="sh-go" data-d="agree">Teria aprovado</button><button class="ghost danger sh-go" data-d="disagree">Não teria</button></div>`
+        : `<div class="small mt">${a.decision === 'agree' ? '<span class="pill ok">teria aprovado</span>' : a.decision === 'disagree'
+          ? `<span class="pill bad">não teria</span> <span data-noi18n>${esc(a.reason)}</span>` : '<span class="pill">para revisar</span>'}
+          ${a.decided_by ? `<span class="mute">por ${esc(a.decided_by)}</span>` : ''}</div>`}</div>`).join('')
+    : '<div class="card mt mute">Nenhuma ação simulada ainda.</div>'}`;
+  const tg = $('#sh-toggle');
+  if (tg) tg.onclick = ev => {
+    const on = !d.shadow;
+    const reason = prompt(on ? 'Ligar o modo sombra? Motivo (fica no histórico de carreira):' : 'Desligar o modo sombra? Ele passa a agir de verdade, dentro da alçada. Motivo:');
+    if (reason !== null) act(ev.target, () => api(`/employees/${e.slug}/shadow`, { method: 'POST', body: { on, reason } }).then(route), on ? 'Modo sombra ligado' : 'Modo sombra desligado');
+  };
+  t.querySelectorAll('.sh').forEach(card => card.querySelectorAll('.sh-go').forEach(b => b.onclick = () => {
+    const why = $('.dc-reason', card).value.trim();
+    if (b.dataset.d === 'disagree' && !why) return toast('Diga por que você não teria aprovado', true);
+    act(b, () => api(`/decisions/${card.dataset.id}`, { method: 'POST', body: { decision: b.dataset.d, reason: why } }).then(route), 'Registrado');
+  }));
+}
+
 async function empDecisions(t, e) {
   const all = (await api('/decisions')).filter(d => d.employee === e.slug);
   t.innerHTML = all.length ? all.map(decisionCard).join('') : '<div class="card mute">Nada esperando por você neste Digital employee.</div>';
@@ -272,12 +330,15 @@ async function empDecisions(t, e) {
 }
 
 function suggestionCard(s, can) {
-  const body = s.kind === 'authority'
+  const body = s.kind === 'career'
+    ? `<div class="mt">${s.to === 'live' ? '<span class="pill info">modo sombra</span> → <span class="pill ok">age de verdade</span>'
+        : `<span class="pill">${esc(LEVEL_LABEL[s.from] || s.from)}</span> → <span class="pill ${s.id.startsWith('promote') ? 'ok' : 'warn'}">${esc(LEVEL_LABEL[s.to] || s.to)}</span>`}</div>`
+    : s.kind === 'authority'
     ? `<div class="mt">${modePill(s.from)} → ${modePill(s.to)} em <b>${esc(ACTION_LABEL[s.action_type] || s.action_type)}</b></div>`
     : `<ul class="small mt">${(s.examples || []).map(x => `<li><a href="#/decisions">#${x.request}</a> ${esc(window.t({ approve_edited: 'editada', reject: 'recusada', instruct: 'instruída' }[x.decision] || x.decision))}${x.reason || x.edit ? ` — <span data-noi18n>${esc(x.reason || x.edit)}</span>` : ''}</li>`).join('')}</ul>
       ${can ? `<label class="mt">Lição (vai no prompt de cada tarefa nova)<textarea class="sg-text" rows="2" data-noi18n>${esc(s.lesson)}</textarea></label>` : `<div class="small mt" data-noi18n>${esc(s.lesson)}</div>`}`;
-  return `<div class="card mt sg" data-id="${esc(s.id)}"><div class="row between"><b data-noi18n>${esc(s.text)}</b><span class="pill info">${s.evidence} decisões</span></div>${body}
-    ${can ? `<div class="row mt"><button class="sg-apply">${s.kind === 'authority' ? 'Aplicar' : 'Virar lição'}</button><button class="ghost sg-dismiss">Dispensar</button></div>` : ''}</div>`;
+  return `<div class="card mt sg" data-id="${esc(s.id)}"><div class="row between"><b data-noi18n>${esc(s.text)}</b>${s.kind === 'career' ? '' : `<span class="pill info">${s.evidence} decisões</span>`}</div>${body}
+    ${can ? `<div class="row mt"><button class="sg-apply">${s.kind === 'lesson' ? 'Virar lição' : 'Aplicar'}</button><button class="ghost sg-dismiss">Dispensar</button></div>` : ''}</div>`;
 }
 
 async function empAuthority(t, e) {

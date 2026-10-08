@@ -142,6 +142,55 @@ Notes:
 - The job's own cost is recorded on the harness agent (its usage page), not in the employee's task budget.
 - The harness agent must be in production to be a specialist, like any other piece.
 
+## Shadow mode
+
+Shadow mode is the safe way to put a new employee to work before you trust it.
+
+- **What runs and what doesn't.** The employee works for real: it takes tasks, reads, asks its specialists and writes
+  results. Every action that **changes something** (anything other than `read` and `delegate`) is **simulated**: the
+  platform logs the exact action and tells the agent "not executed (shadow mode)", and the task goes on.
+- **What is logged.** Each simulated action keeps the tool, the arguments, the agent's reason and what its authority
+  would have done for real (for example *asks for approval*). Nothing waits for a decision, so tasks never stall.
+- **`never` still applies.** An action the authority forbids is still denied, as it would be for real.
+- **Review.** The manager reviews the *Shadow* tab: *would approve* or *would not* (with a reason).
+  - Agreement counts toward the [career plan](#career-plan).
+  - Disagreements become [lessons](#learning-from-decisions), like corrected approvals.
+- **Turning it on.** Hire with `shadow=true` (the portal's hire form suggests it), or switch it on later. Only the
+  manager or an admin switches it on or off (`POST /api/employees/{slug}/shadow`, `set_shadow` over MCP). Every switch
+  is logged in the career history.
+
+## Career plan
+
+The platform measures each employee's track record and **suggests** level changes. The manager applies or dismisses
+them, like any other suggestion (*Authority* tab, or `employee_suggestions` / `apply_suggestion`).
+
+**Promotion** (intern → junior → pleno → senior). Every criterion must hold over the last 30 days:
+
+| Criterion | intern → junior | junior → pleno | pleno → senior |
+|---|---|---|---|
+| Tasks done | ≥ 15 | ≥ 30 | ≥ 60 |
+| Actions decided by the manager | ≥ 10 | ≥ 20 | ≥ 40 |
+| Approved without edits | ≥ 90 % | ≥ 95 % | ≥ 97 % |
+| Tasks failed | ≤ 10 % | ≤ 8 % | ≤ 5 % |
+| Rejected or expired actions (14 days) | 0 | 0 | 0 |
+| Goals off target | 0 | 0 | 0 |
+| Agreement in shadow mode (when ≥ 10 reviewed) | ≥ 90 % | ≥ 90 % | ≥ 90 % |
+
+**Step back.** Any of these signs suggests going down one level, or using shadow mode:
+- 25 % or more of tasks failed (with at least 8 finished);
+- 3 or more rejected actions in 14 days;
+- the manager disagreed with 30 % or more of the shadow actions (with at least 10 reviewed).
+
+**Leave shadow mode.** Suggested after at least 20 reviewed simulated actions with 90 % agreement or more.
+
+Each change is kept in the career history, with who decided it, when and why. The *Overview* tab shows:
+- the current level and the criteria for the next one, with each value;
+- any warning signs;
+- the history.
+
+The weekly report includes the progress toward the next level. Only the manager or an admin applies a level change,
+and the company floor keeps applying above any level.
+
 ## Missing capability
 
 A Digital employee works only with what its job gives it: its LLM, its tools, skills and MCPs, and its specialists. It
@@ -180,6 +229,7 @@ is created with:
 | Question (`ask_human` tool) | `answer` |
 | Admission | `approve` (ship to production) or `reject` (back to onboarding) |
 | Notice | `ack` |
+| Shadow action (shadow mode) | `agree`, `disagree` (with a reason) |
 | Capability (`request_capability` tool) | `attach`, `build`, `reject`, `instruct` (see [Missing capability](#missing-capability)) |
 
 - An approval grants a **one-time** permission for that exact tool and those exact arguments. The task resumes from
@@ -334,7 +384,8 @@ Only the manager (or an admin) changes the autonomy level and decides the admiss
   - lifecycle: `pause_employee`, `resume_employee`, `offboard_employee`;
   - recurring work: `set_routine`, `list_routines`, `delete_routine`;
   - code work: put an agent with a harness in `specialists` (see [Code work](#code-work-harness));
-  - learning: `employee_suggestions`, `apply_suggestion` (only with the manager's explicit OK).
+  - learning: `employee_suggestions`, `apply_suggestion` (only with the manager's explicit OK);
+  - shadow mode and career: `set_shadow`, `employee_career`.
 
 ## Roadmap
 

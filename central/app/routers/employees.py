@@ -45,6 +45,7 @@ class HireBody(BaseModel):
     report_hour: int | None = None
     report_weekday: int | None = None
     routines: list[dict] = Field(default_factory=list)
+    shadow: bool = False
     plan_id: str = ""
 
 
@@ -110,6 +111,11 @@ class ApplyBody(BaseModel):
 
 class LessonBody(BaseModel):
     text: str
+
+
+class ShadowBody(BaseModel):
+    on: bool
+    reason: str = ""
 
 
 class InboundBody(BaseModel):
@@ -244,6 +250,21 @@ def suggestion_apply(slug: str, sid: str, body: ApplyBody, request: Request, db=
 @router.post("/employees/{slug}/suggestions/{sid}/dismiss")
 def suggestion_dismiss(slug: str, sid: str, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.employee_work.dismiss_suggestion(db, acc(request, db), slug, sid))
+
+
+@router.get("/employees/{slug}/shadow")
+def shadow_log(slug: str, request: Request, status: str | None = None, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_work.shadow_log(db, acc(request, db), slug, status))
+
+
+@router.post("/employees/{slug}/shadow")
+def shadow_set(slug: str, body: ShadowBody, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_work.set_shadow(db, acc(request, db), slug, body.on, body.reason))
+
+
+@router.get("/employees/{slug}/career")
+def career(slug: str, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_work.career_for(db, acc(request, db), slug))
 
 
 @router.post("/employees/{slug}/lessons")

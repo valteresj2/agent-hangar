@@ -229,7 +229,7 @@ def hire(db: Session, acc: Access, request: str = "", **f) -> dict:
                  status="onboarding", working_hours=f.get("working_hours") or "",
                  task_budget_usd=float(f.get("task_budget_usd") or 1.0),
                  task_time_limit_min=int(f.get("task_time_limit_min") or 30), report_hour=int(f.get("report_hour") or 18),
-                 report_weekday=_weekday(f.get("report_weekday")), created_by=acc.p.name)
+                 report_weekday=_weekday(f.get("report_weekday")), shadow=bool(f.get("shadow")), created_by=acc.p.name)
     if f.get("report_webhook"):
         from .schedules import check_webhook
         e.report_webhook = check_webhook(f["report_webhook"])
@@ -295,7 +295,7 @@ def employee_dict(db: Session, e: Employee, acc: Access | None = None, detail: b
     counts = dict(db.execute(select(EmployeeTask.status, func.count()).where(EmployeeTask.employee_id == e.id)
                              .group_by(EmployeeTask.status)).all())
     open_req = db.scalar(select(func.count()).select_from(HumanRequest).where(
-        HumanRequest.employee_id == e.id, HumanRequest.status == "open", HumanRequest.kind != "notice")) or 0
+        HumanRequest.employee_id == e.id, HumanRequest.status == "open", HumanRequest.kind.not_in(tasksmod.QUIET))) or 0
     since = now() - timedelta(days=30)
     cost = db.scalar(select(func.coalesce(func.sum(EmployeeTask.cost_usd), 0.0)).where(
         EmployeeTask.employee_id == e.id, EmployeeTask.created_at >= since)) or 0.0
@@ -304,7 +304,7 @@ def employee_dict(db: Session, e: Employee, acc: Access | None = None, detail: b
          "autonomy_level": e.autonomy_level, "team": a.team_id, "manager": names.get(e.manager_user_id),
          "owner": names.get(e.owner_user_id), "backups": [names.get(b) for b in e.backup_user_ids or []],
          "tasks": counts, "open_decisions": open_req, "cost_30d": round(float(cost), 4),
-         "hired_at": iso(tasksmod._aware(e.hired_at)) if e.hired_at else None,
+         "hired_at": iso(tasksmod._aware(e.hired_at)) if e.hired_at else None, "shadow": bool(e.shadow),
          "created_at": iso(tasksmod._aware(e.created_at)),
          "can_manage": bool(acc and (acc.can("manage", a) or (uid and uid in (e.owner_user_id, e.manager_user_id))))}
     if detail:
@@ -313,7 +313,7 @@ def employee_dict(db: Session, e: Employee, acc: Access | None = None, detail: b
                  task_time_limit_min=e.task_time_limit_min, report_webhook=bool(e.report_webhook),
                  report_hour=e.report_hour, report_weekday=e.report_weekday, lessons=e.lessons or [],
                  kpi_status=workmod.kpi_status(db, e), routines=workmod.routines_of(db, e),
-                 webhook=workmod.webhook_info(e, a.slug),
+                 webhook=workmod.webhook_info(e, a.slug), career=workmod.career_status(db, e),
                  rules=[{"action_type": r.action_type, "mode": r.mode, "conditions": r.conditions, "approver": r.approver,
                          "expires_in_min": r.expires_in_min, "note": r.note}
                         for r in db.scalars(select(AuthorityRule).where(AuthorityRule.employee_id == e.id))],
@@ -466,6 +466,9 @@ def update(db: Session, acc: Access, slug: str, changes: dict) -> dict:
         e.systems = changes["systems"] or []
     if "report_weekday" in changes:
         e.report_weekday = _weekday(changes["report_weekday"])
+    if "shadow" in changes and bool(changes["shadow"]) != bool(e.shadow):
+        db.commit()
+        workmod.set_shadow(db, acc, slug, bool(changes["shadow"]), str(changes.get("reason") or ""))
     if "channels" in changes:
         e.channels = [c for c in changes["channels"] or [] if c in CHANNELS] or e.channels
     if "manager" in changes:
@@ -583,7 +586,7 @@ def make_report(db: Session, e: Employee, period: str = "daily") -> EmployeeRepo
     a = db.get(Agent, e.agent_id)
     m = metrics(db, e, 1 if period == "daily" else 7)
     open_req = db.scalar(select(func.count()).select_from(HumanRequest).where(
-        HumanRequest.employee_id == e.id, HumanRequest.status == "open", HumanRequest.kind != "notice")) or 0
+        HumanRequest.employee_id == e.id, HumanRequest.status == "open", HumanRequest.kind.not_in(tasksmod.QUIET))) or 0
     stuck = [t.title for t in db.scalars(select(EmployeeTask).where(EmployeeTask.employee_id == e.id,
                                                                      EmployeeTask.status == "waiting_human").limit(5))]
     en = tasksmod.lang_of(e) == "en"
@@ -604,6 +607,15 @@ def make_report(db: Session, e: Employee, period: str = "daily") -> EmployeeRepo
             tgt = f" / {'target' if en else 'alvo'} {k['target']}" if k["target"] is not None else ""
             lines.append(f"{mark} {k['name']}: {val}{tgt}")
         summary += ("\nGoals (30 days):\n" if en else "\nMetas (30 dias):\n") + "\n".join(lines)
+    if period == "weekly":
+        c = workmod.career_status(db, e)
+        if c["next"]:
+            summary += (f"\nCareer: {e.autonomy_level} -> {c['next']}, {c['met']}/{len(c['criteria'])} criteria met" if en else
+                        f"\nCarreira: {e.autonomy_level} -> {c['next']}, {c['met']}/{len(c['criteria'])} critérios cumpridos")
+        if e.shadow:
+            sh = c["shadow"]
+            summary += (f"\nShadow mode: {sh['simulated']} simulated actions, {sh['to_review']} to review" if en else
+                        f"\nModo sombra: {sh['simulated']} ações simuladas, {sh['to_review']} para revisar")
     summary += f"\n{config.PUBLIC_BASE_URL}/app/#/employees/{a.slug}"
     m = {**m, "kpis": kpis} if kpis else m
     rep = EmployeeReport(employee_id=e.id, period=period, summary=summary, metrics=m, sent_to=e.report_webhook or "")
@@ -674,7 +686,7 @@ def workforce(db: Session, acc: Access) -> dict:
     emps = [employee_dict(db, e, acc) for e in db.scalars(select(Employee).order_by(Employee.created_at.desc()))]
     t = now()
     aging = {"<1h": 0, "1-4h": 0, ">4h": 0}
-    for r in db.scalars(select(HumanRequest).where(HumanRequest.status == "open", HumanRequest.kind != "notice")):
+    for r in db.scalars(select(HumanRequest).where(HumanRequest.status == "open", HumanRequest.kind.not_in(tasksmod.QUIET))):
         h = (t - tasksmod._aware(r.created_at)).total_seconds() / 3600
         aging["<1h" if h < 1 else "1-4h" if h < 4 else ">4h"] += 1
     by_type = dict(db.execute(select(HumanRequest.action_type, func.count()).where(

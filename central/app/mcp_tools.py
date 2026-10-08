@@ -94,6 +94,9 @@ DIGITAL EMPLOYEE (agente como funcionário: cargo, gestor, alçada, tarefas e hu
 - Trabalho de código: o funcionário é sempre um agente de chat; ponha um agente com harness (Claude Code, Codex…) em
   specialists. Cada job de código passa pela alçada como run_code (pede aprovação por padrão) e o job/diff fica na
   linha do tempo da tarefa.
+- Modo sombra e carreira: sugira contratar com shadow=true (ele trabalha, mas ações que mudam algo são só simuladas
+  para o gestor revisar). employee_career mostra os critérios do próximo nível; promoção, rebaixamento e saída da
+  sombra aparecem em employee_suggestions e só se aplicam com o OK explícito do gestor.
 - Capacidade faltando: quando a tarefa exige algo que ele não tem, o funcionário pede (request_capability) e a tarefa
   pausa. O pedido traz `options` do catálogo. Com o OK do gestor: decide(attach, edit={"specialist": slug}) — versão
   nova com testes e quatro olhos — ou decide(build) para construir pelo modo self e anexar depois. Nunca anexe sem o
@@ -408,7 +411,7 @@ def _employee_fields(title, mission, responsibilities, manager, backups, team, s
                      new_skills, mcps, tools, instructions, llm, memory, channels, authority, accept_default_authority,
                      autonomy_level, probation_tasks, kpis, working_hours, task_budget_usd, task_time_limit_min,
                      report_webhook, report_hour, name, visibility, plan_id, routines=None,
-                     report_weekday=None) -> dict:
+                     report_weekday=None, shadow=False) -> dict:
     return {"title": title, "mission": mission, "responsibilities": responsibilities or [], "manager": manager,
             "backups": backups or [], "team": team, "systems": systems or [], "specialists": specialists or [],
             "base": base, "skills": skills or [], "new_skills": new_skills or [], "mcps": mcps or [], "tools": tools or [],
@@ -417,7 +420,7 @@ def _employee_fields(title, mission, responsibilities, manager, backups, team, s
             "autonomy_level": autonomy_level or "intern", "probation_tasks": probation_tasks or [], "kpis": kpis or [],
             "working_hours": working_hours, "task_budget_usd": task_budget_usd, "task_time_limit_min": task_time_limit_min,
             "report_webhook": report_webhook, "report_hour": report_hour, "name": name, "visibility": visibility,
-            "plan_id": plan_id, "routines": routines or [], "report_weekday": report_weekday}
+            "plan_id": plan_id, "routines": routines or [], "report_weekday": report_weekday, "shadow": bool(shadow)}
 
 
 @mcp.tool()
@@ -432,14 +435,14 @@ async def plan_employee(ctx: Context, request: str = "", title: str = "", missio
                         kpis: list[dict] | None = None, working_hours: str = "", task_budget_usd: float | None = None,
                         task_time_limit_min: int | None = None, report_webhook: str = "", report_hour: int | None = None,
                         name: str = "", visibility: str = "", plan_id: str = "", routines: list[dict] | None = None,
-                        report_weekday: int | None = None) -> dict:
+                        report_weekday: int | None = None, shadow: bool = False) -> dict:
     """Digital employee, passo 1 (não cria nada): o que falta para contratar (`missing`, cada campo com a pergunta
     pronta para o dono), perguntas opcionais, o que reaproveitar do catálogo (`reuse`) e a alçada padrão com o piso da
     empresa. Chame de novo com as respostas até ready=true."""
     f = _employee_fields(title, mission, responsibilities, manager, backups, team, systems, specialists, base, skills,
                          new_skills, mcps, tools, instructions, llm, memory, channels, authority, accept_default_authority,
                          autonomy_level, probation_tasks, kpis, working_hours, task_budget_usd, task_time_limit_min,
-                         report_webhook, report_hour, name, visibility, plan_id, routines, report_weekday)
+                         report_webhook, report_hour, name, visibility, plan_id, routines, report_weekday, shadow)
     return await _run(ctx, lambda db, acc: svc.employees.plan(db, acc, request, **f))
 
 
@@ -455,7 +458,7 @@ async def hire_employee(ctx: Context, request: str = "", title: str = "", missio
                         kpis: list[dict] | None = None, working_hours: str = "", task_budget_usd: float | None = None,
                         task_time_limit_min: int | None = None, report_webhook: str = "", report_hour: int | None = None,
                         name: str = "", visibility: str = "", plan_id: str = "", routines: list[dict] | None = None,
-                        report_weekday: int | None = None) -> dict:
+                        report_weekday: int | None = None, shadow: bool = False) -> dict:
     """Digital employee, passo 2: contrata. Se faltar um campo obrigatório, NÃO cria nada e devolve created=false com
     as perguntas (pergunte ao dono). Cria o agente (montado do catálogo), o cargo, a alçada, as tarefas de experiência
     e o guia. Depois: start_probation.
@@ -470,7 +473,7 @@ async def hire_employee(ctx: Context, request: str = "", title: str = "", missio
     f = _employee_fields(title, mission, responsibilities, manager, backups, team, systems, specialists, base, skills,
                          new_skills, mcps, tools, instructions, llm, memory, channels, authority, accept_default_authority,
                          autonomy_level, probation_tasks, kpis, working_hours, task_budget_usd, task_time_limit_min,
-                         report_webhook, report_hour, name, visibility, plan_id, routines, report_weekday)
+                         report_webhook, report_hour, name, visibility, plan_id, routines, report_weekday, shadow)
     return await _run(ctx, lambda db, acc: svc.employees.hire(db, acc, request, **f))
 
 
@@ -575,6 +578,21 @@ async def list_routines(ctx: Context, slug: str) -> list:
 async def delete_routine(ctx: Context, slug: str, routine_id: int) -> dict:
     """Remove uma rotina (as tarefas que ela já criou ficam)."""
     return await _run(ctx, lambda db, acc: svc.employee_work.delete_routine(db, acc, slug, routine_id))
+
+
+@mcp.tool()
+async def set_shadow(ctx: Context, slug: str, on: bool, reason: str = "") -> dict:
+    """Modo sombra de um Digital employee: ligado, ele trabalha de verdade, mas toda ação que muda algo (fora ler e
+    delegar) é simulada e fica para o gestor revisar (teria aprovado / não teria). Só o gestor ou um admin liga/desliga,
+    e só com o OK explícito dele."""
+    return await _run(ctx, lambda db, acc: svc.employee_work.set_shadow(db, acc, slug, on, reason))
+
+
+@mcp.tool()
+async def employee_career(ctx: Context, slug: str) -> dict:
+    """Plano de carreira: nível atual, critérios para o próximo (com o valor de cada um), sinais de alerta, números do
+    modo sombra e o histórico de mudanças. Promover/rebaixar/sair da sombra vêm em employee_suggestions."""
+    return await _run(ctx, lambda db, acc: svc.employee_work.career_for(db, acc, slug))
 
 
 @mcp.tool()

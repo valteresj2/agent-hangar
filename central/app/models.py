@@ -513,6 +513,8 @@ class Employee(Base):
     webhook_token_hint: Mapped[str] = mapped_column(String(12), default="")  # fim do token, para reconhecê-lo
     lessons: Mapped[list | None] = mapped_column(JSON, nullable=True)  # [{id, text, source, added_by, at}]
     dismissed: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # sugestões dispensadas: {id: AAAA-MM-DD}
+    shadow: Mapped[bool] = mapped_column(Boolean, default=False)  # modo sombra: ações externas simuladas, não executadas
+    career: Mapped[list | None] = mapped_column(JSON, nullable=True)  # [{at, from, to, by, reason}] mudanças de nível/sombra
     created_by: Mapped[str] = mapped_column(String(254), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     hired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

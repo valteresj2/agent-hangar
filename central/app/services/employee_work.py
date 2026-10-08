@@ -291,8 +291,8 @@ def kpi_status(db: Session, e: Employee) -> list[dict]:
 
 def _corrections(db: Session, e: Employee, since) -> dict[str, list[HumanRequest]]:
     rows = db.scalars(select(HumanRequest).where(
-        HumanRequest.employee_id == e.id, HumanRequest.kind == "approval", HumanRequest.status == "decided",
-        HumanRequest.decision.in_(("approve_edited", "reject", "instruct")), HumanRequest.decided_at >= since))
+        HumanRequest.employee_id == e.id, HumanRequest.kind.in_(("approval", "shadow")), HumanRequest.status == "decided",
+        HumanRequest.decision.in_(("approve_edited", "reject", "instruct", "disagree")), HumanRequest.decided_at >= since))
     by_tool: dict[str, list[HumanRequest]] = {}
     for r in rows:
         by_tool.setdefault(r.tool_name or r.tool_ref, []).append(r)
@@ -311,7 +311,7 @@ def suggestions(db: Session, e: Employee) -> list[dict]:
     en = tasksmod.lang_of(e) == "en"
     since = now() - timedelta(days=30)
     dismissed = {k: v for k, v in (e.dismissed or {}).items() if v >= (now() - timedelta(days=30)).date().isoformat()}
-    out = []
+    out = [x for x in career_suggestions(db, e, en) if x["id"] not in dismissed]
     # 1) o gestor sempre aprova sem editar: sugerir "faz e avisa" (só se o piso da empresa permitir)
     eff = {x["action_type"]: x for x in gatemod.summary(db, e)}
     floor = gatemod.floor_of(db)
@@ -386,6 +386,8 @@ def apply_suggestion(db: Session, acc: Access, slug: str, suggestion_id: str, te
     sug = next((s for s in suggestions(db, e) if s["id"] == suggestion_id), None)
     if sug is None:
         raise PlatformError("sugestão não encontrada (já aplicada, dispensada ou sem evidência suficiente)")
+    if sug["kind"] == "career":
+        return apply_career(db, acc, e, slug, sug)
     if sug["kind"] == "authority":
         if acc.p.user_id != e.manager_user_id and not acc.p.is_admin:
             raise Forbidden("só o gestor (ou um admin) afrouxa a alçada")
@@ -549,3 +551,149 @@ def after_promotion_capabilities(db: Session, e: Employee):
             r.action_payload = {**r.action_payload, "pending": False}
             db.commit()
             resume_after_attach(db, e, r)
+
+
+# ------------------------------------------------------------------ modo sombra
+# Ligado, o funcionário trabalha de verdade, mas tudo que muda algo (fora ler e delegar) é simulado: o gate registra a
+# ação exata e devolve "não executada". O gestor revisa (teria aprovado / não teria) e a concordância vira critério de
+# carreira; as discordâncias viram lições.
+
+def shadow_stats(db: Session, e: Employee, days: int = 30) -> dict:
+    since = now() - timedelta(days=days)
+    rows = list(db.scalars(select(HumanRequest).where(HumanRequest.employee_id == e.id, HumanRequest.kind == "shadow",
+                                                      HumanRequest.created_at >= since)))
+    reviewed = [r for r in rows if r.status == "decided"]
+    agree = sum(r.decision == "agree" for r in reviewed)
+    return {"simulated": len(rows), "to_review": sum(r.status == "open" for r in rows), "reviewed": len(reviewed),
+            "agree": agree, "disagree": len(reviewed) - agree,
+            "agree_rate": round(100 * agree / len(reviewed), 1) if reviewed else None}
+
+
+def shadow_log(db: Session, acc: Access, slug: str, status: str | None = None) -> dict:
+    from .employees import find
+    e, _ = find(db, acc, slug)
+    q = select(HumanRequest).where(HumanRequest.employee_id == e.id, HumanRequest.kind == "shadow")
+    if status:
+        q = q.where(HumanRequest.status == status)
+    rows = db.scalars(q.order_by(HumanRequest.id.desc()).limit(100))
+    return {"shadow": e.shadow, "stats": shadow_stats(db, e), "actions": [tasksmod.request_dict(db, r, e) for r in rows]}
+
+
+def _career_entry(e: Employee, kind: str, frm, to, who: str, reason: str = ""):
+    e.career = [*(e.career or []), {"at": iso(now()), "kind": kind, "from": frm, "to": to, "by": who, "reason": reason[:300]}]
+
+
+def set_shadow(db: Session, acc: Access, slug: str, on: bool, reason: str = "") -> dict:
+    """Liga/desliga o modo sombra. Mudar o quanto ele age de verdade é decisão do gestor (ou de um admin)."""
+    from .employees import find
+    e, a = find(db, acc, slug, "manage")
+    if acc.p.user_id != e.manager_user_id and not acc.p.is_admin:
+        raise Forbidden("só o gestor (ou um admin) liga ou desliga o modo sombra")
+    if bool(on) != bool(e.shadow):
+        _career_entry(e, "shadow", bool(e.shadow), bool(on), acc.p.name, reason)
+        e.shadow = bool(on)
+        db.commit()
+        audit(db, acc.p.name, "employee.shadow.on" if on else "employee.shadow.off", a.slug, reason[:200])
+    return {"shadow": e.shadow, "stats": shadow_stats(db, e)}
+
+
+# ------------------------------------------------------------------ plano de carreira
+LEVEL_ORDER = ("intern", "junior", "pleno", "senior")
+# critérios para subir de nível, nos últimos 30 dias (a plataforma mede e sugere; o gestor decide)
+CAREER = {
+    "intern": {"next": "junior", "tasks": 15, "approvals": 10, "unedited": 90, "max_fail": 10},
+    "junior": {"next": "pleno", "tasks": 30, "approvals": 20, "unedited": 95, "max_fail": 8},
+    "pleno": {"next": "senior", "tasks": 60, "approvals": 40, "unedited": 97, "max_fail": 5},
+}
+DEMOTE = {"max_fail": 25, "min_finished": 8, "rejects_14d": 3, "shadow_disagree": 30, "shadow_min": 10}
+LEAVE_SHADOW = {"reviewed": 20, "agree": 90}
+
+
+def career_status(db: Session, e: Employee) -> dict:
+    from .employees import metrics
+    m30, m14 = metrics(db, e, 30), metrics(db, e, 14)
+    finished = m30["done"] + m30["failed"]
+    fail = round(100 * m30["failed"] / finished, 1) if finished else 0.0
+    decided = m30["approved"] + m30["rejected"]
+    unedited = round(100 * m30["approved_unedited"] / decided, 1) if decided else None
+    sh = shadow_stats(db, e)
+    off_target = [k["name"] for k in kpi_status(db, e) if k["ok"] is False]
+    rule = CAREER.get(e.autonomy_level)
+    criteria = []
+    if rule:
+        clean = m14["rejected"] + m14["expired"]
+        criteria = [
+            {"key": "tasks", "label": "tarefas concluídas", "value": m30["done"], "target": rule["tasks"],
+             "ok": m30["done"] >= rule["tasks"]},
+            {"key": "approvals", "label": "ações decididas pelo gestor", "value": decided, "target": rule["approvals"],
+             "ok": decided >= rule["approvals"]},
+            {"key": "unedited", "label": "% aprovadas sem edição", "value": unedited, "target": rule["unedited"],
+             "ok": unedited is not None and unedited >= rule["unedited"]},
+            {"key": "fail", "label": "% de tarefas com falha (máx.)", "value": fail, "target": rule["max_fail"],
+             "ok": fail <= rule["max_fail"]},
+            {"key": "clean", "label": "recusas e expiradas (14 dias)", "value": clean, "target": 0, "ok": clean == 0},
+            {"key": "kpis", "label": "metas fora do alvo", "value": len(off_target), "target": 0, "ok": not off_target},
+        ]
+        if sh["reviewed"] >= 10:  # só conta quando houve revisão suficiente no modo sombra
+            criteria.append({"key": "shadow", "label": "% de concordância no modo sombra", "value": sh["agree_rate"],
+                             "target": LEAVE_SHADOW["agree"], "ok": sh["agree_rate"] >= LEAVE_SHADOW["agree"]})
+    signals = []
+    if e.autonomy_level != "intern":
+        if finished >= DEMOTE["min_finished"] and fail >= DEMOTE["max_fail"]:
+            signals.append(f"{fail}% das tarefas falharam em 30 dias")
+        if m14["rejected"] >= DEMOTE["rejects_14d"]:
+            signals.append(f"{m14['rejected']} ações recusadas em 14 dias")
+        if sh["reviewed"] >= DEMOTE["shadow_min"] and sh["agree_rate"] is not None and \
+                100 - sh["agree_rate"] >= DEMOTE["shadow_disagree"]:
+            signals.append(f"o gestor discordou de {round(100 - sh['agree_rate'], 1)}% das ações no modo sombra")
+    return {"level": e.autonomy_level, "next": rule["next"] if rule else None, "criteria": criteria,
+            "ready": bool(rule) and all(c["ok"] for c in criteria), "met": sum(c["ok"] for c in criteria),
+            "demotion_signals": signals, "shadow": {"on": bool(e.shadow), **sh},
+            "can_leave_shadow": bool(e.shadow) and sh["reviewed"] >= LEAVE_SHADOW["reviewed"]
+            and (sh["agree_rate"] or 0) >= LEAVE_SHADOW["agree"],
+            "history": list(reversed(e.career or []))[:20]}
+
+
+def career_for(db: Session, acc: Access, slug: str) -> dict:
+    from .employees import find
+    e, _ = find(db, acc, slug)
+    return career_status(db, e)
+
+
+def career_suggestions(db: Session, e: Employee, en: bool) -> list[dict]:
+    c = career_status(db, e)
+    out = []
+    if c["ready"] and c["next"]:
+        out.append({"id": f"promote:{c['next']}", "kind": "career", "from": e.autonomy_level, "to": c["next"],
+                    "evidence": c["met"], "criteria": c["criteria"],
+                    "text": f"Ready for {c['next']}: every career criterion met in the last 30 days. Promote?" if en else
+                            f"Pronto para {c['next']}: todos os critérios de carreira cumpridos nos últimos 30 dias. Promover?"})
+    if c["demotion_signals"]:
+        lower = LEVEL_ORDER[max(0, LEVEL_ORDER.index(e.autonomy_level) - 1)]
+        tail = (f". Move back to {lower}? (Shadow mode is another option.)" if en else
+                f". Voltar para {lower}? (O modo sombra é outra opção.)")
+        out.append({"id": f"demote:{lower}", "kind": "career", "from": e.autonomy_level, "to": lower,
+                    "evidence": len(c["demotion_signals"]), "signals": c["demotion_signals"],
+                    "text": ("Warning signs: " if en else "Sinais de alerta: ") + "; ".join(c["demotion_signals"]) + tail})
+    if c["can_leave_shadow"]:
+        sh = c["shadow"]
+        out.append({"id": "leave_shadow", "kind": "career", "from": "shadow", "to": "live", "evidence": sh["reviewed"],
+                    "text": (f"Your manager agreed with {sh['agree_rate']}% of {sh['reviewed']} simulated actions. Turn shadow "
+                             "mode off so it acts for real, within its authority?") if en else
+                            (f"O gestor concordou com {sh['agree_rate']}% de {sh['reviewed']} ações simuladas. Desligar o "
+                             "modo sombra para ele agir de verdade, dentro da alçada?")})
+    return out
+
+
+def apply_career(db: Session, acc: Access, e: Employee, slug: str, sug: dict) -> dict:
+    if acc.p.user_id != e.manager_user_id and not acc.p.is_admin:
+        raise Forbidden("só o gestor (ou um admin) muda o nível ou o modo sombra")
+    if sug["id"] == "leave_shadow":
+        return {"applied": sug["id"], **set_shadow(db, acc, slug, False, "sugestão de carreira aplicada")}
+    frm, to = e.autonomy_level, sug["to"]
+    _career_entry(e, "promote" if sug["id"].startswith("promote") else "demote", frm, to, acc.p.name,
+                  "; ".join(sug.get("signals") or []) or "critérios de carreira cumpridos")
+    e.autonomy_level = to
+    db.commit()
+    audit(db, acc.p.name, "employee.career", slug, f"{frm} -> {to}")
+    return {"applied": sug["id"], "autonomy_level": to, "authority": gatemod.summary(db, e)}

@@ -5,6 +5,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Shadow mode for Digital employees.** The employee works for real, but every action that changes something (other
+  than read and delegate) is simulated.
+  - The gate logs the exact action, with what the authority would have done, and the task goes on.
+  - The manager reviews each action in the new *Shadow* tab (*would approve* / *would not*). Agreement counts toward the
+    career plan, and disagreements become lessons.
+  - `never` still denies.
+  - Hire with `shadow=true` (suggested in the portal), or switch it with `POST .../shadow` / `set_shadow`. Only the
+    manager or an admin can switch it.
+- **Career plan.** The platform measures the track record and suggests promotions (intern → junior → pleno → senior),
+  a step back on warning signs, and leaving shadow mode. The manager applies or dismisses each one.
+  - The track record covers tasks done, failure rate, approvals without edits, rejections, expirations, goals and
+    shadow agreement.
+  - The *Overview* shows the criteria with each value, plus the history; the weekly report shows the progress.
+  - API: `GET .../career`; MCP: `employee_career`. Migration `0016_employee_shadow_career`.
+
 ## [0.18.0] — 2026-10-07
 
 ### Added

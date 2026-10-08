@@ -745,6 +745,11 @@ async def _run_server_call(call: dict, by_name: dict, trace: list, msgs: list, r
                 trace.append({"tool": name, "args": {k: str(v)[:200] for k, v in args.items()},
                               "result": f"aguardando decisão #{g.get('request_id')}"})
                 raise WaitingHuman(g.get("request_id"), g.get("message", ""))
+            if g.get("status") == "simulated":  # modo sombra: a plataforma registrou a ação e não a executou
+                out = g.get("message", "[MODO SOMBRA] ação não executada")
+                trace.append({"tool": name, "args": {k: str(v)[:200] for k, v in args.items()}, "result": out[:300]})
+                msgs.append({"role": "tool", "tool_call_id": call["id"], "content": out})
+                return
             if g.get("status") != "allowed":
                 out = f"NEGADO pela alçada: {g.get('message', 'ação não permitida')}"
                 trace.append({"tool": name, "args": {k: str(v)[:200] for k, v in args.items()}, "result": out[:300]})
