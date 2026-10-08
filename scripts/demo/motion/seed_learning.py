@@ -51,9 +51,10 @@ for i, (dec, body) in enumerate(corrections):
     to = ["ana@initech.example", "lee@hooli.example", "ops@globex.example"][i]
     tid = api("POST", f"/employees/{slug}/tasks", json={"title": f"Reply to ticket {120 + i}",
               "body": f'use send_email {{"to": "{to}", "subject": "Your ticket", "body": "We will fix it by Friday."}}'})["id"]
-    d = wait(lambda: next((x for x in api("GET", "/decisions") if x["task"] and x["task"]["id"] == tid and x["kind"] == "approval"), None))
+    d = wait(lambda tid=tid: next((x for x in api("GET", "/decisions")
+                                   if x["task"] and x["task"]["id"] == tid and x["kind"] == "approval"), None))
     api("POST", f"/decisions/{d['id']}", json={"decision": dec, **body})
-    wait(lambda: api("GET", f"/tasks/{tid}")["status"] in ("done", "failed"))
+    wait(lambda tid=tid: api("GET", f"/tasks/{tid}")["status"] in ("done", "failed"))
 for d in api("GET", "/decisions"):
     if d["kind"] == "notice":
         api("POST", f"/decisions/{d['id']}", json={"decision": "ack"})
