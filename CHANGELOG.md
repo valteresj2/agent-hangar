@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-10-07
+
 ### Added
 - **Missing capability flow for Digital employees** ([docs](docs/digital-employee.md#missing-capability)). When a task
   needs a tool or specialist the employee does not have, it calls `request_capability` instead of improvising, and the
@@ -15,6 +17,14 @@ All notable changes to this project are documented here. The format follows
   - Or **build**: a ready self-mode request for the manager's AI tool, with the decision kept open for 7 days.
   - Or **reject** / **instruct**.
   - An agent never attaches or builds agents by itself.
+
+### Fixed
+- English portal: learning suggestions showed "recusada/editada", and test results showed "9/9 checks aprovados".
+- Runtime mock mode: the task prompt's mention of `request_capability` no longer triggers it.
+
+### Changed
+- Launch videos (60 s 16:9 and 30 s 9:16) are now code: `scripts/demo/motion` (Remotion, real captures, music
+  synthesized on the beat grid, scored review rounds).
 
 ## [0.17.1] — 2026-10-06
 
