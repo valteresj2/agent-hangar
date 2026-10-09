@@ -84,6 +84,10 @@ GUIDE_AUTOGEN = _env("GUIDE_AUTOGEN", "1") == "1"
 EMPLOYEE_WORKERS = int(_env("EMPLOYEE_WORKERS", "3"))
 EMPLOYEE_MAX_RUNS = int(_env("EMPLOYEE_MAX_RUNS", "12"))
 DECISION_EXPIRES_MIN = int(_env("DECISION_EXPIRES_MIN", "240"))
+# plugins: hosts da rede interna (ERP, CRM corporativo) só com PLUGIN_ALLOW_PRIVATE=1 — sem isso, um plugin não alcança
+# a rede da própria plataforma (banco, central, proxy do Docker)
+PLUGIN_ALLOW_PRIVATE = _env("PLUGIN_ALLOW_PRIVATE", "0") == "1"
+PLUGIN_TIMEOUT_S = int(_env("PLUGIN_TIMEOUT_S", "30"))
 INBOX_POLL_S = int(_env("INBOX_POLL_S", "60"))  # de quanto em quanto tempo a caixa de e-mail de um funcionário é lida
 DECISION_LINK_TTL_H = int(_env("DECISION_LINK_TTL_H", "48"))  # validade do link assinado de decisão (Teams/e-mail)
 # e-mail das decisões e do resumo diário (opcional): sem SMTP_HOST, o canal e-mail fica desligado

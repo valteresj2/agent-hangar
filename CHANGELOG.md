@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Plugins (P1): connect any system with a declarative manifest** (`hangar-plugin.yaml`).
+  - **What a manifest declares:** one `base_url`, the authentication (API key, Bearer or Basic), HTTP tools (method,
+    path, JSON Schema parameters, the action type for the authority), settings (secret ones encrypted) and skills.
+  - **Import from OpenAPI 3:** each operation becomes a tool, with a guessed action type to review.
+  - **Four-eyes review:** an admin who did not create or submit the plugin approves it. Approval classifies each tool
+    in the action catalog. A new version needs a version bump and a new review, while installs keep the approved
+    version.
+  - **Install per team:** the team maintainer installs it with the team's credential; an admin can also install it for
+    the whole company.
+  - **Use:** agents add it with `plugins: [name]` in the spec. The central serves the plugin as an internal MCP server
+    and injects the credential, which never reaches the agent's container.
+  - **Safety:** private hosts are blocked unless `PLUGIN_ALLOW_PRIVATE=1`, redirects are not followed and responses
+    are cut at 8,000 characters.
+  - **Portal and API:** a new *Plugins* page (catalog, new or import, review, install, test, usage), `/api/plugins`,
+    and approved plugins in the MCP `list_catalog`.
+- Migration `0019_plugins`.
+
+### Added
 - **Handoff between Digital employees (F4).** With the `handoff_task` tool, an employee hands part of a task to a
   colleague its manager allowed.
   - The handoff goes through the authority as `delegate` and is tracked in both tasks.

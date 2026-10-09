@@ -140,6 +140,7 @@ class AgentSpec(_Strict):
     tests: list[TestCase] = Field(default_factory=list)
     channels: list[str] = Field(default_factory=list)
     memory: MemorySpec | None = None
+    plugins: list[str] = Field(default_factory=list, description="plugins aprovados e instalados para o time do agente")
 
     @field_validator("tools", mode="before")
     @classmethod

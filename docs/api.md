@@ -177,6 +177,21 @@ Tasks have `due_state` (`""`, `soon`, `overdue`, `escalated`), `plan`, `plan_sta
 (or `X-Hangar-Token`) and `{title, body?, dedupe_key?, priority?, due_at?, source?}`. It returns `{id, status,
 duplicate}`; `401` for a bad token or a closed channel, `409` when the employee does not take tasks now.
 
+## Plugins (`/api/plugins`)
+
+See [plugins.md](plugins.md).
+
+| Method | Path | Description |
+|---|---|---|
+| GET / POST | `/api/plugins` | List: approved plugins for everyone, drafts for their owners and admins. Create a draft from `{manifest (YAML, JSON or object), team?, source?}` (developers and admins) |
+| POST | `/api/plugins/import-openapi` | `{document, name?, base_url?, only?}` returns a draft manifest from an OpenAPI 3 document (not saved) |
+| GET / PUT / DELETE | `/api/plugins/{name}` | Detail: draft and approved manifests, permissions, installs, `can_review`. Update the draft (owner team). Delete (admin; owner only before the first approval) |
+| POST | `/api/plugins/{name}/submit` | Send the draft for review |
+| POST | `/api/plugins/{name}/review` | Admin who did not create or submit it: `{decision: approve\|reject, note}`. Approving classifies each tool in the action catalog |
+| POST | `/api/plugins/{name}/disable` · `/enable` | Admin: turn the plugin off or back on |
+| PUT / DELETE | `/api/plugins/{name}/install` | Team maintainer (or admin, also with no team = whole company): `{team, settings, secrets, credential, enabled}`. Secrets are never returned. DELETE takes `?team=` |
+| POST | `/api/plugins/{name}/install/test` | `{team}`: calls the manifest's `test` tool |
+
 ## User portal
 
 | Method | Path | Description |
@@ -281,4 +296,7 @@ These routes are:
 - `POST /internal/gate`, called by a Digital employee's runtime before every tool call: `{task_id, tool, ref, args,
   rationale, kind}` returns `allowed`, `waiting` (with `request_id`) or `denied`.
 
-The last three are authenticated by `X-Agent-Slug` plus that agent's HMAC token.
+- `POST /internal/plugins/{name}/mcp`, the MCP server (stateless, JSON responses) that serves an installed plugin to
+  agents whose spec lists it. It injects the team's credential.
+
+The last four are authenticated by `X-Agent-Slug` plus that agent's HMAC token.

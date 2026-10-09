@@ -12,6 +12,7 @@ const ICONS = {
   book: '<path d="M4 19.5V5a2 2 0 0 1 2-2h14v16H6a2 2 0 0 0-2 2z" /><path d="M8.5 7.5h7M8.5 11h5" />',
   chip: '<rect x="6" y="6" width="12" height="12" rx="2" /><path d="M9.5 2.5v3.5M14.5 2.5v3.5M9.5 18v3.5M14.5 18v3.5M2.5 9.5H6M2.5 14.5H6M18 9.5h3.5M18 14.5h3.5" />',
   key: '<circle cx="7.5" cy="15.5" r="4.5" /><path d="M10.7 12.3L21 2M16 7l3 3M18.5 4.5l2 2" />',
+  puzzle: '<path d="M10 3.5a2 2 0 0 1 4 0V6h4a1 1 0 0 1 1 1v4h-2.5a2 2 0 0 0 0 4H19v4a1 1 0 0 1-1 1h-4v-2.5a2 2 0 0 0-4 0V20H6a1 1 0 0 1-1-1v-4h2.5a2 2 0 0 0 0-4H5V7a1 1 0 0 1 1-1h4z" />',
   plug: '<path d="M9 2.5v5M15 2.5v5" /><path d="M5.5 7.5h13v3a6.5 6.5 0 0 1-13 0z" /><path d="M12 17v4.5" />',
   userCog: '<circle cx="10" cy="7.5" r="4" /><path d="M3 21a7 7 0 0 1 10.5-6" /><circle cx="18" cy="17.5" r="2.5" /><path d="M18 13.5v1.5M18 20v1.5M14 17.5h1.5M20.5 17.5H22" />',
   shield: '<path d="M12 3l8 3v6c0 5-3.4 8.2-8 9-4.6-.8-8-4-8-9V6z" /><path d="M9 12l2 2 4-4" />',

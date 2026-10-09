@@ -232,13 +232,19 @@ async def whoami(ctx: Context) -> dict:
 
 @mcp.tool()
 async def list_catalog(ctx: Context) -> dict:
-    """Skills, MCP servers e conexões de LLM disponíveis para reutilizar (sem expor as api keys)."""
+    """Skills, MCP servers, plugins aprovados e conexões de LLM disponíveis para reutilizar (sem expor as api keys).
+    Plugin: conecta um sistema (ERP, CRM…) com credencial do time; use com `plugins: [nome]` na spec — só funciona se
+    estiver instalado para o time do agente (o mantenedor instala no portal, em Plugins)."""
     def go(db, acc):
         return {"skills": [{"name": s.name, "description": s.description, "version": s.version, "has_test": bool(s.test)}
                            for s in db.scalars(select(Skill))],
                 "mcp_servers": [{"name": m.name, "url": m.url, "description": m.description}
                                 for m in db.scalars(select(McpServer))],
                 "llm_connections": [svc.llm_connection_dict(c) for c in db.scalars(select(LlmConnection))],
+                "plugins": [{"name": x["name"], "title": x["title"], "description": x["description"][:300],
+                             "tools": x["permissions"]["tools"], "actions": x["permissions"]["actions"],
+                             "installed_for": x["installed_for"]}
+                            for x in svc.plugins.list_plugins(db, acc) if x["live"]],
                 "builtin_tools": ["calculator", "current_time", "platform_dashboard"],
                 "harnesses": svc.HARNESS_PROTOCOL,
                 "fallback_sem_conexao": f"{config.DEFAULT_MODEL} (sem custo, sem chave — só para testar o fluxo)"}

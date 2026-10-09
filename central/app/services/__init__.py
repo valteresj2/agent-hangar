@@ -17,6 +17,7 @@ from . import (  # noqa: F401  (svc.access.Access, svc.connect.snippet, svc.org.
                       memory,
                       notify,
                       org,
+                      plugins,
                       registry,
                       remote_mcp,
                       schedules,

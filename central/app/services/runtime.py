@@ -49,6 +49,11 @@ def resolve_spec(db: Session, agent: Agent, env: str, version: int | None = None
         subs.append({"slug": sub.slug, "name": sub.name, "objective": sub.objective,
                      "url": f"{config.INTERNAL_BASE_URL}/internal/{gw}/{sub.slug}",
                      **({"harness": True, "timeout_s": config.JOB_MAX_TIMEOUT_S + 60} if harness else {})})
+    if spec.get("plugins"):  # servidos pela central como MCP interno: a credencial do time nunca entra no container
+        from .plugins import resolve_for_spec
+        p_mcps, p_skills = resolve_for_spec(db, agent, spec["plugins"])
+        mcps += p_mcps
+        skills += p_skills
     from .employees import runtime_profile  # Digital employee: o runtime passa toda ferramenta pelo gate da central
     profile = runtime_profile(db, agent)
     if profile:

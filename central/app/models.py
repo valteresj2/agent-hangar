@@ -689,3 +689,44 @@ class EmployeeReport(Base):
     sent_to: Mapped[str] = mapped_column(String(500), default="")
     delivered: Mapped[bool] = mapped_column(Boolean, default=False)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Plugin(Base):
+    """Plugin declarativo: conecta um sistema à plataforma (ferramentas HTTP, credencial, tipos de ação para a alçada,
+    configurações e skills). O rascunho (`manifest`) só vale depois de aprovado por outra pessoa (`approved_manifest`):
+    editar cria um novo rascunho e as instalações seguem na versão aprovada até a próxima aprovação."""
+    __tablename__ = "plugins"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(60), unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    version: Mapped[str] = mapped_column(String(30), default="")
+    manifest: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(12), default="draft")  # draft | pending | approved | rejected | disabled
+    source: Mapped[str] = mapped_column(String(12), default="manual")  # manual | openapi
+    team_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # time dono (quem edita)
+    approved_manifest: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    approved_version: Mapped[str] = mapped_column(String(30), default="")
+    approved_by: Mapped[str] = mapped_column(String(254), default="")
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_note: Mapped[str] = mapped_column(Text, default="")
+    submitted_by: Mapped[str] = mapped_column(String(254), default="")
+    created_by: Mapped[str] = mapped_column(String(254), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class PluginInstall(Base):
+    """Instalação de um plugin para um time (team_id) ou para a empresa toda (team_id vazio, só admin): configurações,
+    segredos criptografados (nunca saem da central) e estatísticas de uso."""
+    __tablename__ = "plugin_installs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plugin_id: Mapped[int] = mapped_column(ForeignKey("plugins.id", ondelete="CASCADE"), index=True)
+    team_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    secret: Mapped[str] = mapped_column(Text, default="")  # JSON criptografado: {credential, settings secretas}
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    stats: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {calls, errors, last_call, last_error}
+    last_test: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    installed_by: Mapped[str] = mapped_column(String(254), default="")
+    installed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
