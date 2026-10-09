@@ -5,6 +5,23 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Plugins P3: Creator mode through the MCP**, with stage tests and four eyes.
+  - **Tools:** `plugin_from_openapi` (by URL or document), `plugin_draft`, `plugin_test`, `plugin_submit`,
+    `plugin_status` and `plugin_review`, plus a step-by-step guide in the MCP instructions.
+  - **Credentials stay out of the chat:** the test credential goes in a *stage install* in the portal. It runs the draft
+    and never serves agents.
+  - **Tests in the manifest:** `tests` take a tool, arguments, `expect_contains`, `expect_status` and `expect_error`.
+    The report is pinned to the manifest's digest. When tests are declared, submitting and approving need a passing
+    report for that exact version.
+- **Plugins P4: the company's internal gallery.**
+  - Search, categories, tags and admin-featured plugins.
+  - Usage per plugin (teams and calls), the `readme` and the version history.
+  - *Request it for my team*, which notifies the maintainers in their decision channel.
+  - *Export* of the approved manifest, without secrets.
+  - The manifest is shown and exported without empty fields.
+- Migration `0021_plugin_creator_gallery`.
+
 ## [0.22.0] — 2026-10-09
 
 ### Added

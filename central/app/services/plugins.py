@@ -178,6 +178,19 @@ class PluginTest(_M):
     args: dict = Field(default_factory=dict)
 
 
+class PluginTestCase(_M):
+    """Caso de teste rodado em stage (instalação de teste, credencial de teste) contra o rascunho."""
+    name: str = ""
+    tool: str
+    args: dict = Field(default_factory=dict)
+    expect_contains: str = ""
+    expect_status: int | None = Field(default=None, ge=100, le=599)
+    expect_error: bool = False
+
+
+CATEGORIES = ("finance", "sales", "support", "hr", "it", "operations", "data", "communication", "legal", "other")
+
+
 class PluginManifest(_M):
     name: str = Field(pattern=r"^[a-z][a-z0-9-]{1,40}$")
     title: str = ""
@@ -193,6 +206,10 @@ class PluginManifest(_M):
     skills: list[PluginSkill] = Field(default_factory=list)
     triggers: list[PluginTrigger] = Field(default_factory=list, max_length=20)
     test: PluginTest | None = None
+    tests: list[PluginTestCase] = Field(default_factory=list, max_length=30)
+    category: Literal[CATEGORIES] = "other"  # type: ignore[valid-type]
+    tags: list[str] = Field(default_factory=list, max_length=8)
+    readme: str = Field(default="", max_length=20000)
 
     @field_validator("base_url")
     @classmethod
@@ -240,6 +257,10 @@ class PluginManifest(_M):
         for t in self.triggers:
             if t.signature and t.signature.secret not in secret_keys:
                 raise ValueError(f"gatilho '{t.name}': signature.secret precisa ser uma setting secreta declarada")
+        bad_tests = [t.tool for t in self.tests if t.tool not in names]
+        if bad_tests:
+            raise ValueError(f"tests usam ferramentas que não existem: {', '.join(bad_tests)}")
+        self.tags = [t.strip().lower()[:30] for t in self.tags if t.strip()]
         if self.test and self.test.tool not in names:
             raise ValueError(f"test.tool '{self.test.tool}' não é uma ferramenta do plugin")
         if self.auth.type == "api_key" and not self.auth.name:
@@ -392,18 +413,50 @@ def _can_install(acc: Access, team_id: int | None) -> bool:
     return team_id is not None and acc.teams.get(team_id) == "maintainer"
 
 
+def mof(p: Plugin, i: PluginInstall | None) -> dict:
+    """O manifesto de uma instalação: a de stage roda o rascunho; as de produção, a versão aprovada."""
+    return (p.manifest if i is not None and i.stage else p.approved_manifest) or {}
+
+
+def to_yaml(m: dict) -> str:
+    """O manifesto em YAML sem os campos vazios (o que a pessoa escreveria): mais fácil de ler, editar e exportar."""
+    def clean(v):
+        if isinstance(v, dict):
+            return {k: clean(x) for k, x in v.items() if x not in ("", None, [], {})}
+        if isinstance(v, list):
+            return [clean(x) for x in v]
+        return v
+    m = clean(copy.deepcopy(m))
+    if (m.get("auth") or {}).get("type") != "oauth2":
+        (m.get("auth") or {}).pop("pkce", None)
+    for tool in m.get("tools") or []:
+        if not tool.get("reversible"):
+            tool.pop("reversible", None)
+    return yaml.safe_dump(m, sort_keys=False, allow_unicode=True)
+
+
+def digest(m: dict) -> str:
+    return hashlib.sha256(json.dumps(m, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def tests_ok(p: Plugin) -> bool:
+    r = p.test_report or {}
+    return bool(r.get("passed")) and r.get("digest") == digest(p.manifest)
+
+
 def _team_name(db, team_id) -> str | None:
     t = db.get(Team, team_id) if team_id else None
     return t.slug if t else None
 
 
 def install_dict(db, i: PluginInstall, p: Plugin) -> dict:
-    m = p.approved_manifest or {}
+    m = mof(p, i)
     secret_keys = [s["key"] for s in m.get("settings") or [] if s.get("secret")]
     have = _secrets(i)
     o = have.get("oauth") or {}
     trig = i.triggers or {}
     return {"id": i.id, "team": _team_name(db, i.team_id), "scope": "team" if i.team_id else "org", "enabled": i.enabled,
+            "stage": bool(i.stage),
             "settings": i.settings or {}, "credential": bool(have.get("credential")),
             "secrets": {k: bool((have.get("settings") or {}).get(k)) for k in secret_keys},
             "oauth": {"client_id": o.get("client_id", ""), "client_secret": bool(o.get("client_secret")),
@@ -420,11 +473,16 @@ def install_dict(db, i: PluginInstall, p: Plugin) -> dict:
 
 def plugin_dict(db, acc: Access, p: Plugin, detail: bool = False) -> dict:
     m = p.approved_manifest or p.manifest
+    prod = [i for i in db.scalars(select(PluginInstall).where(PluginInstall.plugin_id == p.id)) if not i.stage]
+    mine = {t for t, r in acc.teams.items() if r == "maintainer"}
     d = {"name": p.name, "live": live(p), "title": p.title, "description": p.description, "version": p.version, "status": p.status,
          "approved_version": p.approved_version, "source": p.source, "team": _team_name(db, p.team_id),
          "publisher": m.get("publisher", ""), "permissions": permissions(m), "can_edit": _can_edit(acc, p),
-         "installed_for": [_team_name(db, i.team_id) or "org" for i in
-                           db.scalars(select(PluginInstall).where(PluginInstall.plugin_id == p.id))],
+         "installed_for": [_team_name(db, i.team_id) or "org" for i in prod],
+         "category": m.get("category", "other"), "tags": m.get("tags") or [], "featured": bool(p.featured),
+         "installs_count": len(prod), "calls": sum(int((i.stats or {}).get("calls", 0)) for i in prod),
+         "requests": [r for r in p.requests or [] if acc.p.is_admin or (r.get("team_id") in mine) or r.get("by") == acc.p.name],
+         "tests_ok": tests_ok(p), "tests_declared": bool(p.manifest.get("tests")),
          "created_by": p.created_by, "updated_at": iso(p.updated_at) if p.updated_at else None}
     if detail:
         d.update(manifest=p.manifest, approved_manifest=p.approved_manifest, approved_by=p.approved_by,
@@ -432,9 +490,13 @@ def plugin_dict(db, acc: Access, p: Plugin, detail: bool = False) -> dict:
                  submitted_by=p.submitted_by, draft_permissions=permissions(p.manifest),
                  can_review=acc.p.is_admin and p.status == "pending" and acc.p.name not in (p.submitted_by, p.created_by),
                  installs=[install_dict(db, i, p) for i in db.scalars(select(PluginInstall).where(
-                     PluginInstall.plugin_id == p.id)) if acc.p.is_admin or i.team_id is None or i.team_id in acc.teams],
+                     PluginInstall.plugin_id == p.id))
+                     if (i.stage and (_can_edit(acc, p) or acc.p.is_admin)) or
+                     (not i.stage and (acc.p.is_admin or i.team_id is None or i.team_id in acc.teams))],
+                 test_report=p.test_report, history=list(reversed(p.history or []))[:20], readme=m.get("readme", ""),
+                 my_teams=[{"slug": _team_name(db, t), "role": r} for t, r in acc.teams.items()],
                  install_teams=[{"slug": _team_name(db, t), "role": r} for t, r in acc.teams.items() if r == "maintainer"],
-                 yaml=yaml.safe_dump(p.manifest, sort_keys=False, allow_unicode=True))
+                 yaml=to_yaml(p.manifest))
     return d
 
 
@@ -467,7 +529,7 @@ def create(db, acc: Access, manifest, team: str | None = None, source: str = "ma
             raise Forbidden(f"você não é developer do time '{t.slug}'")
         team_id = t.id
     p = Plugin(name=m["name"], title=m.get("title") or m["name"], description=m.get("description", ""),
-               version=m["version"], manifest=m, status="draft", source=source if source in ("manual", "openapi") else "manual",
+               version=m["version"], manifest=m, status="draft", source=source if source in ("manual", "openapi", "creator") else "manual",
                team_id=team_id, created_by=acc.p.name, created_at=now(), updated_at=now())
     db.add(p)
     db.commit()
@@ -499,6 +561,8 @@ def submit(db, acc: Access, name: str) -> dict:
         raise Forbidden("só o time dono do plugin envia para revisão")
     if p.status not in ("draft", "rejected"):
         raise PlatformError(f"plugin está {p.status}: nada para enviar")
+    if p.manifest.get("tests") and not tests_ok(p):
+        raise PlatformError("rode os testes em stage desta versão (e passe em todos) antes de enviar")
     p.status, p.submitted_by, p.review_note, p.updated_at = "pending", acc.p.name, "", now()
     db.commit()
     audit(db, acc.p.name, "plugin.submit", p.name, f"v{p.version}")
@@ -530,7 +594,12 @@ def review(db, acc: Access, name: str, decision: str, note: str = "") -> dict:
     if decision == "reject" and not note.strip():
         raise PlatformError("diga o que mudar (note)")
     p.review_note = note.strip()[:2000]
+    if decision == "approve" and p.manifest.get("tests") and not tests_ok(p):
+        raise PlatformError("os testes em stage não passaram nesta versão: recuse ou peça para rodar de novo")
     if decision == "approve":
+        p.history = [*(p.history or []), {"version": p.version, "by": acc.p.name, "at": iso(now()), "note": note.strip()[:300],
+                                          "tests": (p.test_report or {}).get("passed")}]
+        p.category, p.tags = p.manifest.get("category", "other"), p.manifest.get("tags") or []
         p.approved_manifest, p.approved_version = copy.deepcopy(p.manifest), p.version
         p.approved_by, p.approved_at, p.status = acc.p.name, now(), "approved"
         _classify(db, p.manifest)
@@ -576,25 +645,31 @@ def _secrets(i: PluginInstall) -> dict:
         return {}
 
 
-def _install_row(db, p: Plugin, team_id: int | None) -> PluginInstall | None:
-    q = select(PluginInstall).where(PluginInstall.plugin_id == p.id)
+def _install_row(db, p: Plugin, team_id: int | None, stage: bool = False) -> PluginInstall | None:
+    q = select(PluginInstall).where(PluginInstall.plugin_id == p.id, PluginInstall.stage.is_(stage))
     q = q.where(PluginInstall.team_id == team_id) if team_id else q.where(PluginInstall.team_id.is_(None))
     return db.scalar(q)
 
 
 def install(db, acc: Access, name: str, team: str | None, settings: dict | None = None, secrets: dict | None = None,
             credential: str | None = None, enabled: bool | None = None, oauth_client_id: str | None = None,
-            oauth_client_secret: str | None = None, triggers: dict | None = None) -> dict:
+            oauth_client_secret: str | None = None, triggers: dict | None = None, stage: bool = False) -> dict:
     p = _get(db, name)
-    if not live(p):
-        raise PlatformError("só plugins aprovados (e ligados) são instalados")
     team_id = find_team(db, team).id if team else None
-    if not _can_install(acc, team_id):
-        raise Forbidden("instala o mantenedor do time (ou um admin, também para a empresa toda)")
-    m = p.approved_manifest
+    if stage:  # instalação de teste do rascunho: quem constrói o plugin, com uma credencial de teste
+        if not _can_edit(acc, p):
+            raise Forbidden("a instalação de stage é de quem constrói o plugin (time dono)")
+        if triggers:
+            raise PlatformError("gatilhos não rodam em stage")
+    else:
+        if not live(p):
+            raise PlatformError("só plugins aprovados (e ligados) são instalados")
+        if not _can_install(acc, team_id):
+            raise Forbidden("instala o mantenedor do time (ou um admin, também para a empresa toda)")
+    m = p.manifest if stage else p.approved_manifest
     decl = {s["key"]: s for s in m.get("settings") or []}
-    i = _install_row(db, p, team_id) or PluginInstall(plugin_id=p.id, team_id=team_id, installed_by=acc.p.name,
-                                                       installed_at=now(), settings={}, enabled=True)
+    i = _install_row(db, p, team_id, stage) or PluginInstall(plugin_id=p.id, team_id=team_id, installed_by=acc.p.name,
+                                                              installed_at=now(), settings={}, enabled=True, stage=stage)
     plain, sec = dict(i.settings or {}), _secrets(i)
     sec.setdefault("settings", {})
     for k, v in (settings or {}).items():
@@ -631,7 +706,10 @@ def install(db, acc: Access, name: str, team: str | None, settings: dict | None 
     if i.id is None:
         db.add(i)
     db.commit()
-    audit(db, acc.p.name, "plugin.install", p.name, f"time {team or 'empresa'}")
+    audit(db, acc.p.name, "plugin.install", p.name, f"time {team or 'empresa'}{' (stage)' if stage else ''}")
+    if not stage and p.requests:  # o pedido de instalação deste time foi atendido
+        p.requests = [r for r in p.requests if r.get("team_id") != team_id]
+        db.commit()
     if m.get("runtime") == "server":  # configuração nova: o container sobe (ou reinicia) com ela; pausado, para
         if i.enabled:
             ensure_server(db, p, i, restart=True)
@@ -640,12 +718,12 @@ def install(db, acc: Access, name: str, team: str | None, settings: dict | None 
     return install_dict(db, i, p)
 
 
-def uninstall(db, acc: Access, name: str, team: str | None):
+def uninstall(db, acc: Access, name: str, team: str | None, stage: bool = False):
     p = _get(db, name)
     team_id = find_team(db, team).id if team else None
-    if not _can_install(acc, team_id):
+    if not (_can_edit(acc, p) if stage else _can_install(acc, team_id)):
         raise Forbidden("desinstala o mantenedor do time (ou um admin)")
-    i = _install_row(db, p, team_id)
+    i = _install_row(db, p, team_id, stage)
     if i is None:
         raise PlatformError("não está instalado aqui")
     _stop_server(p, i)
@@ -654,15 +732,15 @@ def uninstall(db, acc: Access, name: str, team: str | None):
     audit(db, acc.p.name, "plugin.uninstall", p.name, f"time {team or 'empresa'}")
 
 
-def test_install(db, acc: Access, name: str, team: str | None) -> dict:
+def test_install(db, acc: Access, name: str, team: str | None, stage: bool = False) -> dict:
     p = _get(db, name)
     team_id = find_team(db, team).id if team else None
-    if not _can_install(acc, team_id):
+    if not (_can_edit(acc, p) if stage else _can_install(acc, team_id)):
         raise Forbidden("testa quem instala (mantenedor do time ou admin)")
-    i = _install_row(db, p, team_id)
+    i = _install_row(db, p, team_id, stage)
     if i is None:
         raise PlatformError("instale antes de testar")
-    m = p.approved_manifest
+    m = mof(p, i)
     if m.get("runtime") == "server":
         i.last_test = _test_server(db, p, i)
         db.commit()
@@ -836,7 +914,7 @@ def _save_secrets(i: PluginInstall, sec: dict):
     i.secret = crypto.encrypt(json.dumps(sec))
 
 
-def oauth_start(db, acc: Access, name: str, team: str | None) -> dict:
+def oauth_start(db, acc: Access, name: str, team: str | None, stage: bool = False) -> dict:
     """URL de autorização do provedor para o navegador de quem instala, e o state assinado (cookie)."""
     import secrets as _secrets_mod
     import time
@@ -844,10 +922,10 @@ def oauth_start(db, acc: Access, name: str, team: str | None) -> dict:
     from .. import sso
     p = _get(db, name)
     team_id = find_team(db, team).id if team else None
-    if not _can_install(acc, team_id):
+    if not (_can_edit(acc, p) if stage else _can_install(acc, team_id)):
         raise Forbidden("conecta a conta quem instala (mantenedor do time ou admin)")
-    i = _install_row(db, p, team_id)
-    m = p.approved_manifest or {}
+    i = _install_row(db, p, team_id, stage)
+    m = mof(p, i)
     if i is None or m.get("auth", {}).get("type") != "oauth2":
         raise PlatformError("instale o plugin (com o client id do app OAuth) antes de conectar a conta")
     o = _secrets(i).get("oauth") or {}
@@ -908,14 +986,14 @@ def oauth_finish(db, acc: Access, code: str, state: str, cookie: str) -> str:
     p = db.get(Plugin, i.plugin_id) if i else None
     if i is None or p is None or p.name != data.get("p"):
         raise PlatformError("instalação não encontrada")
-    if not _can_install(acc, i.team_id):
+    if not (_can_edit(acc, p) if i.stage else _can_install(acc, i.team_id)):
         raise Forbidden("conecta a conta quem instala (mantenedor do time ou admin)")
     sec = _secrets(i)
     o = dict(sec.get("oauth") or {})
     form = {"grant_type": "authorization_code", "code": code, "redirect_uri": oauth_redirect_uri()}
     if data.get("v"):
         form["code_verifier"] = data["v"]
-    _store_tokens(o, _token_request(p.approved_manifest, o, form))
+    _store_tokens(o, _token_request(mof(p, i), o, form))
     o["connected_by"] = acc.p.name
     sec["oauth"] = o
     _save_secrets(i, sec)
@@ -1053,7 +1131,7 @@ def receive(db, install_id: int, trigger: str, raw: bytes, headers: dict, query_
     from . import employee_tasks as tasksmod
     i = db.get(PluginInstall, install_id)
     p = db.get(Plugin, i.plugin_id) if i else None
-    if i is None or p is None or not live(p) or not i.enabled:
+    if i is None or p is None or not live(p) or not i.enabled or i.stage:
         raise Forbidden("gatilho desconhecido")
     m = p.approved_manifest
     t = next((x for x in m.get("triggers") or [] if x["name"] == trigger), None)
@@ -1132,7 +1210,7 @@ def _server_env(m: dict, i: PluginInstall) -> dict:
 
 def _server_url(p: Plugin, i: PluginInstall) -> str:
     from .. import deploy
-    srv = p.approved_manifest["server"]
+    srv = mof(p, i)["server"]
     return deploy.plugin_url(_server_name(p, i), srv.get("port", 8000), srv.get("path", "/mcp"))
 
 
@@ -1152,15 +1230,17 @@ def _wait_ready(url: str, timeout: float = 30) -> bool:
 def ensure_server(db, p: Plugin, i: PluginInstall, restart: bool = False) -> str:
     """Sobe o container da instalação (ou reinicia). Devolve o estado; um erro fica registrado na instalação."""
     from .. import deploy
-    srv = p.approved_manifest["server"]
+    m = mof(p, i)
+    srv = m["server"]
     name = _server_name(p, i)
     st = dict(i.stats or {})
     if not restart and deploy.plugin_state(name) == "running":
         return "running"
     try:
-        deploy.run_plugin(name, srv["image"], _server_env(p.approved_manifest, i), srv.get("memory") or config.PLUGIN_MEM_LIMIT,
+        deploy.run_plugin(name, srv["image"], _server_env(m, i), srv.get("memory") or config.PLUGIN_MEM_LIMIT,
                           srv.get("cpus") or config.PLUGIN_CPUS, srv.get("command"),
-                          {"central.plugin.name": p.name, "central.plugin.version": p.approved_version}, port=srv.get("port", 8000))
+                          {"central.plugin.name": p.name, "central.plugin.version": m.get("version", ""),
+                           "central.plugin.stage": "1" if i.stage else "0"}, port=srv.get("port", 8000))
     except Exception as e:  # noqa: BLE001 — imagem ausente, Docker fora: a instalação mostra o motivo
         st["server_error"] = str(e)[:400]
         i.stats = st
@@ -1190,7 +1270,8 @@ def _restart_servers(db, p: Plugin):
     from .. import deploy
     if (p.approved_manifest or {}).get("runtime") != "server":
         return
-    for i in db.scalars(select(PluginInstall).where(PluginInstall.plugin_id == p.id, PluginInstall.enabled.is_(True))):
+    for i in db.scalars(select(PluginInstall).where(PluginInstall.plugin_id == p.id, PluginInstall.enabled.is_(True),
+                                                    PluginInstall.stage.is_(False))):
         if deploy.plugin_state(_server_name(p, i)) in ("running", "exited"):
             try:
                 ensure_server(db, p, i, restart=True)
@@ -1205,14 +1286,14 @@ def server_info(p: Plugin, i: PluginInstall) -> dict:
             "started": st.get("server_started"), "error": st.get("server_error", "")}
 
 
-def server_logs(db, acc: Access, name: str, team: str | None) -> dict:
+def server_logs(db, acc: Access, name: str, team: str | None, stage: bool = False) -> dict:
     from .. import deploy
     p = _get(db, name)
     team_id = find_team(db, team).id if team else None
-    if not _can_install(acc, team_id):
+    if not (_can_edit(acc, p) if stage else _can_install(acc, team_id)):
         raise Forbidden("vê os logs quem instala (mantenedor do time ou admin)")
-    i = _install_row(db, p, team_id)
-    if i is None or (p.approved_manifest or {}).get("runtime") != "server":
+    i = _install_row(db, p, team_id, stage)
+    if i is None or mof(p, i).get("runtime") != "server":
         raise PlatformError("sem servidor para esta instalação")
     return {"logs": _mask(i, deploy.plugin_logs(_server_name(p, i), 200))}
 
@@ -1260,7 +1341,7 @@ def _live_server(db, p: Plugin, i: PluginInstall) -> str:
 
 def server_tools(db, p: Plugin, i: PluginInstall) -> list[dict]:
     """Só as ferramentas declaradas no manifesto (com o schema do servidor, quando ele tem); as outras ficam escondidas."""
-    m = p.approved_manifest
+    m = mof(p, i)
     declared = {t["name"]: t for t in m["tools"]}
     try:
         offered = {t["name"]: t for t in SERVER(_live_server(db, p, i), "list")}
@@ -1284,7 +1365,7 @@ def server_call(db, p: Plugin, i: PluginInstall, tool: str, args: dict) -> tuple
 
 
 def _test_server(db, p: Plugin, i: PluginInstall) -> dict:
-    m = p.approved_manifest
+    m = mof(p, i)
     try:
         offered = {t["name"] for t in SERVER(_live_server(db, p, i), "list")}
     except PlatformError as e:
@@ -1299,4 +1380,130 @@ def _test_server(db, p: Plugin, i: PluginInstall) -> dict:
     hidden = sorted(offered - {t["name"] for t in m["tools"]})
     return {"ok": True, "status": 0, "at": iso(now()), "tool": "",
             "sample": f"{len(m['tools'])} ferramenta(s) declarada(s) no ar" + (f"; escondidas: {', '.join(hidden)}" if hidden else "")}
+
+
+# ------------------------------------------------------------------ P3: testes em stage (antes da revisão)
+def _check(case: dict, text: str, err: bool, status: int) -> str:
+    """'' se passou; senão o motivo."""
+    if err and not case.get("expect_error"):
+        return "a ferramenta devolveu erro"
+    if case.get("expect_error") and not err:
+        return "esperava um erro"
+    if case.get("expect_status") and status and status != case["expect_status"]:
+        return f"status {status}, esperado {case['expect_status']}"
+    if case.get("expect_contains") and case["expect_contains"] not in text:
+        return f"a resposta não contém '{case['expect_contains'][:60]}'"
+    return ""
+
+
+def run_stage_tests(db, acc: Access, name: str, team: str | None = None) -> dict:
+    """Roda os casos de teste do rascunho contra a instalação de stage (credencial de teste). O relatório fica preso
+    à versão exata do manifesto: mudou o rascunho, precisa rodar de novo."""
+    p = _get(db, name)
+    if not _can_edit(acc, p):
+        raise Forbidden("roda os testes quem constrói o plugin (time dono)")
+    m = p.manifest
+    cases = m.get("tests") or ([{"name": "test", **m["test"]}] if m.get("test") else [])
+    if not cases:
+        raise PlatformError("declare `tests` no manifesto (ferramenta, argumentos e o que esperar)")
+    team_id = find_team(db, team).id if team else p.team_id
+    i = _install_row(db, p, team_id, True) or _install_row(db, p, None, True)
+    if i is None:
+        raise PlatformError(f"cadastre a instalação de stage (credencial de teste) no portal: "
+                            f"{config.PUBLIC_BASE_URL}/app/#/plugins/{p.name}")
+    results = []
+    for n, c in enumerate(cases):
+        tool = next((t for t in m["tools"] if t["name"] == c["tool"]), None)
+        try:
+            if m.get("runtime") == "server":
+                text, err = server_call(db, p, i, c["tool"], c.get("args") or {})
+                status = 0
+            else:
+                text, err, status = _execute(db, m, i, tool, c.get("args") or {})
+        except PlatformError as e:
+            text, err, status = str(e), True, 0
+        why = _check(c, text, err, status)
+        results.append({"name": c.get("name") or f"#{n + 1} {c['tool']}", "tool": c["tool"], "ok": not why, "why": why,
+                        "status": status, "sample": text[:300]})
+    report = {"digest": digest(m), "version": m["version"], "at": iso(now()), "by": acc.p.name,
+              "passed": all(r["ok"] for r in results), "results": results}
+    p.test_report = report
+    db.commit()
+    audit(db, acc.p.name, "plugin.stage_tests", p.name, f"v{m['version']} {'ok' if report['passed'] else 'falhou'}")
+    return report
+
+
+# ------------------------------------------------------------------ P4: vitrine interna
+def set_featured(db, acc: Access, name: str, on: bool) -> dict:
+    if not acc.p.is_admin:
+        raise Forbidden("só um admin destaca plugins na vitrine")
+    p = _get(db, name)
+    p.featured = bool(on)
+    db.commit()
+    audit(db, acc.p.name, "plugin.feature" if on else "plugin.unfeature", p.name)
+    return plugin_dict(db, acc, p, detail=True)
+
+
+def request_install(db, acc: Access, name: str, team: str, note: str = "") -> dict:
+    """Alguém do time pede o plugin; os mantenedores do time veem o pedido (e recebem o aviso no canal deles)."""
+    p = _get(db, name)
+    if not live(p):
+        raise PlatformError("só plugins aprovados entram em pedidos")
+    t = find_team(db, team)
+    if t.id not in acc.teams and not acc.p.is_admin:
+        raise Forbidden("peça para um time do qual você faz parte")
+    if _install_row(db, p, t.id):
+        raise PlatformError(f"já está instalado para o time {t.slug}")
+    reqs = [r for r in p.requests or [] if r.get("team_id") != t.id]
+    reqs.append({"team_id": t.id, "team": t.slug, "by": acc.p.name, "at": iso(now()), "note": (note or "").strip()[:500]})
+    p.requests = reqs
+    db.commit()
+    audit(db, acc.p.name, "plugin.request", p.name, f"time {t.slug}")
+    _tell_maintainers(db, p, t, acc.p.name, note)
+    return plugin_dict(db, acc, p, detail=True)
+
+
+def dismiss_request(db, acc: Access, name: str, team: str) -> dict:
+    p = _get(db, name)
+    t = find_team(db, team)
+    if not _can_install(acc, t.id):
+        raise Forbidden("o mantenedor do time (ou um admin) responde ao pedido")
+    p.requests = [r for r in p.requests or [] if r.get("team_id") != t.id]
+    db.commit()
+    audit(db, acc.p.name, "plugin.request.dismiss", p.name, f"time {t.slug}")
+    return plugin_dict(db, acc, p, detail=True)
+
+
+def _tell_maintainers(db, p: Plugin, t: Team, who: str, note: str):
+    from ..models import TeamMember, User
+    from . import notify
+    cfg = notify.org_cfg(db)
+    for m in db.scalars(select(TeamMember).where(TeamMember.team_id == t.id, TeamMember.role == "maintainer")):
+        u = db.get(User, m.user_id)
+        via = notify.route(cfg, u) if u and u.active else None
+        if via:
+            notify._bg(_send_request, u.id, via, p.name, p.title, t.slug, who, note)
+
+
+def _send_request(db, user_id: int, via: str, name: str, title: str, team: str, who: str, note: str):
+    from ..models import User
+    from . import notify
+    u = db.get(User, user_id)
+    notify._send_text(db, notify.org_cfg(db), u, via, f"Plugin '{title}': pedido de instalação para o time {team}",
+                      [f"{who} pediu o plugin {title} ({name}) para o time {team}." + (f" Motivo: {note}" if note else "")],
+                      f"{config.PUBLIC_BASE_URL}/app/#/plugins/{name}", "Abrir o plugin")
+
+
+def export(db, acc: Access, name: str, draft: bool = False) -> str:
+    """O manifesto em YAML, para levar a outro ambiente da empresa (lá ele passa pela revisão de novo)."""
+    p = _get(db, name)
+    if draft:
+        if not _can_edit(acc, p):
+            raise Forbidden("o rascunho é de quem constrói o plugin")
+        m = p.manifest
+    else:
+        if not live(p) and not acc.p.is_admin:
+            raise Forbidden(f"plugin '{name}' não encontrado ou sem acesso")
+        m = p.approved_manifest or p.manifest
+    return to_yaml(m)
 

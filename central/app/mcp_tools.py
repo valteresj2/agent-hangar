@@ -41,7 +41,19 @@ multiagente?" por padrão:
 Ao final, diga qual tipo escolheu e por quê, numa frase. Só pergunte se o objetivo for ambíguo, ou se for
 usar HARNESS (avise que executa ações de verdade), a não ser que o usuário já tenha pedido explicitamente.
 
-REUSAR ANTES DE CONSTRUIR (sempre, antes de criar qualquer agente)
+PLUGINS: CONECTAR UM SISTEMA (CREATOR MODE)
+Quando o pedido é conectar um sistema da empresa (ERP, CRM, faturamento…) para os agentes usarem:
+1. Procure em list_catalog (plugins): se já existe um aprovado, ofereça-o (o mantenedor do time instala no portal).
+2. Monte o manifesto: plugin_from_openapi(url ou document) se houver OpenAPI; senão escreva o YAML (veja
+   plugin_draft). REVISE o `action` de cada ferramenta com o usuário (ler, alterar dados internos, enviar para fora,
+   dinheiro, apagar…): é ele que decide se o agente faz sozinho ou pede aprovação. Inclua `tests` (2 a 5 casos de
+   leitura com expect_contains) e `category`/`tags`/`readme` para a vitrine.
+3. plugin_draft(manifest, team) salva o rascunho. NUNCA peça senha, chave ou token na conversa: a credencial de
+   teste é cadastrada pela pessoa no portal (instalação de stage), no link que plugin_draft devolve.
+4. plugin_test(name) roda os testes em stage contra o rascunho; corrija e rode de novo até passar.
+5. plugin_submit(name) envia para a revisão: OUTRA pessoa (um admin) aprova — quatro olhos. Depois, o mantenedor
+   de cada time instala com a credencial do time, e os agentes usam com `plugins: [nome]` na spec.
+
 - plan_agent(request, capabilities=[...]): passe o pedido e quebre-o em 2–6 capacidades curtas ("lembrar o histórico
   de cada cliente", "escrever o e-mail de follow-up"). O Hangar devolve, do catálogo da empresa: agentes parecidos
   (só os que a pessoa pode ver, em produção), skills, MCPs e templates, como cada um pode entrar no agente NOVO
@@ -970,3 +982,95 @@ async def run_schedule_now(ctx: Context, schedule_id: int) -> dict:
 async def schedule_runs(ctx: Context, schedule_id: int, limit: int = 5) -> dict:
     """Últimas execuções de um agendamento: status, resposta do agente, tokens, custo e envio ao webhook."""
     return await _run(ctx, lambda db, acc: {"runs": svc.schedules.runs(db, acc, schedule_id, min(limit, 50))})
+
+
+# ------------------------------------------------------------------ plugins: creator mode
+def _plugin_brief(d: dict) -> dict:
+    return {"name": d["name"], "title": d["title"], "status": d["status"], "version": d["version"],
+            "approved_version": d.get("approved_version"), "permissions": d["permissions"],
+            "tests_declared": d.get("tests_declared"), "tests_ok": d.get("tests_ok"),
+            "stage_install": any(i.get("stage") for i in d.get("installs") or []),
+            "test_report": d.get("test_report"), "review_note": d.get("review_note", ""),
+            "installed_for": d.get("installed_for"),
+            "portal": f"{config.PUBLIC_BASE_URL}/app/#/plugins/{d['name']}"}
+
+
+@mcp.tool()
+async def plugin_from_openapi(ctx: Context, url: str = "", document: str = "", name: str = "", base_url: str = "") -> dict:
+    """Creator mode: gera um RASCUNHO de manifesto de plugin a partir de um OpenAPI 3 (url pública ou o documento em
+    JSON/YAML). Não salva nada: revise as ações (o palpite vem do método e do nome), acrescente tests, category, tags e
+    readme, e salve com plugin_draft."""
+    def go(db, acc):
+        doc = document
+        if url:
+            import urllib.parse
+
+            import httpx
+            u = urllib.parse.urlparse(url)
+            if u.scheme not in ("https", "http") or not u.hostname:
+                raise svc.PlatformError("url precisa ser http(s)")
+            svc.plugins._check_host(u.hostname)
+            with httpx.Client(timeout=20, follow_redirects=False) as h:
+                r = h.get(url)
+            if r.status_code >= 400 or len(r.content) > 3_000_000:
+                raise svc.PlatformError(f"não consegui baixar o OpenAPI (HTTP {r.status_code}, até 3 MB)")
+            doc = r.text
+        if not doc:
+            raise svc.PlatformError("mande url ou document")
+        import yaml
+        m = svc.plugins.from_openapi(doc, name, base_url)
+        return {"manifest_yaml": yaml.safe_dump(m, sort_keys=False, allow_unicode=True), "tools": len(m["tools"]),
+                "next": "Revise o action de cada ferramenta com o usuário, acrescente tests/category/tags/readme e "
+                        "chame plugin_draft."}
+    return await _run(ctx, go)
+
+
+@mcp.tool()
+async def plugin_draft(ctx: Context, manifest: str, team: str = "") -> dict:
+    """Creator mode: cria ou atualiza o RASCUNHO de um plugin a partir do manifesto (YAML ou JSON):
+    name, title, version, description, category (finance|sales|support|hr|it|operations|data|communication|legal|other),
+    tags, readme, base_url, auth {type: none|api_key|bearer|basic|oauth2, …}, settings [{key, title, required, secret}],
+    tools [{name, description, method, path, action, parameters (JSON Schema)}], triggers, tests [{tool, args,
+    expect_contains, expect_status}]. Plugin com código: runtime: server + server {image@sha256, port, path, env,
+    settings_env, credential_env, egress} e tools só com name/description/action.
+    Mudar um plugin já aprovado exige subir a version. Nunca peça credenciais: a pessoa cadastra a de teste no portal."""
+    def go(db, acc):
+        from .models import Plugin
+        m = svc.plugins.parse(manifest)
+        if db.scalar(select(Plugin).where(Plugin.name == m["name"])):
+            d = svc.plugins.update(db, acc, m["name"], m)
+        else:
+            d = svc.plugins.create(db, acc, m, team or None, "creator")
+        out = _plugin_brief(d)
+        out["next"] = (("Peça à pessoa para cadastrar a instalação de STAGE (credencial de teste) em " + out["portal"] +
+                        " e depois chame plugin_test.") if not out["stage_install"] else "Chame plugin_test.")
+        return out
+    return await _run(ctx, go)
+
+
+@mcp.tool()
+async def plugin_test(ctx: Context, name: str, team: str = "") -> dict:
+    """Creator mode: roda os tests do rascunho contra a instalação de stage (credencial de teste) e devolve o relatório.
+    O relatório vale só para esta versão do manifesto; plugin_submit exige todos passando."""
+    return await _run(ctx, lambda db, acc: svc.plugins.run_stage_tests(db, acc, name, team or None))
+
+
+@mcp.tool()
+async def plugin_submit(ctx: Context, name: str) -> dict:
+    """Creator mode: envia o rascunho para a revisão. Quem aprova é OUTRA pessoa (um admin que não criou nem enviou)."""
+    return await _run(ctx, lambda db, acc: _plugin_brief(svc.plugins.submit(db, acc, name)))
+
+
+@mcp.tool()
+async def plugin_status(ctx: Context, name: str) -> dict:
+    """Situação de um plugin: status, versões, permissões, relatório dos testes em stage, nota da revisão e onde está
+    instalado, com o link do portal."""
+    return await _run(ctx, lambda db, acc: _plugin_brief(svc.plugins.get_plugin(db, acc, name)))
+
+
+@mcp.tool()
+async def plugin_review(ctx: Context, name: str, decision: str, note: str = "") -> dict:
+    """Admin: aprova (decision=approve) ou recusa (reject, com note) um plugin em revisão. Quatro olhos: quem criou ou
+    enviou não aprova; com testes declarados, só aprova com o relatório de stage desta versão passando."""
+    return await _run(ctx, lambda db, acc: _plugin_brief(svc.plugins.review(db, acc, name, decision, note)))
+

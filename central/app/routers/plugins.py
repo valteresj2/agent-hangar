@@ -45,10 +45,21 @@ class InstallBody(BaseModel):
     oauth_client_id: str | None = None
     oauth_client_secret: str | None = None
     triggers: dict | None = None
+    stage: bool = False  # instalação de teste do rascunho (quem constrói o plugin)
 
 
 class TeamBody(BaseModel):
     team: str | None = None
+    stage: bool = False
+
+
+class RequestBody(BaseModel):
+    team: str
+    note: str = ""
+
+
+class FeatureBody(BaseModel):
+    on: bool = True
 
 
 @router.get("/api/plugins")
@@ -108,24 +119,52 @@ def enable(name: str, request: Request, db=Depends(db_dep)):
 def install(name: str, body: InstallBody, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.plugins.install(db, acc(request, db), name, body.team, body.settings, body.secrets,
                                              body.credential, body.enabled, body.oauth_client_id,
-                                             body.oauth_client_secret, body.triggers))
+                                             body.oauth_client_secret, body.triggers, body.stage))
 
 
 @router.delete("/api/plugins/{name}/install")
-def uninstall(name: str, request: Request, team: str | None = None, db=Depends(db_dep)):
-    guard(lambda: svc.plugins.uninstall(db, acc(request, db), name, team))
+def uninstall(name: str, request: Request, team: str | None = None, stage: bool = False, db=Depends(db_dep)):
+    guard(lambda: svc.plugins.uninstall(db, acc(request, db), name, team, stage))
     return {"uninstalled": name, "team": team}
 
 
 @router.post("/api/plugins/{name}/install/test")
 def test(name: str, body: TeamBody, request: Request, db=Depends(db_dep)):
-    return guard(lambda: svc.plugins.test_install(db, acc(request, db), name, body.team))
+    return guard(lambda: svc.plugins.test_install(db, acc(request, db), name, body.team, body.stage))
 
 
 @router.get("/api/plugins/{name}/install/logs")
-def server_logs(name: str, request: Request, team: str | None = None, db=Depends(db_dep)):
+def server_logs(name: str, request: Request, team: str | None = None, stage: bool = False, db=Depends(db_dep)):
     """Plugin com código: as últimas linhas do container da instalação (segredos mascarados)."""
-    return guard(lambda: svc.plugins.server_logs(db, acc(request, db), name, team))
+    return guard(lambda: svc.plugins.server_logs(db, acc(request, db), name, team, stage))
+
+
+@router.post("/api/plugins/{name}/tests")
+def stage_tests(name: str, body: TeamBody, request: Request, db=Depends(db_dep)):
+    """Roda os testes do rascunho contra a instalação de stage; o relatório fica preso a esta versão do manifesto."""
+    return guard(lambda: svc.plugins.run_stage_tests(db, acc(request, db), name, body.team))
+
+
+@router.post("/api/plugins/{name}/feature")
+def feature(name: str, body: FeatureBody, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.plugins.set_featured(db, acc(request, db), name, body.on))
+
+
+@router.post("/api/plugins/{name}/requests")
+def request_install(name: str, body: RequestBody, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.plugins.request_install(db, acc(request, db), name, body.team, body.note))
+
+
+@router.delete("/api/plugins/{name}/requests")
+def dismiss_request(name: str, team: str, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.plugins.dismiss_request(db, acc(request, db), name, team))
+
+
+@router.get("/api/plugins/{name}/export")
+def export(name: str, request: Request, draft: bool = False, db=Depends(db_dep)):
+    text = guard(lambda: svc.plugins.export(db, acc(request, db), name, draft))
+    return Response(text, media_type="application/yaml",
+                    headers={"Content-Disposition": f'attachment; filename="{name}.hangar-plugin.yaml"'})
 
 
 @router.post("/api/plugins/{name}/install/hook-token")
@@ -137,7 +176,7 @@ def hook_token(name: str, body: TeamBody, request: Request, db=Depends(db_dep)):
 # ------------------------------------------------------------------ OAuth2: conectar a conta do time no sistema
 @router.post("/api/plugins/{name}/install/connect")
 def oauth_connect(name: str, body: TeamBody, request: Request, db=Depends(db_dep)):
-    r = guard(lambda: svc.plugins.oauth_start(db, acc(request, db), name, body.team))
+    r = guard(lambda: svc.plugins.oauth_start(db, acc(request, db), name, body.team, body.stage))
     resp = JSONResponse({"authorize_url": r["authorize_url"]})
     resp.set_cookie(svc.plugins.OAUTH_COOKIE, r["cookie"], max_age=600, httponly=True, samesite="lax",
                     secure=config.COOKIE_SECURE, path="/api/plugins")

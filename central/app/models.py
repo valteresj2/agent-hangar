@@ -711,6 +711,12 @@ class Plugin(Base):
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     review_note: Mapped[str] = mapped_column(Text, default="")
     submitted_by: Mapped[str] = mapped_column(String(254), default="")
+    test_report: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # testes em stage do rascunho (preso ao digest)
+    category: Mapped[str] = mapped_column(String(40), default="other")  # vitrine
+    tags: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    featured: Mapped[bool] = mapped_column(Boolean, default=False)  # destaque escolhido por um admin
+    history: Mapped[list | None] = mapped_column(JSON, nullable=True)  # versões aprovadas: [{version, by, at, note}]
+    requests: Mapped[list | None] = mapped_column(JSON, nullable=True)  # pedidos de instalação: [{team, by, at, note}]
     created_by: Mapped[str] = mapped_column(String(254), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -723,6 +729,7 @@ class PluginInstall(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     plugin_id: Mapped[int] = mapped_column(ForeignKey("plugins.id", ondelete="CASCADE"), index=True)
     team_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    stage: Mapped[bool] = mapped_column(Boolean, default=False)  # instalação de teste do rascunho (credencial de teste)
     settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     secret: Mapped[str] = mapped_column(Text, default="")  # JSON criptografado: {credential, settings secretas}
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)

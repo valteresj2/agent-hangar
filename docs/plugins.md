@@ -63,6 +63,48 @@ into a draft manifest. Each operation becomes a tool, `$ref` schemas are resolve
 `auth`. The action types are a guess from the method and the operation name (`createCharge` → financial,
 `sendReminder` → send external). **Review them before submitting.**
 
+## Creator mode (MCP) and stage tests
+
+Ask your AI tool, connected to the hangar's MCP, to *"connect our ERP; the docs are at https://…/openapi.json"*.
+Creator mode follows the same path as the portal, with the same controls:
+
+1. `plugin_from_openapi(url | document)` builds a draft manifest. A URL must be public, or private hosts must be
+   allowed with `PLUGIN_ALLOW_PRIVATE=1`.
+2. The agent reviews each tool's `action` with you and adds `tests`, `category`, `tags` and `readme`.
+3. `plugin_draft(manifest, team)` saves the draft and returns the portal link. **The test credential is entered there,
+   never in the chat**: it is the *stage install*, with a sandbox credential that only the draft's tests use and that
+   never serves agents.
+4. `plugin_test(name)` runs the tests against the draft, through the stage install.
+5. `plugin_submit(name)` sends it for review.
+
+`plugin_status` shows where it stands. `plugin_review` lets an admin approve or reject with the same four-eyes rule.
+
+```yaml
+tests:
+  - {name: finds a customer, tool: find_customer, args: {q: ACME}, expect_contains: ACME}
+  - {name: service down, tool: check_status, args: {code: "503"}, expect_status: 503, expect_error: true}
+```
+
+- **Pinned to the version.** The report keeps the manifest's digest. If the draft changes, the tests must run again.
+- **Required when declared.** When the manifest declares `tests`, submitting and approving both need a passing report
+  for that exact version. The reviewer sees the report, and the version history records it.
+- **Who.** The plugin's builders (the owner team's developers) manage the stage install and run the tests. Triggers
+  never run in stage. A plugin with code runs its own stage container, from the draft image.
+
+## Gallery
+
+The *Plugins* page is the company's internal gallery; there is no public marketplace.
+- **Finding plugins:** search, categories (`category` in the manifest), tags and featured plugins chosen by an admin.
+- **Usage:** each card shows how many teams use the plugin and the call count (stage installs do not count).
+- **The plugin page:**
+  - its `readme`, permissions and tools;
+  - the version history (who approved each version, when, and whether it was tested in stage);
+  - the pending install requests.
+- **Request it for my team.** A team member who cannot install asks for it. The team maintainers get the request in
+  their decision channel (Slack, Teams or e-mail). Installing it closes the request; a maintainer can also dismiss it.
+- **Export.** *Export* downloads the approved manifest (`<name>.hangar-plugin.yaml`), without secrets, to take it to
+  another environment of the company. There it goes through the tests and the review again.
+
 ## Lifecycle
 
 1. **Draft.** Someone who builds agents (a developer or an admin) creates the plugin, optionally owned by a team.
@@ -240,5 +282,5 @@ triggers:
 - **P2a (done):** OAuth2 accounts and triggers.
 - **P2b (done):** plugins with code, as an MCP server in an isolated container per install.
 - **Next:** third-party decision channels; OAuth2 for plugins with code.
-- **P3:** building plugins by chat through the MCP, tested in stage.
-- **P4:** a company plugin gallery.
+- **P3 (done):** Creator mode through the MCP, with stage tests and four eyes.
+- **P4 (done):** the company's internal gallery. Public plugins come much later, after a security review.

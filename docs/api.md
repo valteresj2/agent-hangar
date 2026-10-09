@@ -194,10 +194,15 @@ See [plugins.md](plugins.md).
 | POST | `/api/plugins/{name}/install/connect` | `{team}`: OAuth2. Returns `authorize_url` for the browser and sets the signed state cookie |
 | GET | `/api/plugins/oauth/callback` | Provider redirect: exchanges the code (PKCE), stores the tokens, returns to the plugin page |
 | GET | `/api/plugins/{name}/install/logs` | `?team=`: last lines of the install's container (plugins with code), secrets masked |
+| POST | `/api/plugins/{name}/tests` | Builders: runs the manifest's `tests` against the stage install; the report is pinned to the manifest's digest |
+| POST | `/api/plugins/{name}/feature` | Admin: `{on}` features the plugin in the gallery |
+| POST / DELETE | `/api/plugins/{name}/requests` | A team member asks for the plugin `{team, note}` (maintainers are notified). DELETE `?team=` dismisses (maintainer) |
+| GET | `/api/plugins/{name}/export` | The approved manifest as YAML, without secrets (`?draft=true` for builders) |
 | POST | `/api/plugins/{name}/install/hook-token` | `{team}`: new token for unsigned triggers (shown once) |
 | POST | `/hooks/plugins/{install}/{trigger}` | A system event: HMAC signature (manifest) or the install token. Creates the linked employee's task, deduplicated |
 
-`PUT /api/plugins/{name}/install` also takes `oauth_client_id`, `oauth_client_secret` and
+The install routes take `stage: true` for the stage install, a test credential for the draft. Only builders use it,
+and it never serves agents. `PUT /api/plugins/{name}/install` also takes `oauth_client_id`, `oauth_client_secret` and
 `triggers: {name: {employee, enabled, priority}}`.
 
 ## User portal
