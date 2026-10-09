@@ -95,6 +95,65 @@ into a draft manifest. Each operation becomes a tool, `$ref` schemas are resolve
   installed for the agent's team.
 - **Usage.** Each install counts calls and errors and keeps the last error.
 
+## Plugins with code (`runtime: server`)
+
+When HTTP calls are not enough (an SDK, a protocol other than REST, logic before the call), a plugin can bring code. The
+code runs as an **MCP server in an isolated container, one per install**: each team's credential stays in its own
+container.
+
+```yaml
+name: acme-erp
+version: 1.0.0
+runtime: server
+auth: {type: api_key, label: ERP key}
+settings:
+  - {key: tenant, title: Tenant, required: true}
+server:
+  image: ghcr.io/acme/erp-mcp@sha256:<64 hex>   # pinned by digest
+  port: 8000
+  path: /mcp                                     # streamable HTTP MCP endpoint
+  command: [python, -m, erp_mcp]                 # optional
+  env: {LOG_LEVEL: info}
+  settings_env: {ERP_TENANT: tenant}             # setting -> environment variable (secret ones too)
+  credential_env: ERP_KEY                        # the install's credential
+  egress: [erp.acme.com]                         # declared hosts, shown at review
+  memory: 256m                                   # optional (PLUGIN_MEM_LIMIT)
+  cpus: 0.5                                      # optional (PLUGIN_CPUS)
+tools:                                           # only these reach agents, with these action types
+  - {name: get_invoice, description: One invoice, action: read}
+  - {name: pay_invoice, description: Pays an invoice, action: financial}
+test: {tool: get_invoice, args: {number: "1"}}
+```
+
+- **The central is the server's MCP client.** Agents still call the central (`/internal/plugins/<name>/mcp`). The
+  central lists and calls the container's tools, masks secrets in the answers and records usage.
+- **Only declared tools reach agents.** Any other tool the server offers stays hidden and cannot be called. *Test
+  connection* lists the hidden ones.
+- **Supply chain.** The image must be pinned by digest. Tags are only allowed with `PLUGIN_ALLOW_UNPINNED=1`, for
+  development; the review screen flags them.
+- **Lifecycle.** The container follows the install:
+  - installing or saving settings starts or restarts it with the new configuration;
+  - pausing or uninstalling stops it, and so does turning the plugin off;
+  - approving a new version restarts the running containers with it;
+  - if a container is down when an agent calls, it starts again.
+- **Images.** With Docker, the central does not pull images (the Docker socket proxy does not allow it), so an admin
+  pulls the image on the host first. With Kubernetes, the cluster pulls it (`K8S_IMAGE_PULL_SECRET` for a private
+  registry).
+- **Logs.** *View logs* shows the container's last lines, with secrets masked.
+
+### Isolation
+
+| | Docker | Kubernetes |
+|---|---|---|
+| Network | Only `hangar_plugins` (`PLUGINS_NETWORK`). No agents, database, memory or Docker API; internet out | NetworkPolicy `role=plugin`: only the central gets in. Out: DNS and the internet, without private ranges |
+| Process | Read-only filesystem (`/tmp` in memory), `cap_drop: ALL`, `no-new-privileges`, memory, CPU and 128 processes | Same, plus `runAsNonRoot` and seccomp `RuntimeDefault` |
+| Secrets | Environment of that container only | Its own `Secret` |
+
+- **Declared egress is not enforced.** `egress` is shown for review, but Docker and plain NetworkPolicy cannot filter
+  by host name. Use an egress proxy or a CNI with FQDN policies when that matters.
+- **Docker hosts.** On Docker, the plugin network can reach other private addresses of the host's network.
+- **No OAuth2 yet.** OAuth2 is not available yet for plugins with code.
+
 ## OAuth2 accounts
 
 ```yaml
@@ -172,10 +231,14 @@ triggers:
 |---|---|---|
 | `PLUGIN_ALLOW_PRIVATE` | 0 | 1 lets plugins call hosts in private networks |
 | `PLUGIN_TIMEOUT_S` | 30 | Timeout of each call to the system |
+| `PLUGINS_NETWORK` | `hangar_plugins` | Docker network of plugin containers |
+| `PLUGIN_MEM_LIMIT` · `PLUGIN_CPUS` | `256m` · 0.5 | Default limits of a plugin container |
+| `PLUGIN_ALLOW_UNPINNED` | 0 | 1 accepts plugin images by tag (development only) |
 
 ## What's next
 
 - **P2a (done):** OAuth2 accounts and triggers.
-- **P2b:** plugins with code, running in an isolated container like an MCP server, and third-party decision channels.
+- **P2b (done):** plugins with code, as an MCP server in an isolated container per install.
+- **Next:** third-party decision channels; OAuth2 for plugins with code.
 - **P3:** building plugins by chat through the MCP, tested in stage.
 - **P4:** a company plugin gallery.

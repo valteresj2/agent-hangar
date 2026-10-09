@@ -1,9 +1,10 @@
 {{- if .Values.networkPolicy.enabled }}
 {{- $full := include "hangar.fullname" . -}}
 {{- $sel := include "hangar.selector" . -}}
-# Agentes, jobs de harness e avaliações de código (pods criados pela central, rótulo hangar.dev/role): falam só com a
-# central, o DNS e a internet (LLMs, MCPs remotos) — não com outros agentes, o banco ou a memória.
-{{- range $role := list "agent" "job" "eval" }}
+# Agentes, jobs de harness, avaliações de código e plugins com código (pods criados pela central, rótulo
+# hangar.dev/role): falam só com a central, o DNS e a internet (LLMs, MCPs remotos, o sistema do plugin) — não com
+# outros agentes, o banco ou a memória. Plugins recebem conexões só da central.
+{{- range $role := list "agent" "job" "eval" "plugin" }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -22,12 +23,20 @@ spec:
               app.kubernetes.io/component: central
       ports: [{port: 8000, protocol: TCP}]
     {{- end }}
+    {{- if eq $role "plugin" }}
+    - from:
+        - podSelector:
+            matchLabels: {{- $sel | nindent 14 }}
+              app.kubernetes.io/component: central
+    {{- end }}
   egress:
+    {{- if ne $role "plugin" }}
     - to:
         - podSelector:
             matchLabels: {{- $sel | nindent 14 }}
               app.kubernetes.io/component: central
       ports: [{port: 8080, protocol: TCP}]
+    {{- end }}
     - ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
     - to:
         - ipBlock:

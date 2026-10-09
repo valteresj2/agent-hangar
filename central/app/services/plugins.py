@@ -102,7 +102,7 @@ class PluginTool(_M):
     name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,59}$")
     description: str = ""
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = "GET"
-    path: str
+    path: str = ""  # runtime http: obrigatório; runtime server: a ferramenta vem do servidor MCP do plugin
     action: str = ""
     risk: int | None = Field(default=None, ge=1, le=5)
     reversible: bool = False
@@ -112,7 +112,7 @@ class PluginTool(_M):
     @field_validator("path")
     @classmethod
     def _path(cls, v):
-        if not v.startswith("/") or "://" in v or ".." in v.split("?")[0].split("/") or "\\" in v:
+        if v and (not v.startswith("/") or "://" in v or ".." in v.split("?")[0].split("/") or "\\" in v):
             raise ValueError("path começa com / e fica no host do plugin (sem esquema, sem ..)")
         return v
 
@@ -124,6 +124,46 @@ class PluginTool(_M):
             raise ValueError(f"action '{self.action}': use {', '.join(gatemod.ACTION_TYPES)}")
         if self.parameters.get("type", "object") != "object":
             raise ValueError("parameters precisa ser um JSON Schema de objeto")
+        return self
+
+
+_DIGEST = re.compile(r"^[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}$")
+
+
+class PluginServer(_M):
+    """Plugin com código: um servidor MCP (streamable HTTP) num container isolado, um por instalação."""
+    image: str = Field(min_length=3, max_length=300)
+    port: int = Field(default=8000, ge=1, le=65535)
+    path: str = "/mcp"
+    command: list[str] | None = None
+    env: dict[str, str] = Field(default_factory=dict, description="variáveis fixas")
+    settings_env: dict[str, str] = Field(default_factory=dict, description="VARIÁVEL: key da setting (as secretas também)")
+    credential_env: str = Field(default="", description="variável que recebe a credencial da instalação")
+    egress: list[str] = Field(default_factory=list, description="hosts com que o servidor fala (para a revisão)")
+    memory: str = Field(default="", pattern=r"^$|^\d+[mMgG]$")
+    cpus: float = Field(default=0, ge=0, le=2)
+
+    @field_validator("image")
+    @classmethod
+    def _pinned(cls, v):
+        if not _DIGEST.match(v) and not config.PLUGIN_ALLOW_UNPINNED:
+            raise ValueError("server.image precisa ser fixada por digest (repo/imagem@sha256:…); "
+                             "tags só com PLUGIN_ALLOW_UNPINNED=1 (desenvolvimento)")
+        return v
+
+    @field_validator("path")
+    @classmethod
+    def _mcp_path(cls, v):
+        if not v.startswith("/") or "://" in v:
+            raise ValueError("server.path começa com /")
+        return v
+
+    @model_validator(mode="after")
+    def _env_names(self):
+        names = [*self.env, *self.settings_env, *([self.credential_env] if self.credential_env else [])]
+        bad = [n for n in names if not re.match(r"^[A-Z_][A-Z0-9_]{0,63}$", n)]
+        if bad:
+            raise ValueError(f"nomes de variáveis inválidos: {', '.join(bad)} (MAIÚSCULAS, números e _)")
         return self
 
 
@@ -144,7 +184,9 @@ class PluginManifest(_M):
     version: str = Field(default="0.1.0", pattern=r"^\d+\.\d+\.\d+([.-][0-9A-Za-z.-]+)?$")
     description: str = ""
     publisher: str = ""
-    base_url: str
+    runtime: Literal["http", "server"] = "http"
+    base_url: str = ""
+    server: PluginServer | None = None
     auth: PluginAuth = Field(default_factory=PluginAuth)
     settings: list[PluginSetting] = Field(default_factory=list)
     tools: list[PluginTool] = Field(min_length=1, max_length=MAX_TOOLS)
@@ -155,6 +197,8 @@ class PluginManifest(_M):
     @field_validator("base_url")
     @classmethod
     def _base(cls, v):
+        if not v:
+            return v
         u = urllib.parse.urlparse(_TPL.sub("x", v))
         if u.scheme not in ("https", "http") or not u.hostname or u.username or u.password:
             raise ValueError("base_url: uma URL http(s) sem usuário e senha")
@@ -162,6 +206,25 @@ class PluginManifest(_M):
 
     @model_validator(mode="after")
     def _refs(self):
+        if self.runtime == "http":
+            if not self.base_url:
+                raise ValueError("base_url é obrigatório (runtime http)")
+            if self.server is not None:
+                raise ValueError("server só vale com runtime: server")
+            missing = [t.name for t in self.tools if not t.path]
+            if missing:
+                raise ValueError(f"ferramentas sem path: {', '.join(missing)}")
+        else:
+            if self.server is None:
+                raise ValueError("runtime server precisa de `server` (a imagem do servidor MCP)")
+            if self.auth.type == "oauth2":
+                raise ValueError("oauth2 ainda não vale para plugins com código (runtime server)")
+            secret_or_all = {s.key for s in self.settings}
+            unknown = [k for k in self.server.settings_env.values() if k not in secret_or_all]
+            if unknown:
+                raise ValueError(f"server.settings_env usa settings não declaradas: {', '.join(unknown)}")
+            if self.auth.type != "none" and not self.server.credential_env:
+                raise ValueError("com auth, declare server.credential_env (a variável que recebe a credencial)")
         names = [t.name for t in self.tools]
         if len(set(names)) != len(names):
             raise ValueError("nomes de ferramentas repetidos")
@@ -202,7 +265,9 @@ def parse(manifest) -> dict:
 
 def permissions(m: dict) -> dict:
     """O que o plugin pode fazer, para a tela de revisão e de instalação."""
-    host = urllib.parse.urlparse(_TPL.sub("{setting}", m["base_url"])).hostname or ""
+    srv = m.get("server") or {}
+    host = (urllib.parse.urlparse(_TPL.sub("{setting}", m["base_url"])).hostname or "") if m.get("base_url") else \
+        ", ".join(srv.get("egress") or []) or "—"
     actions: dict[str, int] = {}
     for t in m["tools"]:
         actions[t["action"]] = actions.get(t["action"], 0) + 1
@@ -210,7 +275,9 @@ def permissions(m: dict) -> dict:
             "actions": actions, "tools": len(m["tools"]), "skills": len(m.get("skills") or []),
             "secrets": [s["key"] for s in m.get("settings") or [] if s.get("secret")],
             "risky": sorted({t["action"] for t in m["tools"] if gatemod.RISK.get(t["action"], 3) >= 4}),
-            "scopes": m["auth"].get("scopes") or [], "triggers": [t["name"] for t in m.get("triggers") or []]}
+            "scopes": m["auth"].get("scopes") or [], "triggers": [t["name"] for t in m.get("triggers") or []],
+            "runtime": m.get("runtime", "http"), "image": srv.get("image", ""),
+            "pinned": bool(_DIGEST.match(srv.get("image", ""))) if srv else None, "egress": srv.get("egress") or []}
 
 
 # ------------------------------------------------------------------ importar de um OpenAPI
@@ -346,6 +413,7 @@ def install_dict(db, i: PluginInstall, p: Plugin) -> dict:
                           "url": hook_url(i, t["name"]), **(trig.get(t["name"]) or {"employee": "", "enabled": False})}
                          for t in m.get("triggers") or []],
             "hook_token": i.hook_token_hint or "", "redirect_uri": oauth_redirect_uri(),
+            "server": server_info(p, i) if m.get("runtime") == "server" else None,
             "stats": i.stats or {}, "last_test": i.last_test, "installed_by": i.installed_by,
             "installed_at": iso(i.installed_at) if i.installed_at else None}
 
@@ -466,6 +534,7 @@ def review(db, acc: Access, name: str, decision: str, note: str = "") -> dict:
         p.approved_manifest, p.approved_version = copy.deepcopy(p.manifest), p.version
         p.approved_by, p.approved_at, p.status = acc.p.name, now(), "approved"
         _classify(db, p.manifest)
+        _restart_servers(db, p)  # versão nova aprovada: os containers no ar passam para ela
     else:
         p.status = "rejected"
     p.updated_at = now()
@@ -481,6 +550,9 @@ def set_disabled(db, acc: Access, name: str, disabled: bool) -> dict:
     p.status = "disabled" if disabled else ("approved" if p.approved_manifest else "draft")
     p.updated_at = now()
     db.commit()
+    if disabled:
+        for i in db.scalars(select(PluginInstall).where(PluginInstall.plugin_id == p.id)):
+            _stop_server(p, i)
     audit(db, acc.p.name, "plugin.disable" if disabled else "plugin.enable", p.name)
     return plugin_dict(db, acc, p, detail=True)
 
@@ -489,6 +561,8 @@ def delete(db, acc: Access, name: str):
     p = _get(db, name)
     if not (acc.p.is_admin or (_can_edit(acc, p) and not p.approved_manifest)):
         raise Forbidden("só um admin apaga um plugin que já foi aprovado")
+    for i in db.scalars(select(PluginInstall).where(PluginInstall.plugin_id == p.id)):
+        _stop_server(p, i)
     db.delete(p)
     db.commit()
     audit(db, acc.p.name, "plugin.delete", name)
@@ -558,6 +632,11 @@ def install(db, acc: Access, name: str, team: str | None, settings: dict | None 
         db.add(i)
     db.commit()
     audit(db, acc.p.name, "plugin.install", p.name, f"time {team or 'empresa'}")
+    if m.get("runtime") == "server":  # configuração nova: o container sobe (ou reinicia) com ela; pausado, para
+        if i.enabled:
+            ensure_server(db, p, i, restart=True)
+        else:
+            _stop_server(p, i)
     return install_dict(db, i, p)
 
 
@@ -569,6 +648,7 @@ def uninstall(db, acc: Access, name: str, team: str | None):
     i = _install_row(db, p, team_id)
     if i is None:
         raise PlatformError("não está instalado aqui")
+    _stop_server(p, i)
     db.delete(i)
     db.commit()
     audit(db, acc.p.name, "plugin.uninstall", p.name, f"time {team or 'empresa'}")
@@ -583,6 +663,10 @@ def test_install(db, acc: Access, name: str, team: str | None) -> dict:
     if i is None:
         raise PlatformError("instale antes de testar")
     m = p.approved_manifest
+    if m.get("runtime") == "server":
+        i.last_test = _test_server(db, p, i)
+        db.commit()
+        return i.last_test
     t = m.get("test") or {"tool": next((x["name"] for x in m["tools"] if x["method"] == "GET"), m["tools"][0]["name"]),
                           "args": {}}
     tool = next(x for x in m["tools"] if x["name"] == t["tool"])
@@ -720,13 +804,16 @@ def mcp_handle(db, a: Agent, specs: list[dict], name: str, msg: dict) -> dict | 
     elif method == "ping":
         result = {}
     elif method == "tools/list":
-        result = {"tools": mcp_tools(m)}
+        result = {"tools": server_tools(db, p, i) if m.get("runtime") == "server" else mcp_tools(m)}
     elif method == "tools/call":
         tool = next((t for t in m["tools"] if t["name"] == params.get("name")), None)
-        if tool is None:
+        if tool is None:  # só as ferramentas declaradas (e classificadas) no manifesto, mesmo que o servidor tenha outras
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "ferramenta desconhecida"}}
         try:
-            text, err, _ = _execute(db, m, i, tool, params.get("arguments") or {})
+            if m.get("runtime") == "server":
+                text, err = server_call(db, p, i, tool["name"], params.get("arguments") or {})
+            else:
+                text, err, _ = _execute(db, m, i, tool, params.get("arguments") or {})
         except PlatformError as e:
             text, err = str(e), True
         _record(db, i, err, text)
@@ -1022,4 +1109,194 @@ def receive(db, install_id: int, trigger: str, raw: bytes, headers: dict, query_
     db.commit()
     audit(db, f"plugin:{p.name}", "plugin.trigger", cfgv["employee"], f"{trigger} -> #{task.id}")
     return {"id": task.id, "status": task.status, "duplicate": False}
+
+
+# ------------------------------------------------------------------ plugins com código (runtime: server)
+def _server_name(p: Plugin, i: PluginInstall) -> str:
+    from .. import deploy
+    return deploy.plugin_name(p.name, i.id)
+
+
+def _server_env(m: dict, i: PluginInstall) -> dict:
+    """Variáveis do container: as fixas, as configurações mapeadas (secretas também) e a credencial da instalação."""
+    srv, sec = m["server"], _secrets(i)
+    values = {s["key"]: s.get("default") for s in m.get("settings") or []}
+    values.update(i.settings or {})
+    values.update(sec.get("settings") or {})
+    env = dict(srv.get("env") or {})
+    env.update({var: "" if values.get(key) is None else str(values[key]) for var, key in (srv.get("settings_env") or {}).items()})
+    if srv.get("credential_env") and sec.get("credential"):
+        env[srv["credential_env"]] = sec["credential"]
+    return env
+
+
+def _server_url(p: Plugin, i: PluginInstall) -> str:
+    from .. import deploy
+    srv = p.approved_manifest["server"]
+    return deploy.plugin_url(_server_name(p, i), srv.get("port", 8000), srv.get("path", "/mcp"))
+
+
+def _wait_ready(url: str, timeout: float = 30) -> bool:
+    import time
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with httpx.Client(timeout=2) as h:
+                h.get(url)  # qualquer resposta HTTP (405, 406…) = o servidor está ouvindo
+            return True
+        except httpx.HTTPError:
+            time.sleep(0.5)
+    return False
+
+
+def ensure_server(db, p: Plugin, i: PluginInstall, restart: bool = False) -> str:
+    """Sobe o container da instalação (ou reinicia). Devolve o estado; um erro fica registrado na instalação."""
+    from .. import deploy
+    srv = p.approved_manifest["server"]
+    name = _server_name(p, i)
+    st = dict(i.stats or {})
+    if not restart and deploy.plugin_state(name) == "running":
+        return "running"
+    try:
+        deploy.run_plugin(name, srv["image"], _server_env(p.approved_manifest, i), srv.get("memory") or config.PLUGIN_MEM_LIMIT,
+                          srv.get("cpus") or config.PLUGIN_CPUS, srv.get("command"),
+                          {"central.plugin.name": p.name, "central.plugin.version": p.approved_version}, port=srv.get("port", 8000))
+    except Exception as e:  # noqa: BLE001 — imagem ausente, Docker fora: a instalação mostra o motivo
+        st["server_error"] = str(e)[:400]
+        i.stats = st
+        db.commit()
+        raise PlatformError(f"o servidor do plugin não subiu: {str(e)[:300]}") from None
+    st.update(server_error="", server_started=iso(now()), server_image=srv["image"])
+    i.stats = st
+    db.commit()
+    if not _wait_ready(_server_url(p, i)):
+        st["server_error"] = "o servidor não respondeu em 30 s"
+        i.stats = st
+        db.commit()
+        raise PlatformError("o servidor do plugin não respondeu: veja os logs")
+    return "running"
+
+
+def _stop_server(p: Plugin, i: PluginInstall):
+    from .. import deploy
+    if (p.approved_manifest or {}).get("runtime") == "server" or (p.manifest or {}).get("runtime") == "server":
+        try:
+            deploy.stop_plugin(_server_name(p, i))
+        except Exception:  # noqa: BLE001 — melhor esforço; o container órfão some na próxima instalação
+            pass
+
+
+def _restart_servers(db, p: Plugin):
+    from .. import deploy
+    if (p.approved_manifest or {}).get("runtime") != "server":
+        return
+    for i in db.scalars(select(PluginInstall).where(PluginInstall.plugin_id == p.id, PluginInstall.enabled.is_(True))):
+        if deploy.plugin_state(_server_name(p, i)) in ("running", "exited"):
+            try:
+                ensure_server(db, p, i, restart=True)
+            except PlatformError:
+                pass  # o erro fica na instalação
+
+
+def server_info(p: Plugin, i: PluginInstall) -> dict:
+    from .. import deploy
+    st = i.stats or {}
+    return {"name": _server_name(p, i), "state": deploy.plugin_state(_server_name(p, i)), "image": st.get("server_image", ""),
+            "started": st.get("server_started"), "error": st.get("server_error", "")}
+
+
+def server_logs(db, acc: Access, name: str, team: str | None) -> dict:
+    from .. import deploy
+    p = _get(db, name)
+    team_id = find_team(db, team).id if team else None
+    if not _can_install(acc, team_id):
+        raise Forbidden("vê os logs quem instala (mantenedor do time ou admin)")
+    i = _install_row(db, p, team_id)
+    if i is None or (p.approved_manifest or {}).get("runtime") != "server":
+        raise PlatformError("sem servidor para esta instalação")
+    return {"logs": _mask(i, deploy.plugin_logs(_server_name(p, i), 200))}
+
+
+def _mask(i: PluginInstall, text: str) -> str:
+    sec = _secrets(i)
+    for s in sorted({sec.get("credential", ""), *(sec.get("settings") or {}).values()}, key=len, reverse=True):
+        if s and len(str(s)) >= 4:
+            text = text.replace(str(s), "[segredo]")
+    return text
+
+
+async def _session(url: str, fn):
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+    async with streamablehttp_client(url, timeout=config.PLUGIN_TIMEOUT_S, sse_read_timeout=config.PLUGIN_TIMEOUT_S) as (r, w, _):
+        async with ClientSession(r, w) as s:
+            await s.initialize()
+            return await fn(s)
+
+
+def SERVER(url: str, op: str, tool: str = "", args: dict | None = None):  # noqa: N802  (os testes trocam)
+    """A central como cliente MCP do servidor do plugin: op = list | call."""
+    import asyncio
+
+    async def go(s):
+        if op == "list":
+            return [{"name": t.name, "description": t.description or "", "inputSchema": t.inputSchema}
+                    for t in (await s.list_tools()).tools]
+        res = await s.call_tool(tool, args or {})
+        text = "\n".join(getattr(c, "text", "") for c in res.content if getattr(c, "type", "") == "text")
+        return text, bool(res.isError)
+    try:
+        return asyncio.run(_session(url, go))
+    except Exception as e:  # noqa: BLE001
+        raise PlatformError(f"servidor do plugin indisponível: {type(e).__name__}: {str(e)[:200]}") from None
+
+
+def _live_server(db, p: Plugin, i: PluginInstall) -> str:
+    from .. import deploy
+    if deploy.plugin_state(_server_name(p, i)) != "running":
+        ensure_server(db, p, i)
+    return _server_url(p, i)
+
+
+def server_tools(db, p: Plugin, i: PluginInstall) -> list[dict]:
+    """Só as ferramentas declaradas no manifesto (com o schema do servidor, quando ele tem); as outras ficam escondidas."""
+    m = p.approved_manifest
+    declared = {t["name"]: t for t in m["tools"]}
+    try:
+        offered = {t["name"]: t for t in SERVER(_live_server(db, p, i), "list")}
+    except PlatformError:
+        offered = {}
+    out = []
+    for name, t in declared.items():
+        o = offered.get(name)
+        schema = (o or {}).get("inputSchema") or t.get("parameters") or {"type": "object", "properties": {}}
+        out.append({"name": name, "description": (t.get("description") or (o or {}).get("description") or name)[:1000],
+                    "inputSchema": schema})
+    return out
+
+
+def server_call(db, p: Plugin, i: PluginInstall, tool: str, args: dict) -> tuple[str, bool]:
+    text, err = SERVER(_live_server(db, p, i), "call", tool, args)
+    text = _mask(i, text or "")
+    if len(text) > MAX_OUTPUT:
+        text = text[:MAX_OUTPUT] + f"\n… [truncado: {len(text)} caracteres]"
+    return text, err
+
+
+def _test_server(db, p: Plugin, i: PluginInstall) -> dict:
+    m = p.approved_manifest
+    try:
+        offered = {t["name"] for t in SERVER(_live_server(db, p, i), "list")}
+    except PlatformError as e:
+        return {"ok": False, "status": 0, "at": iso(now()), "tool": "", "sample": str(e)[:300]}
+    missing = [t["name"] for t in m["tools"] if t["name"] not in offered]
+    if missing:
+        return {"ok": False, "status": 0, "at": iso(now()), "tool": "",
+                "sample": f"o servidor não oferece: {', '.join(missing)}"}
+    if m.get("test"):
+        text, err = server_call(db, p, i, m["test"]["tool"], m["test"].get("args") or {})
+        return {"ok": not err, "status": 0, "at": iso(now()), "tool": m["test"]["tool"], "sample": text[:300]}
+    hidden = sorted(offered - {t["name"] for t in m["tools"]})
+    return {"ok": True, "status": 0, "at": iso(now()), "tool": "",
+            "sample": f"{len(m['tools'])} ferramenta(s) declarada(s) no ar" + (f"; escondidas: {', '.join(hidden)}" if hidden else "")}
 

@@ -101,6 +101,16 @@ function plTriggers(m, inst, emps) {
       ${inst.hook_token ? `<span class="mute"><span>token atual termina em</span> <code class="inline" data-noi18n>…${esc(inst.hook_token)}</code></span>` : ''}</div><div class="pl-htok-out"></div>` : ''}</div>`;
 }
 
+function plServer(inst) {
+  const s = inst && inst.server;
+  if (!s) return '';
+  const pill = s.state === 'running' ? '<span class="pill ok">no ar</span>' : s.state === 'missing' ? '<span class="pill">parado</span>' : `<span class="pill bad">${esc(s.state)}</span>`;
+  return `<div class="mt"><b>Servidor</b> ${pill} <code class="inline" data-noi18n>${esc(s.name)}</code>
+    ${s.started ? `<span class="mute small"><span>desde</span> <span>${ago(s.started)}</span></span>` : ''}
+    ${s.error ? `<div class="small bad-ic" data-noi18n>${esc(s.error)}</div>` : ''}
+    <div class="row mt"><button class="ghost pl-logs">Ver logs</button></div><pre class="code small pl-logs-out" data-noi18n hidden style="max-height:320px;overflow:auto"></pre></div>`;
+}
+
 function plInstallForm(p, m, inst, team, emps) {
   const id = team || 'org';
   const settings = m.settings || [];
@@ -111,7 +121,7 @@ function plInstallForm(p, m, inst, team, emps) {
           value="${s.secret ? '' : esc((inst && inst.settings[s.key]) ?? s.default ?? '')}" placeholder="${s.secret && inst && inst.secrets[s.key] ? window.t('cadastrado — digite outro para trocar') : ''}"></label>`).join('')}
       ${!['none', 'oauth2'].includes(m.auth.type) ? `<label>${esc(m.auth.label || AUTH_LABEL[m.auth.type])}${m.auth.type === 'basic' ? ' <span class="mute small">(usuário:senha)</span>' : ''}
         <input class="pl-cred" type="password" autocomplete="off" placeholder="${inst && inst.credential ? window.t('cadastrada — digite outra para trocar') : ''}"></label>` : ''}</div>
-    ${plOauth(m, inst)}${plTriggers(m, inst, emps)}
+    ${plOauth(m, inst)}${plTriggers(m, inst, emps)}${plServer(inst)}
     ${inst ? `<div class="mute small mt"><span>Chamadas:</span> ${inst.stats.calls || 0} · <span>erros:</span> ${inst.stats.errors || 0}${inst.stats.last_call ? ` · <span>última</span> <span>${ago(inst.stats.last_call)}</span>` : ''}
       ${inst.last_test ? ` · <span>teste:</span> ${inst.last_test.ok ? '<span class="pill ok">ok</span>' : `<span class="pill bad">falhou</span> <span data-noi18n>${esc(inst.last_test.sample || '')}</span>`}` : ''}</div>` : ''}
     <div class="row mt"><button class="pl-save" data-id="${esc(id)}">${inst ? 'Salvar' : 'Instalar'}</button>
@@ -142,13 +152,16 @@ async function pluginDetail(name) {
     <input id="pl-note" class="mt" placeholder="Comentário (obrigatório para recusar)"><div class="row mt"><button id="pl-approve">Aprovar v${esc(p.version)}</button>
     <button class="ghost danger" id="pl-reject">Recusar</button></div></div>` : ''}
   <div class="grid g2 mt"><div class="card"><h2>Permissões</h2><dl class="kv">
-      <dt>Fala com</dt><dd><code class="inline" data-noi18n>${esc(perm.host)}</code>${perm.templated_host ? ' <span class="mute small">(definido na instalação)</span>' : ''}</dd>
+      ${perm.runtime === 'server' ? `<dt>Código</dt><dd><span class="pill info">servidor em container</span>
+        <div class="small mt"><code class="inline" data-noi18n>${esc(perm.image)}</code> ${perm.pinned ? '<span class="pill ok">fixada por digest</span>' : '<span class="pill warn">sem digest (desenvolvimento)</span>'}</div></dd>
+      <dt>Saída declarada</dt><dd>${perm.egress.length ? perm.egress.map(h => `<code class="inline" data-noi18n>${esc(h)}</code>`).join(' ') : '—'}</dd>`
+      : `<dt>Fala com</dt><dd><code class="inline" data-noi18n>${esc(perm.host)}</code>${perm.templated_host ? ' <span class="mute small">(definido na instalação)</span>' : ''}</dd>`}
       <dt>Autenticação</dt><dd>${esc(AUTH_LABEL[perm.auth] || perm.auth)}</dd>
       <dt>Ações</dt><dd>${plActions(perm.actions)}</dd>
       <dt>Segredos</dt><dd>${perm.secrets.length ? perm.secrets.map(s => `<code class="inline" data-noi18n>${esc(s)}</code>`).join(' ') : '—'}${perm.auth !== 'none' ? ` <span class="mute small">+ ${esc(window.t('credencial'))}</span>` : ''}</dd></dl>
       ${perm.risky.length ? `<div class="small mt warn-card card"><span>Ações que mudam algo fora da empresa ou têm risco alto:</span> ${perm.risky.map(a => `<b>${esc(ACTION_LABEL[a] || a)}</b>`).join(', ')}. <span>A alçada de cada agente decide (por padrão, pedem aprovação).</span></div>` : ''}</div>
     <div class="card"><h2>Ferramentas (${m.tools.length})</h2><table class="small">${m.tools.map(t => `<tr><td><code class="inline" data-noi18n>${esc(t.name)}</code>
-      <div class="mute" data-noi18n>${esc(t.description || '')}</div></td><td><code class="inline" data-noi18n>${esc(t.method)} ${esc(t.path)}</code></td>
+      <div class="mute" data-noi18n>${esc(t.description || '')}</div></td><td>${t.path ? `<code class="inline" data-noi18n>${esc(t.method)} ${esc(t.path)}</code>` : '<span class="mute">MCP</span>'}</td>
       <td>${esc(ACTION_LABEL[t.action] || t.action)}</td></tr>`).join('')}</table>
       ${(m.skills || []).length ? `<div class="mute small mt"><span>Skills:</span> ${m.skills.map(s => `<code class="inline" data-noi18n>${esc(s.name)}</code>`).join(' ')}</div>` : ''}</div></div>
   ${p.approved_version && p.status !== 'disabled' ? `<h2 class="mt">Instalação</h2>
@@ -190,6 +203,9 @@ async function pluginDetail(name) {
         $('.pl-htok-out', card).innerHTML = `<div class="card warn-card mt"><b>${esc(window.t('Copie agora: o token não aparece de novo.'))}</b><div class="mt">${copyable(r.token)}</div>
           <div class="mute small mt">${esc(window.t('Mande no header Authorization: Bearer <token> (ou X-Hangar-Token, ou ?token= na URL).'))}</div></div>`;
       }));
+    const lg = $('.pl-logs', card);
+    if (lg) lg.onclick = ev => act(ev.target, () => api(`/plugins/${name}/install/logs${team ? `?team=${encodeURIComponent(team)}` : ''}`)
+      .then(r => { const out = $('.pl-logs-out', card); out.hidden = false; out.textContent = r.logs || '(vazio)'; }));
     const tst = $('.pl-test', card);
     if (tst) tst.onclick = ev => act(ev.target, () => api(`/plugins/${name}/install/test`, { method: 'POST', body: { team } })
       .then(r => { toast(r.ok ? window.t('Conexão ok') : `${window.t('Falhou')}: ${r.sample}`, !r.ok); return route(); }));

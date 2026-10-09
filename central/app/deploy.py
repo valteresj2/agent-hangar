@@ -195,6 +195,61 @@ def cleanup_job_containers(keep: set[str] | frozenset = frozenset(), min_age_s: 
         pass
 
 
+# ------------------------------------------------------------------ plugins com código (um container por instalação)
+def plugin_name(plugin: str, install_id: int) -> str:
+    return f"plugin-{plugin}-{install_id}"[:63]
+
+
+def plugin_url(name: str, port: int, path: str) -> str:
+    return f"http://{name}:{port}{path}"
+
+
+def run_plugin(name: str, image: str, environment: dict, mem_limit: str, cpus: float, command: list[str] | None = None,
+               labels: dict | None = None, port: int = 8000):
+    """Servidor MCP de um plugin: rede própria (PLUGINS_NETWORK), sem capabilities, só leitura, com limites. A central
+    não baixa imagens (o proxy do Docker não libera): a imagem precisa existir no host."""
+    c = client()
+    try:
+        c.containers.get(name).remove(force=True)
+    except docker.errors.NotFound:
+        pass
+    try:
+        return c.containers.run(
+            image, command=command, name=name, detach=True, environment=environment, network=config.PLUGINS_NETWORK,
+            hostname=name, labels={"central.plugin": name, **(labels or {})},
+            mem_limit=mem_limit, nano_cpus=int(cpus * 1e9), pids_limit=128, read_only=True, tmpfs={"/tmp": "size=64m"},
+            cap_drop=["ALL"], security_opt=["no-new-privileges"], restart_policy={"Name": "unless-stopped"})
+    except docker.errors.APIError as e:
+        err = _explain(e, image)
+        if isinstance(err, ImageMissing):
+            err = ImageMissing(f"imagem '{image}' não está no host: um admin baixa com `docker pull {image}` "
+                               "(a central não baixa imagens)")
+        raise err from e
+
+
+def plugin_state(name: str) -> str:
+    try:
+        return client().containers.get(name).status
+    except docker.errors.NotFound:
+        return "missing"
+    except Exception:
+        return "unknown"
+
+
+def plugin_logs(name: str, tail=100) -> str:
+    try:
+        return client().containers.get(name).logs(tail=tail).decode(errors="replace")
+    except Exception as e:
+        return f"(sem logs: {e})"
+
+
+def stop_plugin(name: str):
+    try:
+        client().containers.get(name).remove(force=True)
+    except docker.errors.NotFound:
+        pass
+
+
 # ---------------------------------------------------------------- backend
 # RUNTIME_BACKEND=kubernetes troca a implementação inteira (mesmo contrato): agentes viram Deployment + Service,
 # jobs e avaliações viram Jobs do Kubernetes. Ver deploy_k8s.py.
@@ -215,3 +270,9 @@ if config.RUNTIME_BACKEND == "kubernetes":
     job_logs = _k8s.job_logs
     remove_job_container = _k8s.remove_job_container
     cleanup_job_containers = _k8s.cleanup_job_containers
+    plugin_name = _k8s.plugin_name
+    plugin_url = _k8s.plugin_url
+    run_plugin = _k8s.run_plugin
+    plugin_state = _k8s.plugin_state
+    plugin_logs = _k8s.plugin_logs
+    stop_plugin = _k8s.stop_plugin

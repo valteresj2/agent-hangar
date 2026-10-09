@@ -122,6 +122,12 @@ def test(name: str, body: TeamBody, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.plugins.test_install(db, acc(request, db), name, body.team))
 
 
+@router.get("/api/plugins/{name}/install/logs")
+def server_logs(name: str, request: Request, team: str | None = None, db=Depends(db_dep)):
+    """Plugin com código: as últimas linhas do container da instalação (segredos mascarados)."""
+    return guard(lambda: svc.plugins.server_logs(db, acc(request, db), name, team))
+
+
 @router.post("/api/plugins/{name}/install/hook-token")
 def hook_token(name: str, body: TeamBody, request: Request, db=Depends(db_dep)):
     """Gera (ou troca) o token dos webhooks dos gatilhos: aparece uma vez só."""

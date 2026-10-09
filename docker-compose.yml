@@ -116,6 +116,8 @@ services:
       SCHEDULE_MIN_INTERVAL_MIN: ${SCHEDULE_MIN_INTERVAL_MIN:-5}
       SCHEDULE_ALLOW_PRIVATE_WEBHOOKS: ${SCHEDULE_ALLOW_PRIVATE_WEBHOOKS:-0}
       # decisões por e-mail e resumo diário (opcional; Slack e Teams se configuram no portal) — ver docs/digital-employee.md
+      PLUGIN_ALLOW_PRIVATE: ${PLUGIN_ALLOW_PRIVATE:-0}
+      PLUGIN_ALLOW_UNPINNED: ${PLUGIN_ALLOW_UNPINNED:-0}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -159,7 +161,7 @@ services:
       - "${CENTRAL_PORT:-8090}:8080"
     # agents_net: containers dos agentes (chat) e Postgres. jobs_net: callback dos containers de job, que
     # NÃO estão em agents_net. docker_api: só a central alcança o proxy do Docker.
-    networks: [agents_net, jobs_net, docker_api, db_net, memory_net]
+    networks: [agents_net, jobs_net, plugins_net, docker_api, db_net, memory_net]
     restart: unless-stopped
 
   # MCP server de análise de dados e entregáveis (Python/DuckDB/PPTX/dashboards) — opcional:
@@ -463,6 +465,8 @@ networks:
     name: hangar_agents
   jobs_net:
     name: hangar_jobs
+  plugins_net:
+    name: hangar_plugins       # plugins com código: saída para a internet, sem agentes, banco, memória nem a API do Docker
   docker_api:
     internal: true
   db_net:

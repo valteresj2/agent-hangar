@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Plugins with code (P2b).** With `runtime: server`, a plugin is an MCP server in an isolated container, one per
+  install.
+  - **Image:** pinned by digest (`PLUGIN_ALLOW_UNPINNED=1` only for development).
+  - **Configuration:** settings and the credential become that container's environment.
+  - **Tools:** the central is the container's MCP client. Only the tools declared in the manifest reach agents, with
+    their action types; others stay hidden.
+  - **Lifecycle:** the container follows the install. It starts on install or save, stops on pause, uninstall or turning
+    the plugin off, restarts when a new version is approved, and comes back up if it is down when an agent calls.
+  - **Isolation:**
+    - Docker: the `hangar_plugins` network, read-only filesystem, no capabilities, `no-new-privileges`, and memory, CPU
+      and process limits.
+    - Kubernetes: Deployment, Service and Secret, plus a `role=plugin` NetworkPolicy (only the central gets in; private
+      ranges blocked on the way out).
+  - **Logs:** the container's logs, with secrets masked.
 - **Plugins (P2a): OAuth2 accounts.** `auth: {type: oauth2, authorize_url, token_url, scopes}`.
   - The install takes the company app's client ID and secret.
   - *Connect account* runs the authorization code flow with PKCE.

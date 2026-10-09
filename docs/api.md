@@ -193,6 +193,7 @@ See [plugins.md](plugins.md).
 | POST | `/api/plugins/{name}/install/test` | `{team}`: calls the manifest's `test` tool |
 | POST | `/api/plugins/{name}/install/connect` | `{team}`: OAuth2. Returns `authorize_url` for the browser and sets the signed state cookie |
 | GET | `/api/plugins/oauth/callback` | Provider redirect: exchanges the code (PKCE), stores the tokens, returns to the plugin page |
+| GET | `/api/plugins/{name}/install/logs` | `?team=`: last lines of the install's container (plugins with code), secrets masked |
 | POST | `/api/plugins/{name}/install/hook-token` | `{team}`: new token for unsigned triggers (shown once) |
 | POST | `/hooks/plugins/{install}/{trigger}` | A system event: HMAC signature (manifest) or the install token. Creates the linked employee's task, deduplicated |
 

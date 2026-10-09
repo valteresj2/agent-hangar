@@ -314,5 +314,74 @@ def cleanup_job_containers(keep: set[str] | frozenset = frozenset(), min_age_s: 
         pass
 
 
+# ---------------------------------------------------------------- plugins com código (Deployment + Service + Secret)
+def plugin_name(plugin: str, install_id: int) -> str:
+    return dns_name(f"plugin-{plugin}-{install_id}")
+
+
+def plugin_url(name: str, port: int, path: str) -> str:
+    return f"http://{dns_name(name)}:{port}{path}"
+
+
+def run_plugin(name: str, image: str, environment: dict, mem_limit: str, cpus: float, command: list[str] | None = None,
+               labels: dict | None = None, port: int = 8000):
+    """Rótulo hangar.dev/role=plugin: a NetworkPolicy do chart só deixa a central chegar nele e corta a saída para as
+    redes privadas (banco, agentes, memória)."""
+    core, apps, _ = apis()
+    ns, name = namespace(), dns_name(name)
+    lbls = {f"{LBL}/role": "plugin", f"{LBL}/name": name}
+    _upsert_secret(name, environment, lbls)
+    pod = {"metadata": {"labels": lbls},
+           "spec": {"automountServiceAccountToken": False, "enableServiceLinks": False, "imagePullSecrets": _pull_secrets(),
+                    "containers": [{"name": "plugin", "image": image, "imagePullPolicy": config.K8S_PULL_POLICY,
+                                    **({"command": command} if command else {}),
+                                    "ports": [{"containerPort": port, "name": "mcp"}],
+                                    "envFrom": [{"secretRef": {"name": name}}],
+                                    "resources": _resources(mem_limit, cpus), "securityContext": SECURITY,
+                                    "volumeMounts": [{"name": "tmp", "mountPath": "/tmp"}]}],
+                    "volumes": [{"name": "tmp", "emptyDir": {"medium": "Memory", "sizeLimit": "64Mi"}}]}}
+    dep = {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": name, "labels": lbls},
+           "spec": {"replicas": 1, "strategy": {"type": "Recreate"}, "selector": {"matchLabels": {f"{LBL}/name": name}},
+                    "template": pod}}
+    try:
+        apps.create_namespaced_deployment(ns, dep)
+    except Exception as e:
+        if getattr(e, "status", None) != 409:
+            raise
+        apps.replace_namespaced_deployment(name, ns, dep)
+    svc = {"apiVersion": "v1", "kind": "Service", "metadata": {"name": name, "labels": lbls},
+           "spec": {"selector": {f"{LBL}/name": name}, "ports": [{"port": port, "targetPort": port, "name": "mcp"}]}}
+    try:
+        core.create_namespaced_service(ns, svc)
+    except Exception as e:
+        if getattr(e, "status", None) != 409:
+            raise
+
+
+def plugin_state(name: str) -> str:
+    try:
+        _, apps, _ = apis()
+        apps.read_namespaced_deployment(dns_name(name), namespace())
+    except Exception as e:
+        return "missing" if _gone(e) else "unknown"
+    return "exited" if _waiting_reason(_pods(f"{LBL}/name={dns_name(name)}")) else "running"
+
+
+def plugin_logs(name: str, tail=100) -> str:
+    return _logs(f"{LBL}/name={dns_name(name)}", tail)
+
+
+def stop_plugin(name: str):
+    core, apps, _ = apis()
+    ns, name = namespace(), dns_name(name)
+    for fn in (lambda: apps.delete_namespaced_deployment(name, ns), lambda: core.delete_namespaced_service(name, ns),
+               lambda: core.delete_namespaced_secret(name, ns)):
+        try:
+            fn()
+        except Exception as e:
+            if not _gone(e):
+                raise
+
+
 def client():  # o driver Docker expõe o cliente; aqui não existe
     raise RuntimeError("RUNTIME_BACKEND=kubernetes: não há cliente Docker")

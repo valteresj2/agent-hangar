@@ -88,6 +88,12 @@ DECISION_EXPIRES_MIN = int(_env("DECISION_EXPIRES_MIN", "240"))
 # a rede da própria plataforma (banco, central, proxy do Docker)
 PLUGIN_ALLOW_PRIVATE = _env("PLUGIN_ALLOW_PRIVATE", "0") == "1"
 PLUGIN_TIMEOUT_S = int(_env("PLUGIN_TIMEOUT_S", "30"))
+# plugins com código (runtime: server): um container por instalação, numa rede só de plugins (sem agentes, banco,
+# memória nem a API do Docker). Imagem fixada por digest (@sha256:…); PLUGIN_ALLOW_UNPINNED=1 só para desenvolvimento.
+PLUGINS_NETWORK = _env("PLUGINS_NETWORK", "hangar_plugins")
+PLUGIN_MEM_LIMIT = _env("PLUGIN_MEM_LIMIT", "256m")
+PLUGIN_CPUS = float(_env("PLUGIN_CPUS", "0.5"))
+PLUGIN_ALLOW_UNPINNED = _env("PLUGIN_ALLOW_UNPINNED", "0") == "1"
 INBOX_POLL_S = int(_env("INBOX_POLL_S", "60"))  # de quanto em quanto tempo a caixa de e-mail de um funcionário é lida
 DECISION_LINK_TTL_H = int(_env("DECISION_LINK_TTL_H", "48"))  # validade do link assinado de decisão (Teams/e-mail)
 # e-mail das decisões e do resumo diário (opcional): sem SMTP_HOST, o canal e-mail fica desligado
