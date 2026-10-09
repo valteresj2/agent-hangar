@@ -1004,7 +1004,7 @@ boot();
 // auto-refresh só em páginas de leitura (nunca em formulários, editor de spec ou playground)
 const NO_REFRESH = ['new', 'playground', 'spec', 'access', 'schedules', 'memory'];
 // Digital employees: formulários (entregar tarefa, alçada, configurações, catálogo e piso) não recarregam sozinhos
-const EMP_NO_REFRESH = p => (p[1] === 'employees' && p[2] && !['tasks', 'decisions', 'probation', 'reports'].includes(p[3])) || (p[1] === 'workforce' && ['catalog', 'floor'].includes(p[2]));
+const EMP_NO_REFRESH = p => (p[1] === 'employees' && p[2] && !['tasks', 'decisions', 'probation', 'reports'].includes(p[3])) || (p[1] === 'workforce' && ['catalog', 'floor', 'notify'].includes(p[2]));
 setInterval(() => {
   const parts = location.hash.split('/');
   if (!ME || document.hidden || ['keys', 'templates', 'catalog', 'providers', 'connect', 'teams', 'users', 'sso', 'login', 'oauth', 'vscode', 'decisions'].includes(parts[1])) return;

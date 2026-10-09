@@ -209,6 +209,8 @@ class Organization(Base):
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")  # padrão dos agendamentos
     # any: qualquer conexão recebe código (modo agente de código); approved: só as conexões com allow_code
     code_policy: Mapped[str] = mapped_column(String(10), default="any")
+    # decisões fora do portal: credenciais do app do Slack (criptografadas), hora do resumo diário, alertas de prazo
+    notify: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
@@ -244,6 +246,8 @@ class User(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # onde a pessoa recebe decisões: {channel: auto|slack|teams|email|off, teams_webhook (cripto), digest, last_digest}
+    notify: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class TeamMember(Base):
@@ -573,6 +577,7 @@ class EmployeeTask(Base):
     probation: Mapped[bool] = mapped_column(Boolean, default=False)
     priority: Mapped[int] = mapped_column(Integer, default=2)  # 1 alta, 2 normal, 3 baixa
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    due_state: Mapped[str] = mapped_column(String(12), default="")  # "" | soon | overdue | escalated
     status: Mapped[str] = mapped_column(String(20), default="new", index=True)
     result: Mapped[str] = mapped_column(Text, default="")
     error: Mapped[str] = mapped_column(Text, default="")
@@ -639,6 +644,8 @@ class HumanRequest(Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     grant_hash: Mapped[str] = mapped_column(String(64), default="")  # a ação exata liberada (uma vez)
     grant_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    reminded: Mapped[bool] = mapped_column(Boolean, default=False)  # alerta de "vai expirar" já enviado
+    chat_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)  # mensagens no Slack: [{channel, ts}]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 

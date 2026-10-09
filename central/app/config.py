@@ -84,6 +84,14 @@ GUIDE_AUTOGEN = _env("GUIDE_AUTOGEN", "1") == "1"
 EMPLOYEE_WORKERS = int(_env("EMPLOYEE_WORKERS", "3"))
 EMPLOYEE_MAX_RUNS = int(_env("EMPLOYEE_MAX_RUNS", "12"))
 DECISION_EXPIRES_MIN = int(_env("DECISION_EXPIRES_MIN", "240"))
+DECISION_LINK_TTL_H = int(_env("DECISION_LINK_TTL_H", "48"))  # validade do link assinado de decisão (Teams/e-mail)
+# e-mail das decisões e do resumo diário (opcional): sem SMTP_HOST, o canal e-mail fica desligado
+SMTP_HOST = _env("SMTP_HOST")
+SMTP_PORT = int(_env("SMTP_PORT") or "587")
+SMTP_USER = _env("SMTP_USER")
+SMTP_PASSWORD = _env("SMTP_PASSWORD")
+SMTP_FROM = _env("SMTP_FROM") or SMTP_USER or "hangar@localhost"  # vazio no compose = o padrão
+SMTP_SECURITY = (_env("SMTP_SECURITY") or "starttls").lower()  # starttls | ssl | none
 EMPLOYEE_RETRY_BASE_S = int(_env("EMPLOYEE_RETRY_BASE_S", "30"))  # espera entre tentativas: 30 s, 60 s, 120 s… (até 10 min)
 EMPLOYEE_DEDUPE_DAYS = int(_env("EMPLOYEE_DEDUPE_DAYS", "7"))  # janela de deduplicação do webhook de entrada
 LEARN_MIN_APPROVALS = int(_env("LEARN_MIN_APPROVALS", "8"))  # aprovações sem edição para sugerir afrouxar a alçada

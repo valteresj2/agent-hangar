@@ -5,6 +5,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Decisions outside the portal (F3).** The person who has a request gets it where they work. Every channel is
+  optional.
+  - **Slack:** a direct message from the company app, with Approve / Edit / Reject (or Answer) in the message. Edit and
+    Reject open a form in Slack. Clicks are verified with the Slack signature and decided as the hangar user with that
+    e-mail, under the same rules as the portal. The message then shows the outcome, whatever channel decided it.
+  - **Microsoft Teams** (a personal Workflows webhook) and **e-mail** (`SMTP_*`): the same buttons as signed links, for
+    one request and one person. The links expire (`DECISION_LINK_TTL_H`), and opening one never decides: only the
+    confirmation does.
+  - Each person picks a channel on the *Decisions* page; admins set up Slack in *Digital employees → Decision
+    channels*.
+- **Daily digest** of pending decisions, notices and overdue tasks, per person, at the hour the admin sets.
+- **Warning before a decision expires**, sent to the person who has it.
+- **Task deadlines with consequences:**
+  - Due soon: the priority goes up and the manager is told.
+  - Overdue: the manager and the requester are told.
+  - Still overdue after a set time: the task escalates to the backups and team maintainers.
+  - The overdue count shows on the employee's card and in the reports.
+  - "% on time" counts open tasks past their deadline and is now a career criterion and warning sign.
+- Migration `0017_decision_channels`.
+
 ## [0.19.0] — 2026-10-08
 
 ### Added

@@ -158,6 +158,14 @@ an admin.
 | GET / PUT | `/api/admin/action-catalog` | Classification of each tool (`{tool_ref, action_type, risk, reversible}`) |
 | GET / PUT | `/api/admin/authority-floor` | Company floor (`{items: [{action_type, min_mode, separation}]}`) |
 
+| GET / PUT | `/api/admin/notifications` | Admin: Slack app (`slack_bot_token`, `slack_signing_secret`, stored encrypted and never returned), `digest_hour` (-1 = off), `expiry_warn_min`, `due_soon_min`, `overdue_escalate_min`; also shows the e-mail status, the interactivity URL and the Slack manifest |
+| GET / PUT | `/api/me/notifications` | Where the caller gets decisions: `{channel: auto\|slack\|teams\|email\|off, teams_webhook, digest}`; returns `available` and the effective `route` |
+| POST | `/api/me/notifications/test` | Sends a test message through the effective channel |
+| POST | `/hooks/slack/interactions` | Slack buttons and forms. No session: authenticated by the Slack signature |
+| GET / POST | `/hooks/decide/{token}` | Signed decision link (Teams, e-mail). GET shows the action; only POST (`decision`, `reason`, `edit`) decides |
+
+Tasks have `due_state` (`""`, `soon`, `overdue`, `escalated`). Employees have `overdue_tasks`.
+
 `GET /api/me` also returns `decisions`: how many decisions wait for you (notices excluded).
 
 **Inbound webhook** (outside `/api`, no session): `POST /hooks/employees/{slug}` with `Authorization: Bearer <token>`

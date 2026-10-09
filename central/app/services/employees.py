@@ -278,7 +278,8 @@ def task_dict(db: Session, t: EmployeeTask, detail: bool = False) -> dict:
     d = {"id": t.id, "title": t.title, "body": t.body, "source": t.source, "requester": t.requester, "status": t.status,
          "priority": t.priority, "probation": t.probation, "expected": t.expected, "result": t.result, "error": t.error,
          "cost_usd": round(t.cost_usd, 4), "tokens": t.tokens, "runs": t.runs, "attempts": t.attempts,
-         "due_at": iso(tasksmod._aware(t.due_at)) if t.due_at else None, "created_at": iso(tasksmod._aware(t.created_at)),
+         "due_at": iso(tasksmod._aware(t.due_at)) if t.due_at else None, "due_state": t.due_state or "",
+         "created_at": iso(tasksmod._aware(t.created_at)),
          "finished_at": iso(tasksmod._aware(t.finished_at)) if t.finished_at else None}
     if detail:
         from ..models import TaskEvent
@@ -296,6 +297,9 @@ def employee_dict(db: Session, e: Employee, acc: Access | None = None, detail: b
                              .group_by(EmployeeTask.status)).all())
     open_req = db.scalar(select(func.count()).select_from(HumanRequest).where(
         HumanRequest.employee_id == e.id, HumanRequest.status == "open", HumanRequest.kind.not_in(tasksmod.QUIET))) or 0
+    overdue = db.scalar(select(func.count()).select_from(EmployeeTask).where(
+        EmployeeTask.employee_id == e.id, EmployeeTask.status.not_in(tasksmod.TERMINAL),
+        EmployeeTask.due_state.in_(("overdue", "escalated")))) or 0
     since = now() - timedelta(days=30)
     cost = db.scalar(select(func.coalesce(func.sum(EmployeeTask.cost_usd), 0.0)).where(
         EmployeeTask.employee_id == e.id, EmployeeTask.created_at >= since)) or 0.0
@@ -303,7 +307,7 @@ def employee_dict(db: Session, e: Employee, acc: Access | None = None, detail: b
     d = {"slug": a.slug, "name": a.name, "title": e.title, "mission": e.mission, "status": e.status,
          "autonomy_level": e.autonomy_level, "team": a.team_id, "manager": names.get(e.manager_user_id),
          "owner": names.get(e.owner_user_id), "backups": [names.get(b) for b in e.backup_user_ids or []],
-         "tasks": counts, "open_decisions": open_req, "cost_30d": round(float(cost), 4),
+         "tasks": counts, "open_decisions": open_req, "overdue_tasks": overdue, "cost_30d": round(float(cost), 4),
          "hired_at": iso(tasksmod._aware(e.hired_at)) if e.hired_at else None, "shadow": bool(e.shadow),
          "created_at": iso(tasksmod._aware(e.created_at)),
          "can_manage": bool(acc and (acc.can("manage", a) or (uid and uid in (e.owner_user_id, e.manager_user_id))))}
@@ -589,6 +593,9 @@ def make_report(db: Session, e: Employee, period: str = "daily") -> EmployeeRepo
         HumanRequest.employee_id == e.id, HumanRequest.status == "open", HumanRequest.kind.not_in(tasksmod.QUIET))) or 0
     stuck = [t.title for t in db.scalars(select(EmployeeTask).where(EmployeeTask.employee_id == e.id,
                                                                      EmployeeTask.status == "waiting_human").limit(5))]
+    late = [t.title for t in db.scalars(select(EmployeeTask).where(
+        EmployeeTask.employee_id == e.id, EmployeeTask.status.not_in(tasksmod.TERMINAL),
+        EmployeeTask.due_state.in_(("overdue", "escalated"))).limit(5))]
     en = tasksmod.lang_of(e) == "en"
     if en:
         summary = (f"*{a.name}* ({e.title}) — {'today' if period == 'daily' else 'this week'}: {m['done']} done, "
@@ -598,6 +605,8 @@ def make_report(db: Session, e: Employee, period: str = "daily") -> EmployeeRepo
         summary = (f"*{a.name}* ({e.title}) — {'hoje' if period == 'daily' else 'semana'}: {m['done']} concluída(s), "
                    f"{m['failed']} com falha, {m['waiting']} aguardando decisão; {open_req} decisão(ões) aberta(s); "
                    f"custo US$ {m['cost_usd']:.4f}." + (f"\nAguardando você: {'; '.join(stuck)}" if stuck else ""))
+    if late:
+        summary += (f"\nOverdue: {'; '.join(late)}" if en else f"\nAtrasadas: {'; '.join(late)}")
     kpis = workmod.kpi_status(db, e)
     if kpis and period == "weekly":
         lines = []

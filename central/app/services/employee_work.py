@@ -255,17 +255,30 @@ def validate_kpis(kpis: list) -> list[dict]:
     return out
 
 
+def on_time_counts(db: Session, e: Employee, since) -> tuple[int, int]:
+    """(no prazo, com prazo já decidido): concluídas com prazo, mais as que venceram sem terminar (contam contra)."""
+    rows = db.scalars(select(EmployeeTask).where(EmployeeTask.employee_id == e.id, EmployeeTask.created_at >= since,
+                                                 EmployeeTask.due_at.is_not(None), EmployeeTask.status != "cancelled"))
+    t, on_time, timed = now(), 0, 0
+    for x in rows:
+        due = tasksmod._aware(x.due_at)
+        if x.status == "done" and x.finished_at:
+            timed += 1
+            on_time += tasksmod._aware(x.finished_at) <= due
+        elif due <= t:
+            timed += 1
+    return on_time, timed
+
+
 def kpi_actuals(db: Session, e: Employee, days: int = 30) -> dict:
     from .employees import metrics
     m = metrics(db, e, days)
     since = now() - timedelta(days=days)
     finished = m["done"] + m["failed"]
-    timed = list(db.scalars(select(EmployeeTask).where(EmployeeTask.employee_id == e.id, EmployeeTask.created_at >= since,
-                                                       EmployeeTask.status == "done", EmployeeTask.due_at.is_not(None))))
-    on_time = sum(1 for t in timed if t.finished_at and tasksmod._aware(t.finished_at) <= tasksmod._aware(t.due_at))
+    on_time, timed = on_time_counts(db, e, since)
     decided = m["approved"] + m["rejected"]
     return {"tasks_done": m["done"], "done_rate": round(100 * m["done"] / finished, 1) if finished else None,
-            "on_time_rate": round(100 * on_time / len(timed), 1) if timed else None,
+            "on_time_rate": round(100 * on_time / timed, 1) if timed else None,
             "approved_unedited_rate": round(100 * m["approved_unedited"] / decided, 1) if decided else None,
             "avg_decision_min": m["avg_decision_min"], "cost_per_task": m["cost_per_task"] or None,
             "expired_decisions": m["expired"]}
@@ -601,11 +614,12 @@ def set_shadow(db: Session, acc: Access, slug: str, on: bool, reason: str = "") 
 LEVEL_ORDER = ("intern", "junior", "pleno", "senior")
 # critérios para subir de nível, nos últimos 30 dias (a plataforma mede e sugere; o gestor decide)
 CAREER = {
-    "intern": {"next": "junior", "tasks": 15, "approvals": 10, "unedited": 90, "max_fail": 10},
-    "junior": {"next": "pleno", "tasks": 30, "approvals": 20, "unedited": 95, "max_fail": 8},
-    "pleno": {"next": "senior", "tasks": 60, "approvals": 40, "unedited": 97, "max_fail": 5},
+    "intern": {"next": "junior", "tasks": 15, "approvals": 10, "unedited": 90, "max_fail": 10, "on_time": 80},
+    "junior": {"next": "pleno", "tasks": 30, "approvals": 20, "unedited": 95, "max_fail": 8, "on_time": 90},
+    "pleno": {"next": "senior", "tasks": 60, "approvals": 40, "unedited": 97, "max_fail": 5, "on_time": 95},
 }
-DEMOTE = {"max_fail": 25, "min_finished": 8, "rejects_14d": 3, "shadow_disagree": 30, "shadow_min": 10}
+ON_TIME_MIN = 5  # tarefas com prazo (30 dias) para o "% no prazo" contar na carreira
+DEMOTE = {"max_fail": 25, "min_finished": 8, "rejects_14d": 3, "shadow_disagree": 30, "shadow_min": 10, "on_time": 60}
 LEAVE_SHADOW = {"reviewed": 20, "agree": 90}
 
 
@@ -618,6 +632,8 @@ def career_status(db: Session, e: Employee) -> dict:
     unedited = round(100 * m30["approved_unedited"] / decided, 1) if decided else None
     sh = shadow_stats(db, e)
     off_target = [k["name"] for k in kpi_status(db, e) if k["ok"] is False]
+    on_time, timed = on_time_counts(db, e, now() - timedelta(days=30))
+    on_time_rate = round(100 * on_time / timed, 1) if timed else None
     rule = CAREER.get(e.autonomy_level)
     criteria = []
     if rule:
@@ -634,6 +650,9 @@ def career_status(db: Session, e: Employee) -> dict:
             {"key": "clean", "label": "recusas e expiradas (14 dias)", "value": clean, "target": 0, "ok": clean == 0},
             {"key": "kpis", "label": "metas fora do alvo", "value": len(off_target), "target": 0, "ok": not off_target},
         ]
+        if timed >= ON_TIME_MIN:  # só conta com tarefas com prazo suficientes
+            criteria.append({"key": "on_time", "label": "% no prazo", "value": on_time_rate,
+                             "target": rule.get("on_time", 80), "ok": on_time_rate >= rule.get("on_time", 80)})
         if sh["reviewed"] >= 10:  # só conta quando houve revisão suficiente no modo sombra
             criteria.append({"key": "shadow", "label": "% de concordância no modo sombra", "value": sh["agree_rate"],
                              "target": LEAVE_SHADOW["agree"], "ok": sh["agree_rate"] >= LEAVE_SHADOW["agree"]})
@@ -641,6 +660,8 @@ def career_status(db: Session, e: Employee) -> dict:
     if e.autonomy_level != "intern":
         if finished >= DEMOTE["min_finished"] and fail >= DEMOTE["max_fail"]:
             signals.append(f"{fail}% das tarefas falharam em 30 dias")
+        if timed >= DEMOTE["min_finished"] and on_time_rate < DEMOTE["on_time"]:
+            signals.append(f"só {on_time_rate}% das tarefas com prazo saíram no prazo em 30 dias")
         if m14["rejected"] >= DEMOTE["rejects_14d"]:
             signals.append(f"{m14['rejected']} ações recusadas em 14 dias")
         if sh["reviewed"] >= DEMOTE["shadow_min"] and sh["agree_rate"] is not None and \

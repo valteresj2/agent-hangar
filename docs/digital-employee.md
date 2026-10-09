@@ -175,11 +175,13 @@ them, like any other suggestion (*Authority* tab, or `employee_suggestions` / `a
 | Rejected or expired actions (14 days) | 0 | 0 | 0 |
 | Goals off target | 0 | 0 | 0 |
 | Agreement in shadow mode (when ≥ 10 reviewed) | ≥ 90 % | ≥ 90 % | ≥ 90 % |
+| On time (when ≥ 5 tasks have a deadline) | ≥ 80 % | ≥ 90 % | ≥ 95 % |
 
 **Step back.** Any of these signs suggests going down one level, or using shadow mode:
 - 25 % or more of tasks failed (with at least 8 finished);
 - 3 or more rejected actions in 14 days;
-- the manager disagreed with 30 % or more of the shadow actions (with at least 10 reviewed).
+- the manager disagreed with 30 % or more of the shadow actions (with at least 10 reviewed);
+- less than 60 % of the tasks with a deadline were on time (with at least 8 of them).
 
 **Leave shadow mode.** Suggested after at least 20 reviewed simulated actions with 90 % agreement or more.
 
@@ -242,7 +244,62 @@ is created with:
 Decisions appear:
 - in the portal (**Decisions**, with a badge, batch approve and batch acknowledge, plus a card on the home page);
 - over MCP (`my_pending_decisions`, `decide`);
-- as a notice on the report webhook, when one is set.
+- in Slack, Microsoft Teams or e-mail, for the person who has the request (see
+  [Decisions outside the portal](#decisions-outside-the-portal));
+- as a notice on the report webhook, when one is set (a team channel: it only links to the portal).
+
+## Decisions outside the portal
+
+The person who has a request gets it where they work, with the buttons in the message. **Every channel is optional:**
+each company turns on the one it uses (or none, keeping the portal and MCP).
+
+| Channel | Who turns it on | How the decision is made |
+|---|---|---|
+| **Slack** | An admin installs the company app (*Digital employees → Decision channels*) | Direct message with **Approve**, **Edit**, **Reject** (or **Answer**). Edit and Reject open a form in Slack. |
+| **Microsoft Teams** | Each person adds a personal Workflows webhook (*Decisions* page) | Card in their chat; the buttons open a signed link |
+| **E-mail** | The installation sets `SMTP_HOST` (and the other `SMTP_*` variables) | The same buttons, as signed links |
+
+- **Same rules as the portal.** A Slack click is signed by Slack and acts as the hangar user with that Slack e-mail.
+  Who can decide, two approvals, separation of duties and the audit log all work as in the portal. The audit log also
+  records the channel (`employee.decision.channel`).
+- **The signed link** (Teams and e-mail) is for one request and one person. It expires after `DECISION_LINK_TTL_H`
+  hours. Opening it only shows the action: it decides only when the person confirms (a POST). An e-mail scanner that
+  opens links therefore approves nothing.
+- **Each person chooses** on the *Decisions* page: automatic (Slack, then Teams, then e-mail, whichever exists),
+  a specific channel, or only the portal. A message sent to a person can carry signed buttons; a message posted in a
+  channel never does, because anyone there could click them.
+- **After the decision**, from any channel, the Slack message shows the outcome and loses its buttons.
+- **Before it expires:** the person who has a blocking request gets a warning. By default it comes 60 minutes before
+  the expiry, never earlier than half of the time to decide.
+- **Daily digest:** once a day, at the hour set by the admin (company time zone), each person gets one message. It
+  lists the decisions waiting for them (with expiry times), the notices to read and the overdue tasks of the employees
+  they manage. Each person can turn it off.
+
+### Setting up Slack
+
+1. In [api.slack.com/apps](https://api.slack.com/apps?new_app=1), create the app *From a manifest*. The portal shows
+   the manifest, with the scopes `chat:write`, `im:write`, `users:read` and `users:read.email`, and the interactivity
+   URL.
+2. Install it in the workspace.
+3. Paste the bot token (`xoxb-…`) and the signing secret in *Digital employees → Decision channels*. Both are stored
+   encrypted.
+4. The interactivity URL is `PUBLIC_BASE_URL/hooks/slack/interactions`. It must be reachable from Slack.
+
+## Deadlines
+
+A task can have a deadline (`due_at`: portal, `assign_task`, routines or the inbound webhook). The platform watches it.
+
+| When | What happens |
+|---|---|
+| Due soon (60 min before, or the last quarter of the time when it is shorter) | Priority goes to high (it runs first) and the manager is told |
+| Overdue | The manager and the person who asked are told; the task shows **overdue** |
+| Still overdue after 120 min | The task is escalated to the backups and team maintainers; it is logged in the audit log |
+| Done after the deadline | A `late` event on the timeline |
+
+- The admin sets the three times in *Decision channels*. The digest lists the overdue tasks, and so do the daily
+  report and the employee's card.
+- **"% on time" counts:** an open task past its deadline counts as late, not only the tasks finished late. The rate is
+  a [goal](#goals) metric and a [career](#career-plan) criterion.
 
 ## Tasks
 
@@ -369,6 +426,8 @@ Only the manager (or an admin) changes the autonomy level and decides the admiss
 | `EMPLOYEE_WORKERS` | 3 | Tasks run in parallel per central replica |
 | `EMPLOYEE_MAX_RUNS` | 12 | Rounds per task before it fails |
 | `DECISION_EXPIRES_MIN` | 240 | Default time to decide before escalation and expiry |
+| `DECISION_LINK_TTL_H` | 48 | How long a signed decision link (Teams, e-mail) is valid |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_SECURITY` | —, 587, —, —, `SMTP_USER`, `starttls` | E-mail for decisions and the digest. Without `SMTP_HOST`, e-mail is off. `SMTP_SECURITY` is `starttls`, `ssl` or `none` |
 | `EMPLOYEE_RETRY_BASE_S` | 30 | First wait after a failed round; it doubles each attempt, up to 10 minutes |
 | `EMPLOYEE_DEDUPE_DAYS` | 7 | How long a webhook `dedupe_key` is remembered |
 | `LEARN_MIN_APPROVALS` | 8 | Approvals without edits before suggesting to loosen an action type |
@@ -391,6 +450,7 @@ Only the manager (or an admin) changes the autonomy level and decides the admiss
 
 - **F2 (done):** routines, the inbound webhook with deduplication, measured goals, weekly reports, learning from
   decisions and growing waits between retries.
-- **F3:** decisions inside the company's chat tool. **Slack or Microsoft Teams is optional:** each company turns on the
-  one that is core to it (or neither, keeping the portal and MCP). It will offer interactive approval buttons and
-  tasks assigned from a message.
+- **F3 (done):** decisions in Slack (buttons in the message), Microsoft Teams and e-mail (signed links), the daily
+  digest, the warning before a decision expires, and task deadlines (due soon, overdue, escalated, "% on time" in the
+  career).
+- **Next:** tasks assigned from a chat message.

@@ -385,6 +385,15 @@ def _call_text(r: HumanRequest, payload: dict) -> str:
 
 def decide(db: Session, acc: Access, request_id: int, decision: str, edit: dict | None = None,
            reason: str = "") -> dict:
+    out = _decide(db, acc, request_id, decision, edit, reason)
+    r = db.get(HumanRequest, request_id)
+    if r is not None and r.chat_refs:
+        from . import notify
+        notify.request_changed(r)  # a mensagem no Slack mostra o desfecho e perde os botões
+    return out
+
+
+def _decide(db: Session, acc: Access, request_id: int, decision: str, edit: dict | None, reason: str) -> dict:
     r = db.get(HumanRequest, request_id)
     if r is None:
         raise PlatformError(f"pedido #{request_id} não existe")
@@ -515,7 +524,7 @@ def sweep(db: Session) -> dict:
         task = db.get(EmployeeTask, r.task_id) if r.task_id else None
         if not r.escalated and r.fallback_user_id and r.fallback_user_id != r.assigned_user_id:
             span = (_aware(r.expires_at) - _aware(r.created_at)) if r.created_at else timedelta(minutes=config.DECISION_EXPIRES_MIN)
-            r.assigned_user_id, r.escalated = r.fallback_user_id, True
+            r.assigned_user_id, r.escalated, r.reminded = r.fallback_user_id, True, False
             r.expires_at = t + max(span, timedelta(minutes=5))
             if task:
                 event(db, task, "human_request", {"id": r.id, "escalated": True})
@@ -531,6 +540,9 @@ def sweep(db: Session) -> dict:
                               "que ficou pendente e por quê.")
         db.commit()
         audit(db, "prazo", "employee.decision.expired", _slug(db, e) if e else "", f"#{r.id}")
+        if r.chat_refs:
+            from . import notify
+            notify.request_changed(r)
         out["expired"] += 1
     for task in db.scalars(select(EmployeeTask).where(EmployeeTask.status == "in_progress")).all():
         e = db.get(Employee, task.employee_id)
@@ -554,6 +566,8 @@ def tick() -> list[int]:
     claimed = []
     with SessionLocal() as db:
         sweep(db)
+        from . import notify
+        notify.sweep(db)  # alerta antes de expirar, resumo diário e prazos de tarefa
         from .employee_work import fire_routines
         fire_routines(db)
         rows = db.execute(select(EmployeeTask.id, EmployeeTask.probation, Employee.status)
@@ -645,6 +659,8 @@ def run_task(task_id: int) -> EmployeeTask | None:
 
 def _finish(db: Session, task: EmployeeTask, status: str, result: str = "", error: str = "") -> EmployeeTask:
     task.status, task.finished_at = status, now()
+    if status == "done" and task.due_at and _aware(task.finished_at) > _aware(task.due_at):
+        event(db, task, "due", {"stage": "late", "due_at": iso(_aware(task.due_at))})
     if result:
         task.result = result[:20000]
     if error:
@@ -658,8 +674,13 @@ def _finish(db: Session, task: EmployeeTask, status: str, result: str = "", erro
 
 
 def _notify_request(db: Session, e: Employee, r: HumanRequest):
-    """Aviso no webhook de relatórios do Digital employee (Slack/Teams/HTTP), com o link para decidir no portal."""
-    if not e or not e.report_webhook:
+    """Aviso no webhook de relatórios do Digital employee (canal do time, com o link do portal) e, para quem está com
+    o pedido, a mensagem pessoal com os botões de decidir (services/notify)."""
+    if not e:
+        return
+    from . import notify
+    notify.request_opened(r, "escalated" if r.escalated else "new")
+    if not e.report_webhook:
         return
     from .schedules import HTTP as SHTTP
     from .schedules import check_webhook

@@ -115,6 +115,13 @@ services:
       SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-1}
       SCHEDULE_MIN_INTERVAL_MIN: ${SCHEDULE_MIN_INTERVAL_MIN:-5}
       SCHEDULE_ALLOW_PRIVATE_WEBHOOKS: ${SCHEDULE_ALLOW_PRIVATE_WEBHOOKS:-0}
+      # decisões por e-mail e resumo diário (opcional; Slack e Teams se configuram no portal) — ver docs/digital-employee.md
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
       # catálogo Docker MCP (profile mcp-gateway): a central escreve aqui o que o gateway deve rodar
       MCP_GATEWAY_CONFIG_DIR: /mcp-gateway
       MCP_GATEWAY_URL: ${MCP_GATEWAY_URL:-http://mcp-gateway:8811/mcp}

@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from . import auth, config, crypto, db, observability, shared
 from . import services as svc
 from .mcp_tools import mcp
-from .routers import access, admin, employees, gateway, internal, memory, oauth, remote_mcp, schedules, scim
+from .routers import access, admin, employees, gateway, internal, memory, notify, oauth, remote_mcp, schedules, scim
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 observability.setup_logging()
@@ -187,6 +187,8 @@ app.include_router(access.router)
 app.include_router(admin.router)
 app.include_router(employees.router)
 app.include_router(employees.hooks)
+app.include_router(notify.router)
+app.include_router(notify.hooks)  # Slack e link assinado: autenticados pela assinatura
 app.include_router(scim.router)
 app.include_router(schedules.router)
 app.include_router(remote_mcp.router)
