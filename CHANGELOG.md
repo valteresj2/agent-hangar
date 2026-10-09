@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-10-09
+
 ### Added
 - **Plugins P3: Creator mode through the MCP**, with stage tests and four eyes.
   - **Tools:** `plugin_from_openapi` (by URL or document), `plugin_draft`, `plugin_test`, `plugin_submit`,
