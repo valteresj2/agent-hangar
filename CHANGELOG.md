@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-10-09
+
 ### Added
 - **Plugins with code (P2b).** With `runtime: server`, a plugin is an MCP server in an isolated container, one per
   install.
