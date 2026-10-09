@@ -119,8 +119,12 @@ def attachments():
                 delta = json.loads(line[6:])["choices"][0]["delta"]
                 text += delta.get("content") or ""
     check("anexo gravado no workspace da conversa (via MCP)", "→ workspace: cidades.csv" in text, text)
-    usage = ok(c.get("/api/usage"))
-    mine = [u for u in usage if u.get("agent") == D and u["channel"] == "e2e"]
+    mine = []
+    for _ in range(20):  # o uso do streaming é gravado numa tarefa de fundo, depois que a resposta termina
+        mine = [u for u in ok(c.get("/api/usage")) if u.get("agent") == D and u["channel"] == "e2e"]
+        if mine and mine[0]["tokens"] > 0:
+            break
+        time.sleep(0.5)
     check("uso de resposta em streaming registrado com tokens", mine and mine[0]["tokens"] > 0, mine[:1])
 
 
