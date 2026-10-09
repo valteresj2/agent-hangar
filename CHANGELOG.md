@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-10-09
+
 ### Added
 - **Plugins (P1): connect any system with a declarative manifest** (`hangar-plugin.yaml`).
   - **What a manifest declares:** one `base_url`, the authentication (API key, Bearer or Basic), HTTP tools (method,
