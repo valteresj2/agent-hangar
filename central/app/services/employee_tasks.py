@@ -30,7 +30,7 @@ log = logging.getLogger("hangar.employees")
 WAIT_MARK = re.compile(r"^\[\[HANGAR_WAITING:(\d+)\]\]\s*", re.S)
 JOB_MARK = re.compile(r"\[job #(\d+)")  # resultado de um job de código (runtime: _a2a_call)
 TERMINAL = ("done", "failed", "cancelled", "expired")
-BLOCKING = ("approval", "question", "capability")  # pedidos que pausam a tarefa até alguém decidir
+BLOCKING = ("approval", "question", "capability", "plan")  # pedidos que pausam a tarefa até alguém decidir
 SHADOW_REAL = ("read", "delegate")  # no modo sombra estas rodam de verdade; o resto é simulado
 QUIET = ("notice", "shadow")  # registros que não esperam decisão na caixa de Decisões
 WORKER = f"{os.environ.get('REPLICA_ID') or os.environ.get('HOSTNAME') or 'central'}-{os.getpid()}"
@@ -78,7 +78,7 @@ def retry_at(attempts: int):
     return now() + timedelta(seconds=min(config.EMPLOYEE_RETRY_BASE_S * 2 ** max(attempts - 1, 0), 600))
 
 
-def task_prompt(task: EmployeeTask, lang: str = "pt", lessons: list | None = None) -> str:
+def task_prompt(task: EmployeeTask, lang: str = "pt", lessons: list | None = None, extra: list | None = None) -> str:
     en = lang == "en"
     parts = [f"{'TASK' if en else 'TAREFA'} #{task.id}: {task.title}"]
     if task.body:
@@ -93,6 +93,7 @@ def task_prompt(task: EmployeeTask, lang: str = "pt", lessons: list | None = Non
     if lessons:  # o que o gestor ensinou (aplicado a partir das sugestões de aprendizado)
         head = "Lessons from your manager (follow them):" if en else "Lições do seu gestor (siga-as):"
         parts.append(head + "\n" + "\n".join(f"- {x['text']}" for x in lessons if x.get("text")))
+    parts.extend(extra or [])  # plano, colegas para repasse e trabalhos anteriores parecidos (employee_teamwork)
     parts.append("When you finish, answer with the final result of the task. If information is missing, use ask_human. "
                  "If you lack a tool or specialist the task needs, use request_capability instead of improvising."
                  if en else "Quando terminar, responda com o resultado final da tarefa. Se faltar informação, use ask_human. "
@@ -103,7 +104,7 @@ def task_prompt(task: EmployeeTask, lang: str = "pt", lessons: list | None = Non
 def create_task(db: Session, e: Employee, title: str, body: str = "", source: str = "portal", requester: str = "",
                 requester_user_id: int | None = None, priority: int = 2, due_at=None, probation: bool = False,
                 expected: str = "", status: str = "new", dedupe_key: str = "",
-                routine_id: int | None = None) -> EmployeeTask:
+                routine_id: int | None = None, plan_approval: bool = False) -> EmployeeTask:
     if not (title or "").strip():
         raise PlatformError("a tarefa precisa de um título")
     if e.status == "offboarded":
@@ -111,14 +112,18 @@ def create_task(db: Session, e: Employee, title: str, body: str = "", source: st
     t = EmployeeTask(employee_id=e.id, title=title.strip()[:300], body=body or "", source=source, requester=requester,
                      requester_user_id=requester_user_id, priority=max(1, min(int(priority or 2), 3)), due_at=due_at,
                      probation=probation, expected=expected or "", status=status, dedupe_key=(dedupe_key or "")[:200],
-                     routine_id=routine_id)
+                     routine_id=routine_id, plan_approval=bool(plan_approval))
     db.add(t)
     db.flush()
+    from . import employee_teamwork as teamwork
+    past = [] if probation else teamwork.recall(db, e, t.title, t.body)
+    extra = [] if probation else teamwork.prompt_extras(db, e, t, past)
     event(db, t, "created", {"source": source, "requester": requester, "probation": probation,
                              **({"routine": routine_id} if routine_id else {}),
-                             **({"dedupe_key": t.dedupe_key} if t.dedupe_key else {})})
+                             **({"dedupe_key": t.dedupe_key} if t.dedupe_key else {}),
+                             **({"recalled": [p["id"] for p in past]} if past else {})})
     db.add(TaskCheckpoint(task_id=t.id, seq=1, messages=[{"role": "user", "content": task_prompt(
-        t, lang_of(e), None if probation else e.lessons)}]))
+        t, lang_of(e), None if probation else e.lessons, extra)}]))
     db.commit()
     return t
 
@@ -164,7 +169,28 @@ def can_decide(db: Session, acc: Access, r: HumanRequest, e: Employee) -> bool:
 # ------------------------------------------------------------------ gate (chamado pelo runtime do agente)
 def gate(db: Session, agent: Agent, task_id: int | None, tool: str, ref: str, args: dict, rationale: str = "",
          kind: str = "tool") -> dict:
-    """allow | wait (pedido de decisão aberto) | deny. kind='ask_human': o agente pergunta algo ao gestor."""
+    """allow | wait (pedido de decisão aberto) | deny. kind='ask_human': o agente pergunta algo ao gestor; 'plan': o
+    plano da tarefa (sem alçada; pode exigir aprovação); 'handoff': repasse a um colega (alçada `delegate`)."""
+    if kind in ("plan", "handoff"):
+        from . import employee_teamwork as teamwork
+        e = db.scalar(select(Employee).where(Employee.agent_id == agent.id))
+        task = db.get(EmployeeTask, task_id) if task_id else None
+        if e is None or task is None or task.employee_id != e.id:
+            return {"status": "denied", "message": "plano e repasse só dentro de uma tarefa deste Digital employee"}
+        if kind == "plan":
+            return teamwork.update_plan(db, e, task, args)
+        bad = teamwork.check_handoff(db, e, task, args)
+        if bad:
+            return bad
+        out = _gate(db, agent, task_id, tool, ref, args, rationale, "tool")
+        if out.get("status") != "allowed":
+            return out
+        return {**out, **teamwork.handoff(db, e, task, args)}
+    return _gate(db, agent, task_id, tool, ref, args, rationale, kind)
+
+
+def _gate(db: Session, agent: Agent, task_id: int | None, tool: str, ref: str, args: dict, rationale: str,
+          kind: str) -> dict:
     e = db.scalar(select(Employee).where(Employee.agent_id == agent.id))
     if e is None:
         return {"status": "allowed"}
@@ -424,6 +450,13 @@ def _decide(db: Session, acc: Access, request_id: int, decision: str, edit: dict
     if r.kind == "capability":
         return _decide_capability(db, acc, r, e, task, decision, edit or {}, reason, who)
 
+    if r.kind == "plan":  # plano de uma tarefa longa: aprovar (ou editar) antes da execução
+        from . import employee_teamwork as teamwork
+        teamwork.decide_plan(db, r, e, task, decision, edit or {}, reason, who)
+        db.commit()
+        audit(db, who, f"employee.plan.{r.decision}", _slug(db, e), f"#{r.id}")
+        return request_dict(db, r, e)
+
     if r.kind == "shadow":  # revisão do modo sombra: nada a executar, só o veredito (alimenta carreira e lições)
         if decision not in ("agree", "disagree"):
             raise PlatformError("modo sombra: decision = agree (teria aprovado) | disagree (não teria; diga por quê)")
@@ -570,6 +603,8 @@ def tick() -> list[int]:
         notify.sweep(db)  # alerta antes de expirar, resumo diário e prazos de tarefa
         from .employee_work import fire_routines
         fire_routines(db)
+        from .employee_teamwork import poll_inboxes
+        poll_inboxes(db)  # caixa de e-mail como canal de entrada
         rows = db.execute(select(EmployeeTask.id, EmployeeTask.probation, Employee.status)
                           .join(Employee, Employee.id == EmployeeTask.employee_id)
                           .where(EmployeeTask.status == "new", Employee.status.in_(("probation", "active")),
@@ -651,7 +686,10 @@ def run_task(task_id: int) -> EmployeeTask | None:
         if m:
             open_req = db.scalar(select(HumanRequest.id).where(HumanRequest.task_id == task.id, HumanRequest.status == "open",
                                                                HumanRequest.kind.in_(BLOCKING)))
-            task.status = "waiting_human" if open_req else "new"  # decidido enquanto a rodada terminava: segue
+            child = db.get(EmployeeTask, task.waiting_on) if task.waiting_on else None
+            task.status = ("waiting_human" if open_req else
+                           "waiting_task" if child is not None and child.status not in TERMINAL else
+                           "new")  # decidido (ou a repassada terminou) enquanto a rodada terminava: segue
             db.commit()
             return task
         return _finish(db, task, "done", result=content)
@@ -667,6 +705,9 @@ def _finish(db: Session, task: EmployeeTask, status: str, result: str = "", erro
         task.error = error
     event(db, task, "done" if status == "done" else "error", {"status": status, "error": error[:300]})
     db.commit()
+    from . import employee_teamwork as teamwork
+    teamwork.child_finished(db, task)  # repassada por outra tarefa: a de origem retoma com o resultado
+    teamwork.reply_by_email(db, task)  # veio por e-mail de alguém da empresa: a resposta volta por e-mail
     if task.probation:
         from .employees import probation_progress
         probation_progress(db, db.get(Employee, task.employee_id))

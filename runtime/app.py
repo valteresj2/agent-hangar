@@ -386,6 +386,23 @@ async def build_tools() -> tuple[list[Tool], bool]:
                           {"type": "object", "properties": {"need": {"type": "string", "description": "o que falta"},
                                                             "why": {"type": "string", "description": "por que a tarefa precisa"}},
                            "required": ["need"]}, _ask, ref="hangar:request_capability"))
+        tools.append(Tool("update_plan", "Registra o plano da tarefa (as etapas) e o andamento de cada uma, para o gestor "
+                          "acompanhar. Se a tarefa exigir plano aprovado, a execução só começa depois da aprovação. "
+                          "status de cada etapa: todo | doing | done | skipped.",
+                          {"type": "object", "properties": {
+                              "steps": {"type": "array", "items": {"type": "object", "properties": {
+                                  "title": {"type": "string"}, "status": {"type": "string"}, "note": {"type": "string"}},
+                                  "required": ["title"]}},
+                              "note": {"type": "string", "description": "resumo do plano para o gestor"}},
+                           "required": ["steps"]}, _ask, ref="hangar:update_plan"))
+        tools.append(Tool("handoff_task", "Repassa uma parte do trabalho a um colega Digital employee (só os colegas "
+                          "liberados pelo gestor, listados na tarefa). wait=true: a sua tarefa pausa e continua com o "
+                          "resultado do colega; wait=false: ele segue sozinho.",
+                          {"type": "object", "properties": {"to": {"type": "string", "description": "slug do colega"},
+                                                            "title": {"type": "string"},
+                                                            "details": {"type": "string", "description": "o que fazer e o contexto"},
+                                                            "wait": {"type": "boolean"}},
+                           "required": ["to", "title"]}, _ask, ref="hangar:handoff_task"))
     return tools, complete
 
 
@@ -514,12 +531,31 @@ async def mock_llm(messages, tools, client_tools=None):
             await _run_server_call({"id": "mock", "function": {"name": "request_capability",
                                                               "arguments": json.dumps({"need": nd.group(1).strip()})}},
                                    by_name, [], [])
+        pl = re.search(r"\bplan:\s*(.+)", last)
+        if pl and "APROVADO" not in last and "APPROVED" not in last and "TERMINOU" not in last:
+            steps = [s.strip() for s in pl.group(1).split(";") if s.strip()]
+            await _run_server_call({"id": "mock", "function": {"name": "update_plan",
+                                                              "arguments": json.dumps({"steps": steps})}}, by_name, [], [])
+        if re.search(r"(APROVADO|APPROVED)", last) and "PLAN" in last:
+            steps = re.findall(r"^\d+\. (.+)$", last, re.M)
+            if steps:
+                await _run_server_call({"id": "mock", "function": {"name": "update_plan", "arguments": json.dumps(
+                    {"steps": [{"title": s, "status": "done"} for s in steps]})}}, by_name, [], [])
+                return f"[mock:{SLUG}] plano executado: {len(steps)} etapas"
+        ho = re.search(r"\bhandoff:\s*([\w-]+)\s*\|\s*([^|\n]+)(\|\s*wait)?", last)
+        if ho and "TERMINOU" not in last and "FINISHED" not in last:
+            msgs: list = []
+            await _run_server_call({"id": "mock", "function": {"name": "handoff_task", "arguments": json.dumps(
+                {"to": ho.group(1), "title": ho.group(2).strip(), "wait": bool(ho.group(3))})}}, by_name, [], msgs)
+            return f"[mock:{SLUG}] handoff_task -> {msgs[-1]['content'] if msgs else ''}"
+        if "TERMINOU" in last or "FINISHED" in last:
+            return f"[mock:{SLUG}] recebi o resultado do colega: {last[:300]}"
         q = re.search(r"\bask:\s*(.+)", last)
         if q and "RESPOSTA de" not in last:
             await _run_server_call({"id": "mock", "function": {"name": "ask_human",
                                                               "arguments": json.dumps({"question": q.group(1)})}},
                                    by_name, [], [])
-        u = next((m for m in re.finditer(r"\buse\s+([A-Za-z0-9_-]+)(?:\s+(\{.*\}))?", last, re.S)
+        u = next((m for m in re.finditer(r"\buse\s+([A-Za-z0-9_-]+)(?:[ \t]+(\{.*\}))?", last)  # um "use" por linha: o prompt pode citar resultados com JSON
                   if m.group(1) in by_name and m.group(1) not in ("ask_human", "request_capability")), None)  # o prompt da tarefa cita "use ask_human"
         if u:
             args = {}
@@ -740,7 +776,8 @@ async def _run_server_call(call: dict, by_name: dict, trace: list, msgs: list, r
         progress(_describe(name, args))
         tool = by_name.get(name)
         if EMPLOYEE and tool is not None and tool.ref:  # Digital employee: a alçada decide antes de executar
-            g = await _gate(tool, args, rationale, {"ask_human": "ask_human", "request_capability": "capability"}.get(name, "tool"))
+            g = await _gate(tool, args, rationale, {"ask_human": "ask_human", "request_capability": "capability",
+                                                    "update_plan": "plan", "handoff_task": "handoff"}.get(name, "tool"))
             if g.get("status") == "waiting":
                 trace.append({"tool": name, "args": {k: str(v)[:200] for k, v in args.items()},
                               "result": f"aguardando decisão #{g.get('request_id')}"})
@@ -752,6 +789,11 @@ async def _run_server_call(call: dict, by_name: dict, trace: list, msgs: list, r
                 return
             if g.get("status") != "allowed":
                 out = f"NEGADO pela alçada: {g.get('message', 'ação não permitida')}"
+                trace.append({"tool": name, "args": {k: str(v)[:200] for k, v in args.items()}, "result": out[:300]})
+                msgs.append({"role": "tool", "tool_call_id": call["id"], "content": out})
+                return
+            if "result" in g:  # a própria plataforma executou (plano, repasse): o resultado vem do gate
+                out = str(g["result"])
                 trace.append({"tool": name, "args": {k: str(v)[:200] for k, v in args.items()}, "result": out[:300]})
                 msgs.append({"role": "tool", "tool_call_id": call["id"], "content": out})
                 return

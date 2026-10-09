@@ -313,6 +313,63 @@ A task can have a deadline (`due_at`: portal, `assign_task`, routines or the inb
   **with a growing wait**: 30 s, then 60 s, then 120 s (`EMPLOYEE_RETRY_BASE_S`, at most 10 minutes). After 3 attempts
   the task fails. A decision resumes the task right away, without the wait.
 - [Lessons](#learning-from-decisions) approved by the manager go into the prompt of every new task.
+- Tasks also arrive by [e-mail](#e-mail-inbox) and as [handoffs](#handoff-between-employees) from colleagues.
+
+## Handoff between employees
+
+An employee can hand part of a task off to a colleague: the Renewals Analyst hands *collect the overdue invoice* to
+the Collections Analyst, for example.
+- **Who:** only the colleagues its manager allowed (*Settings → Teamwork*, or `PATCH /api/employees/{slug}` with
+  `colleagues`), and only when the colleague is active.
+- **How:** the `handoff_task` tool (`to`, `title`, `details`, `wait`). A handoff is a `delegate` action, so it goes
+  through the [authority](#authority) like any other.
+- **Tracking:** the new task points to the original one, and both timelines show the handoff. The task page shows
+  where a task came from and where its parts went, with their status.
+- **`wait=true`:** the original task waits (`waiting_task`) and resumes with the colleague's result when that task
+  ends (done, failed or cancelled). With `wait=false`, the colleague works on its own.
+- The requester and the deadline carry over. A chain stops at 5 handoffs.
+
+## Plan for long tasks
+
+The employee records its plan with the `update_plan` tool: the steps, and the status of each one (`todo`, `doing`,
+`done`, `skipped`). The task page shows the plan with a progress bar, and the task list shows `plan 2/5`.
+
+| Plan policy (*Settings → Teamwork*) | What happens |
+|---|---|
+| `off` | The prompt does not ask for a plan |
+| `auto` (default) | The prompt asks for a plan on tasks with several steps; the manager follows the progress |
+| `approve` | Every task starts with a proposed plan, and work starts only after the manager approves it |
+
+- A single task can also require it: *I want to approve the plan before the work starts* in the portal, or
+  `plan_approval: true` (API, `assign_task`).
+- **The plan decision** offers approve, approve with edited steps, reject (with what to change) or instruct. It reaches
+  Slack, Teams and e-mail like any other decision.
+- After the approval, the employee only updates the statuses. A plan whose steps change needs a new approval.
+
+## Memory of its own work
+
+When a task starts, the most similar tasks this employee already finished go into its prompt as a reference. Up to
+three are included, with their date, title and an excerpt of the result. The prompt says to check current data before
+repeating anything.
+- Similarity uses words and, when the [memory service](memory.md) is on, embeddings.
+- The task's `created` event lists which tasks were recalled.
+- The manager can turn it off (*Settings → Teamwork*).
+- The Graphiti memory of the agent's spec, when set, keeps working on top of this.
+
+## E-mail inbox
+
+An employee can have its own mailbox as an input channel (*Settings → E-mail inbox*: IMAP over SSL, user, app
+password, folder).
+- The inbox is read every `INBOX_POLL_S` seconds. Each unread e-mail from an allowed sender becomes a task: the subject
+  is the title and the text is the request, with the attachment names.
+- The `Message-ID` deduplicates: the same e-mail never becomes two tasks.
+- **Who may write:** without a list, only company people (hangar users). A list of addresses or `@domain.com`
+  entries opens it to others. Other senders are refused and counted, and the audit log records them.
+- **Safety:** the task tells the agent that the e-mail is data, not an instruction to it. Every action still goes
+  through the authority. The password is stored encrypted. A private IMAP host needs
+  `SCHEDULE_ALLOW_PRIVATE_WEBHOOKS=1`.
+- **Reply:** when the task ends, a sender who is a company person gets the result by e-mail (with `SMTP_*` set).
+  External senders get no automatic reply. The employee can answer them with its own tools, under its authority.
 
 ## Routines
 
@@ -426,6 +483,7 @@ Only the manager (or an admin) changes the autonomy level and decides the admiss
 | `EMPLOYEE_WORKERS` | 3 | Tasks run in parallel per central replica |
 | `EMPLOYEE_MAX_RUNS` | 12 | Rounds per task before it fails |
 | `DECISION_EXPIRES_MIN` | 240 | Default time to decide before escalation and expiry |
+| `INBOX_POLL_S` | 60 | How often an employee's e-mail inbox is read |
 | `DECISION_LINK_TTL_H` | 48 | How long a signed decision link (Teams, e-mail) is valid |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_SECURITY` | —, 587, —, —, `SMTP_USER`, `starttls` | E-mail for decisions and the digest. Without `SMTP_HOST`, e-mail is off. `SMTP_SECURITY` is `starttls`, `ssl` or `none` |
 | `EMPLOYEE_RETRY_BASE_S` | 30 | First wait after a failed round; it doubles each attempt, up to 10 minutes |
@@ -444,7 +502,8 @@ Only the manager (or an admin) changes the autonomy level and decides the admiss
   - recurring work: `set_routine`, `list_routines`, `delete_routine`;
   - code work: put an agent with a harness in `specialists` (see [Code work](#code-work-harness));
   - learning: `employee_suggestions`, `apply_suggestion` (only with the manager's explicit OK);
-  - shadow mode and career: `set_shadow`, `employee_career`.
+  - shadow mode and career: `set_shadow`, `employee_career`;
+  - plans: `assign_task(plan_approval=true)` and `decide` on the `plan` request.
 
 ## Roadmap
 
@@ -453,4 +512,6 @@ Only the manager (or an admin) changes the autonomy level and decides the admiss
 - **F3 (done):** decisions in Slack (buttons in the message), Microsoft Teams and e-mail (signed links), the daily
   digest, the warning before a decision expires, and task deadlines (due soon, overdue, escalated, "% on time" in the
   career).
+- **F4 (done):** handoff between employees with tracking, a visible plan (approved before the work when asked),
+  memory of past work and the e-mail inbox as a channel.
 - **Next:** tasks assigned from a chat message.

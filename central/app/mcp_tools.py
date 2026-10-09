@@ -97,6 +97,12 @@ DIGITAL EMPLOYEE (agente como funcionário: cargo, gestor, alçada, tarefas e hu
 - Modo sombra e carreira: sugira contratar com shadow=true (ele trabalha, mas ações que mudam algo são só simuladas
   para o gestor revisar). employee_career mostra os critérios do próximo nível; promoção, rebaixamento e saída da
   sombra aparecem em employee_suggestions e só se aplicam com o OK explícito do gestor.
+- Trabalho mais complexo: assign_task(plan_approval=true) faz ele propor o plano e só executar depois que o gestor
+  aprovar (decide approve | approve_edited com edit={"steps": [...]} | reject com reason). O repasse entre
+  funcionários (handoff_task) vale para os colegas que o gestor liberou no portal (Configurações → Trabalho em
+  equipe); passa pela alçada como delegate e fica rastreado nas duas tarefas. task_status mostra plano, progresso e
+  repasses. Tarefas parecidas já feitas entram no prompt como referência. A caixa de e-mail (IMAP) também é
+  configurada pelo gestor no portal.
 - Capacidade faltando: quando a tarefa exige algo que ele não tem, o funcionário pede (request_capability) e a tarefa
   pausa. O pedido traz `options` do catálogo. Com o OK do gestor: decide(attach, edit={"specialist": slug}) — versão
   nova com testes e quatro olhos — ou decide(build) para construir pelo modo self e anexar depois. Nunca anexe sem o
@@ -494,10 +500,16 @@ async def set_authority(ctx: Context, slug: str, rules: list[dict]) -> dict:
 
 
 @mcp.tool()
-async def assign_task(ctx: Context, slug: str, title: str, body: str = "", priority: int = 2) -> dict:
+async def assign_task(ctx: Context, slug: str, title: str, body: str = "", priority: int = 2,
+                      due_at: str = "", plan_approval: bool = False) -> dict:
     """Entrega uma tarefa a um Digital employee (priority 1 alta, 2 normal, 3 baixa). Ele trabalha em segundo plano;
-    acompanhe com task_status. Ações fora da alçada viram pedidos de decisão."""
-    return await _run(ctx, lambda db, acc: svc.employees.assign(db, acc, slug, title, body, priority, None, "mcp"))
+    acompanhe com task_status (plano, progresso, repasses). Ações fora da alçada viram pedidos de decisão.
+    due_at: prazo ISO (ex.: 2026-10-10T17:00-03:00). plan_approval=true: ele propõe o plano e só executa depois que o
+    gestor aprovar (tarefas longas ou sensíveis)."""
+    from datetime import datetime
+    due = datetime.fromisoformat(due_at) if due_at else None
+    return await _run(ctx, lambda db, acc: svc.employees.assign(db, acc, slug, title, body, priority, due, "mcp",
+                                                                plan_approval=plan_approval))
 
 
 @mcp.tool()

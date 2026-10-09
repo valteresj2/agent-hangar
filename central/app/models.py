@@ -519,6 +519,11 @@ class Employee(Base):
     dismissed: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # sugestões dispensadas: {id: AAAA-MM-DD}
     shadow: Mapped[bool] = mapped_column(Boolean, default=False)  # modo sombra: ações externas simuladas, não executadas
     career: Mapped[list | None] = mapped_column(JSON, nullable=True)  # [{at, from, to, by, reason}] mudanças de nível/sombra
+    colleagues: Mapped[list | None] = mapped_column(JSON, nullable=True)  # slugs para quem ele pode repassar tarefas
+    plan_policy: Mapped[str] = mapped_column(String(10), default="auto")  # off | auto (mostra) | approve (gestor aprova)
+    recall: Mapped[bool] = mapped_column(Boolean, default=True)  # lembra trabalhos anteriores parecidos ao começar
+    # caixa de e-mail (IMAP) como canal de entrada: {host, port, user, password (cripto), folder, allowed, last_check…}
+    inbox: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_by: Mapped[str] = mapped_column(String(254), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     hired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -589,6 +594,11 @@ class EmployeeTask(Base):
     not_before: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # espera entre tentativas
     dedupe_key: Mapped[str] = mapped_column(String(200), default="")  # webhook: o mesmo evento não vira duas tarefas
     routine_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    parent_task_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)  # repassada por outra tarefa
+    waiting_on: Mapped[int | None] = mapped_column(Integer, nullable=True)  # espera esta tarefa repassada terminar
+    plan: Mapped[list | None] = mapped_column(JSON, nullable=True)  # [{title, status: todo|doing|done|skipped, note}]
+    plan_state: Mapped[str] = mapped_column(String(12), default="")  # "" | proposed | approved | rejected
+    plan_approval: Mapped[bool] = mapped_column(Boolean, default=False)  # esta tarefa exige o plano aprovado
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

@@ -27,12 +27,13 @@ from ..models import (
 )
 from . import employee_gate as gatemod
 from . import employee_tasks as tasksmod
+from . import employee_teamwork as teamwork
 from . import employee_work as workmod
 from .access import Access, Forbidden
 from .common import PlatformError, audit, get_agent, iso
 
 LEVELS = ("intern", "junior", "pleno", "senior")
-CHANNELS = ("portal", "mcp", "schedule", "webhook")
+CHANNELS = ("portal", "mcp", "schedule", "webhook", "email")
 STATUSES = ("onboarding", "probation", "active", "paused", "offboarded")
 
 Q_PT = {
@@ -279,12 +280,15 @@ def task_dict(db: Session, t: EmployeeTask, detail: bool = False) -> dict:
          "priority": t.priority, "probation": t.probation, "expected": t.expected, "result": t.result, "error": t.error,
          "cost_usd": round(t.cost_usd, 4), "tokens": t.tokens, "runs": t.runs, "attempts": t.attempts,
          "due_at": iso(tasksmod._aware(t.due_at)) if t.due_at else None, "due_state": t.due_state or "",
+         "plan": t.plan or None, "plan_state": t.plan_state or "", "plan_approval": bool(t.plan_approval),
+         "progress": teamwork.progress(t), "parent_task_id": t.parent_task_id, "waiting_on": t.waiting_on,
          "created_at": iso(tasksmod._aware(t.created_at)),
          "finished_at": iso(tasksmod._aware(t.finished_at)) if t.finished_at else None}
     if detail:
         from ..models import TaskEvent
         d["events"] = [{"kind": ev.kind, "payload": ev.payload, "at": iso(tasksmod._aware(ev.at))}
                        for ev in db.scalars(select(TaskEvent).where(TaskEvent.task_id == t.id).order_by(TaskEvent.id))]
+        d.update(teamwork.links(db, t))
         d["requests"] = [tasksmod.request_dict(db, r) for r in
                          db.scalars(select(HumanRequest).where(HumanRequest.task_id == t.id).order_by(HumanRequest.id))]
     return d
@@ -318,6 +322,8 @@ def employee_dict(db: Session, e: Employee, acc: Access | None = None, detail: b
                  report_hour=e.report_hour, report_weekday=e.report_weekday, lessons=e.lessons or [],
                  kpi_status=workmod.kpi_status(db, e), routines=workmod.routines_of(db, e),
                  webhook=workmod.webhook_info(e, a.slug), career=workmod.career_status(db, e),
+                 colleagues=teamwork.colleagues_of(db, e), plan_policy=e.plan_policy or "auto", recall=bool(e.recall),
+                 inbox=teamwork.inbox_view(e),
                  rules=[{"action_type": r.action_type, "mode": r.mode, "conditions": r.conditions, "approver": r.approver,
                          "expires_in_min": r.expires_in_min, "note": r.note}
                         for r in db.scalars(select(AuthorityRule).where(AuthorityRule.employee_id == e.id))],
@@ -497,6 +503,14 @@ def update(db: Session, acc: Access, slug: str, changes: dict) -> dict:
     for k, cast in (("task_budget_usd", float), ("task_time_limit_min", int), ("report_hour", int)):
         if changes.get(k) is not None:
             setattr(e, k, cast(changes[k]))
+    if "colleagues" in changes:
+        teamwork.set_colleagues(db, e, changes["colleagues"] or [])
+    if changes.get("plan_policy") is not None:
+        if changes["plan_policy"] not in teamwork.PLAN_POLICIES:
+            raise PlatformError(f"plan_policy: {' | '.join(teamwork.PLAN_POLICIES)}")
+        e.plan_policy = changes["plan_policy"]
+    if changes.get("recall") is not None:
+        e.recall = bool(changes["recall"])
     if "report_webhook" in changes:
         from .schedules import check_webhook
         e.report_webhook = check_webhook(changes["report_webhook"]) if changes["report_webhook"] else ""
@@ -523,11 +537,12 @@ def set_authority(db: Session, acc: Access, slug: str, rules: list[dict]) -> dic
 
 
 def assign(db: Session, acc: Access, slug: str, title: str, body: str = "", priority: int = 2, due_at=None,
-           source: str = "portal") -> dict:
+           source: str = "portal", plan_approval: bool = False) -> dict:
     e, a = find(db, acc, slug, "assign")
     if e.status not in ("probation", "active", "paused"):
         raise PlatformError(f"'{slug}' ainda não trabalha (status {e.status}): comece o período de experiência")
-    t = tasksmod.create_task(db, e, title, body, source, acc.p.name, acc.p.user_id, priority, due_at)
+    t = tasksmod.create_task(db, e, title, body, source, acc.p.name, acc.p.user_id, priority, due_at,
+                             plan_approval=plan_approval)
     audit(db, acc.p.name, "employee.task", slug, f"#{t.id} {t.title[:120]}")
     return task_dict(db, t)
 
@@ -563,6 +578,8 @@ def cancel_task(db: Session, acc: Access, task_id: int) -> dict:
     for r in db.scalars(select(HumanRequest).where(HumanRequest.task_id == t.id, HumanRequest.status == "open")):
         r.status, r.decided_at, r.decided_by = "cancelled", now(), acc.p.name
     db.commit()
+    from . import employee_teamwork as teamwork
+    teamwork.child_finished(db, t)
     audit(db, acc.p.name, "employee.task.cancel", a.slug, f"#{t.id}")
     return task_dict(db, t)
 

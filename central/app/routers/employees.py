@@ -63,6 +63,17 @@ class TaskBody(BaseModel):
     body: str = ""
     priority: int = 2
     due_at: datetime | None = None
+    plan_approval: bool = False  # o funcionário propõe o plano e só executa depois da aprovação do gestor
+
+
+class InboxBody(BaseModel):
+    host: str | None = None
+    port: int | None = None
+    user: str | None = None
+    password: str | None = None
+    folder: str | None = None
+    allowed: list[str] | None = None
+    enabled: bool | None = None
 
 
 class DecisionBody(BaseModel):
@@ -183,7 +194,17 @@ def tasks(slug: str, request: Request, status: str | None = None, db=Depends(db_
 @router.post("/employees/{slug}/tasks")
 def assign(slug: str, body: TaskBody, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.employees.assign(db, acc(request, db), slug, body.title, body.body, body.priority,
-                                              body.due_at))
+                                              body.due_at, plan_approval=body.plan_approval))
+
+
+@router.put("/employees/{slug}/inbox")
+def inbox_set(slug: str, body: InboxBody, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_teamwork.set_inbox(db, acc(request, db), slug, body.model_dump()))
+
+
+@router.post("/employees/{slug}/inbox/test")
+def inbox_test(slug: str, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.employee_teamwork.test_inbox(db, acc(request, db), slug))
 
 
 @router.get("/employees/{slug}/reports")

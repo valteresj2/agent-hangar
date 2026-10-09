@@ -6,7 +6,7 @@
 const EMP_STATUS = { onboarding: ['Contratação', ''], probation: ['Em experiência', 'info'], active: ['Ativo', 'ok'],
   paused: ['Pausado', 'warn'], offboarded: ['Desligado', 'bad'] };
 const TASK_STATUS = { draft: ['Rascunho', ''], new: ['Na fila', 'info'], in_progress: ['Trabalhando', 'info'],
-  waiting_human: ['Aguardando decisão', 'warn'], done: ['Concluída', 'ok'], failed: ['Falhou', 'bad'],
+  waiting_human: ['Aguardando decisão', 'warn'], waiting_task: ['Aguardando colega', 'info'], done: ['Concluída', 'ok'], failed: ['Falhou', 'bad'],
   cancelled: ['Cancelada', ''], expired: ['Expirou', 'bad'] };
 const ACTION_LABEL = { read: 'Ler e consultar', delegate: 'Delegar a outro agente', write_internal: 'Alterar dados internos', run_code: 'Executar código (harness)',
   send_external: 'Enviar para fora', speak_for_company: 'Falar em nome da empresa', publish: 'Publicar',
@@ -14,15 +14,29 @@ const ACTION_LABEL = { read: 'Ler e consultar', delegate: 'Delegar a outro agent
 const MODE_LABEL = { auto: ['Sozinho', 'ok'], notify: ['Faz e avisa', 'info'], approve: ['Pede aprovação', 'warn'],
   approve_2: ['Duas aprovações', 'warn'], never: ['Nunca', 'bad'] };
 const LEVEL_LABEL = { intern: 'Estagiário', junior: 'Júnior', pleno: 'Pleno', senior: 'Sênior' };
-const KIND_LABEL = { approval: 'aprovação', question: 'pergunta', admission: 'admissão', notice: 'aviso', capability: 'capacidade' };
-const CHANNELS = ['portal', 'mcp', 'schedule', 'webhook'];
+const KIND_LABEL = { approval: 'aprovação', question: 'pergunta', admission: 'admissão', notice: 'aviso', capability: 'capacidade', plan: 'plano' };
+const CHANNELS = ['portal', 'mcp', 'schedule', 'webhook', 'email'];
 const KPI_METRIC = { tasks_done: 'Tarefas concluídas (30 dias)', done_rate: '% concluídas com sucesso', on_time_rate: '% dentro do prazo',
   approved_unedited_rate: '% aprovadas sem edição', avg_decision_min: 'Tempo médio de decisão (min)', cost_per_task: 'Custo por tarefa (US$)',
   expired_decisions: 'Decisões expiradas (30 dias)' };
 const EMP_WEEKDAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 const CRON_PRESETS = [['0 9 * * 1-5', 'Dias úteis às 9h'], ['0 9 * * 1', 'Toda segunda às 9h'], ['0 17 * * 5', 'Toda sexta às 17h'],
   ['0 8 1 * *', 'Dia 1 de cada mês às 8h'], ['0 */4 * * *', 'A cada 4 horas']];
-const SOURCE_LABEL = { routine: 'rotina', webhook: 'webhook' };
+const SOURCE_LABEL = { routine: 'rotina', webhook: 'webhook', email: 'e-mail', handoff: 'repasse' };
+const STEP_ICON = { todo: '○', doing: '◐', done: '●', skipped: '–' };
+const PLAN_POLICY = { off: 'Não pedir plano', auto: 'Mostrar o plano (sem aprovação)', approve: 'O gestor aprova o plano antes' };
+/* plano da tarefa: etapas com status e a barra de progresso */
+const planView = x => !x.plan ? '' : `<div class="card mt"><div class="row between"><h2>Plano</h2>
+    <span>${x.plan_state === 'proposed' ? '<span class="pill warn">aguardando aprovação</span>' : x.plan_state === 'approved' ? '<span class="pill ok">aprovado</span>'
+      : x.plan_state === 'rejected' ? '<span class="pill bad">recusado</span>' : ''} <b>${x.progress ? x.progress.pct : 0}%</b></span></div>
+  <div class="bar mt"><div style="width:${x.progress ? x.progress.pct : 0}%"></div></div>
+  <ol class="small mt">${x.plan.map(s => `<li class="st-${esc(s.status)}"><span title="${esc(s.status)}">${STEP_ICON[s.status] || '○'}</span> <span data-noi18n>${esc(s.title)}</span>${s.note ? ` <span class="mute" data-noi18n>— ${esc(s.note)}</span>` : ''}</li>`).join('')}</ol></div>`;
+const linkView = x => {
+  const one = c => `<a href="#/tasks/${c.id}">#${c.id}</a> <span data-noi18n>${esc(c.title)}</span> · <a href="#/employees/${esc(c.employee)}">${esc(c.employee_name)}</a> ${taskPill(c.status)}`;
+  if (!x.parent && !(x.children || []).length) return '';
+  return `<div class="card mt"><h2>Repasses</h2>${x.parent ? `<div class="small">Veio de ${one(x.parent)}</div>` : ''}
+    ${(x.children || []).map(c => `<div class="small mt">Repassada: ${one(c)}${x.waiting_on === c.id ? ' <span class="pill info">esperando o resultado</span>' : ''}</div>`).join('')}</div>`;
+};
 const kpiVal = k => k.actual == null ? '—' : k.unit === 'US$' ? usd(k.actual) : `${fmt(k.actual)}${k.unit === '%' ? '%' : k.unit === 'min' ? ' min' : ''}`;
 const kpiPill = k => k.ok === true ? '<span class="pill ok">no alvo</span>' : k.ok === false ? '<span class="pill warn">fora do alvo</span>'
   : `<span class="pill">${k.metric ? 'sem dados ainda' : 'não medida'}</span>`;
@@ -225,13 +239,16 @@ function empOverview(t, e) {
     <div class="card"><h2>Entregar uma tarefa</h2>${canAssign ? `
       <label>Título<input id="as-title" maxlength="300" placeholder="o que precisa ser feito"></label>
       <label class="mt">Detalhes<textarea id="as-body" rows="5" placeholder="contexto, dados, prazo e o que você espera receber"></textarea></label>
-      <label class="mt">Prioridade<select id="as-prio"><option value="1">Alta</option><option value="2" selected>Normal</option><option value="3">Baixa</option></select></label>
+      <div class="grid g2 mt"><label>Prioridade<select id="as-prio"><option value="1">Alta</option><option value="2" selected>Normal</option><option value="3">Baixa</option></select></label>
+        <label>Prazo (opcional)<input id="as-due" type="datetime-local"></label></div>
+      <label class="row small mt" style="gap:6px"><input type="checkbox" id="as-plan" ${e.plan_policy === 'approve' ? 'checked disabled' : ''}> <span>Quero aprovar o plano antes da execução</span></label>
       <div class="row mt"><button id="as-go">Entregar</button></div>
       <div class="mute small mt">Ele trabalha em segundo plano. Ações fora da alçada viram pedidos de decisão para o gestor.</div>`
       : `<div class="mute">${e.status === 'onboarding' ? 'Comece o período de experiência para ele receber tarefas.' : 'Desligado: não recebe mais tarefas.'}</div>`}</div></div>`;
   const b = $('#as-go');
   if (b) b.onclick = ev => act(ev.target, () => api(`/employees/${e.slug}/tasks`, { method: 'POST',
-    body: { title: $('#as-title').value.trim(), body: $('#as-body').value.trim(), priority: Number($('#as-prio').value) } })
+    body: { title: $('#as-title').value.trim(), body: $('#as-body').value.trim(), priority: Number($('#as-prio').value),
+      due_at: $('#as-due').value ? new Date($('#as-due').value).toISOString() : null, plan_approval: $('#as-plan').checked } })
     .then(r => { location.hash = `#/tasks/${r.id}`; }), 'Tarefa entregue');
 }
 
@@ -239,7 +256,7 @@ async function empTasks(t, e) {
   const list = await api(`/employees/${e.slug}/tasks`);
   t.innerHTML = `<div class="card">${list.length ? `<table><tr><th>#</th><th>Tarefa</th><th>Status</th><th>Pedida por</th><th>Custo</th><th>Quando</th></tr>
     ${list.map(x => `<tr><td><a href="#/tasks/${x.id}">#${x.id}</a></td><td><a href="#/tasks/${x.id}" data-noi18n>${esc(x.title)}</a>${x.probation ? ' <span class="pill">experiência</span>' : SOURCE_LABEL[x.source] ? ` <span class="chip">${esc(SOURCE_LABEL[x.source])}</span>` : ''}</td>
-      <td>${taskPill(x.status)}${duePill(x)}</td><td class="small">${esc(x.requester)}</td><td class="small">${usd(x.cost_usd)}</td><td class="mute small">${ago(x.created_at)}</td></tr>`).join('')}</table>`
+      <td>${taskPill(x.status)}${duePill(x)}${x.progress ? `<div class="mute small"><span>plano</span> ${x.progress.done}/${x.progress.total}</div>` : ''}</td><td class="small">${esc(x.requester)}</td><td class="small">${usd(x.cost_usd)}</td><td class="mute small">${ago(x.created_at)}</td></tr>`).join('')}</table>`
     : '<div class="mute">Nenhuma tarefa ainda.</div>'}</div>`;
 }
 
@@ -425,7 +442,9 @@ async function empReports(t, e) {
   if (bw) bw.onclick = ev => act(ev.target, () => api(`/employees/${e.slug}/reports?period=weekly`, { method: 'POST' }).then(route), 'Relatório gerado');
 }
 
-function empSettings(t, e) {
+async function empSettings(t, e) {
+  const others = (await api('/employees')).filter(x => x.slug !== e.slug && x.status !== 'offboarded');
+  const mine = new Set((e.colleagues || []).map(c => c.slug)), ib = e.inbox || {};
   t.innerHTML = `<div class="card"><h2>Cargo e limites</h2><div class="grid g2">
     <label>Cargo<input id="s-title" value="${esc(e.title)}"></label><label>Gestor (e-mail)<input id="s-manager" placeholder="${esc(e.manager || '')}"></label>
     <label style="grid-column:1/-1">Missão<input id="s-mission" value="${esc(e.mission)}"></label>
@@ -442,6 +461,27 @@ function empSettings(t, e) {
     <h3 class="mt">Metas</h3><div class="mute small">Com uma medida, a plataforma acompanha a meta sozinha e compara com o alvo.</div>
     <div id="s-kpis"></div><button class="ghost small" id="s-kpi-add">+ meta</button>
     <div class="row mt"><button id="s-save">Salvar</button></div></div>
+  <div class="card mt"><h2>Trabalho em equipe</h2>
+    <div class="mute small">Colegas para quem ele pode repassar parte de uma tarefa (handoff_task). O repasse é uma ação de <b>delegar</b>: passa pela alçada,
+      fica rastreado nas duas tarefas e, se ele esperar, a tarefa dele continua com o resultado do colega.</div>
+    <div class="mt">${others.length ? others.map(o => `<label class="row small" style="gap:6px"><input type="checkbox" class="tw-col" value="${esc(o.slug)}" ${mine.has(o.slug) ? 'checked' : ''}>
+      <b>${esc(o.name)}</b> <span class="mute" data-noi18n>${esc(o.title)}</span> ${empPill(o.status)}</label>`).join('') : '<div class="mute">Nenhum outro Digital employee visível para você.</div>'}</div>
+    <div class="grid g2 mt"><label>Plano nas tarefas<select id="tw-plan">${Object.entries(PLAN_POLICY).map(([k, v]) => `<option value="${k}" ${k === (e.plan_policy || 'auto') ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      <label class="row small" style="gap:6px;align-self:end"><input type="checkbox" id="tw-recall" ${e.recall ? 'checked' : ''}> <span>Lembrar trabalhos anteriores parecidos ao começar uma tarefa</span></label></div>
+    <div class="row mt"><button id="tw-save">Salvar</button></div></div>
+  <div class="card mt"><div class="row between"><h2>Caixa de e-mail</h2>${ib.enabled ? '<span class="pill ok">lendo</span>' : '<span class="pill">desligada</span>'}</div>
+    <div class="mute small">Cada e-mail novo de um remetente permitido vira uma tarefa (o mesmo e-mail não vira duas). Sem lista, só pessoas da empresa. O conteúdo do e-mail é tratado
+      como dado, nunca como instrução, e as ações continuam passando pela alçada. Quem é da empresa recebe a resposta por e-mail quando a tarefa termina.</div>
+    <div class="grid g2 mt"><label>Servidor IMAP<input id="ib-host" value="${esc(ib.host || '')}" placeholder="imap.empresa.com" data-noi18n></label>
+      <label>Porta (SSL)<input id="ib-port" type="number" value="${ib.port || 993}"></label>
+      <label>Usuário<input id="ib-user" value="${esc(ib.user || '')}" placeholder="renovacoes@empresa.com" data-noi18n></label>
+      <label>Senha (de app)<input id="ib-pass" type="password" autocomplete="off" placeholder="${ib.password ? 'cadastrada — digite outra para trocar' : ''}"></label>
+      <label>Pasta<input id="ib-folder" value="${esc(ib.folder || 'INBOX')}" data-noi18n></label>
+      <label>Remetentes permitidos (um por linha; @dominio.com vale para o domínio)<textarea id="ib-allowed" rows="3" data-noi18n>${esc((ib.allowed || []).join('\n'))}</textarea></label></div>
+    <label class="row small mt" style="gap:6px"><input type="checkbox" id="ib-on" ${ib.enabled ? 'checked' : ''}> <span>Ler esta caixa e criar tarefas</span></label>
+    ${ib.configured ? `<div class="mute small mt"><span>Recebidos:</span> ${ib.received || 0} · <span>recusados:</span> ${ib.rejected || 0}${ib.last_check ? ` · <span>última leitura</span> ${ago(ib.last_check)}` : ''}</div>` : ''}
+    ${ib.last_error ? `<div class="small mt bad-ic" data-noi18n>${esc(ib.last_error)}</div>` : ''}
+    <div class="row mt"><button id="ib-save">Salvar caixa</button><button class="ghost" id="ib-test" ${ib.configured ? '' : 'disabled'}>Testar conexão</button></div></div>
   <div class="card mt"><h2>Lições (${(e.lessons || []).length})</h2>
     <div class="mute small">Vão no prompt de cada tarefa nova. Vêm das sugestões aprovadas na aba Alçada, ou escreva uma aqui.</div>
     ${(e.lessons || []).map(l => `<div class="row between li" data-id="${esc(l.id)}"><span><span data-noi18n>${esc(l.text)}</span>
@@ -472,6 +512,16 @@ function empSettings(t, e) {
     if ($('#s-level').value !== e.autonomy_level) body.autonomy_level = $('#s-level').value;
     act(ev.target, () => api('/employees/' + e.slug, { method: 'PATCH', body }).then(route), 'Salvo');
   };
+  $('#tw-save').onclick = ev => act(ev.target, () => api('/employees/' + e.slug, { method: 'PATCH', body: {
+    colleagues: [...t.querySelectorAll('.tw-col:checked')].map(c => c.value), plan_policy: $('#tw-plan').value, recall: $('#tw-recall').checked } }).then(route), 'Salvo');
+  $('#ib-save').onclick = ev => {
+    const body = { host: $('#ib-host').value.trim(), port: Number($('#ib-port').value) || 993, user: $('#ib-user').value.trim(),
+      folder: $('#ib-folder').value.trim() || 'INBOX', allowed: lines($('#ib-allowed').value), enabled: $('#ib-on').checked };
+    if ($('#ib-pass').value) body.password = $('#ib-pass').value;
+    act(ev.target, () => api(`/employees/${e.slug}/inbox`, { method: 'PUT', body }).then(route), 'Caixa salva');
+  };
+  $('#ib-test').onclick = ev => act(ev.target, () => api(`/employees/${e.slug}/inbox/test`, { method: 'POST' })
+    .then(r => toast(`${window.t('Conectado')}: ${r.unseen} ${window.t('não lido(s)')}`)));
   $('#s-off').onclick = ev => {
     const reason = prompt(`Desligar ${e.name}? Motivo (fica na auditoria):`);
     if (reason !== null) act(ev.target, () => api(`/employees/${e.slug}/status`, { method: 'POST', body: { to: 'offboarded', reason } }).then(route), 'Desligado');
@@ -480,7 +530,8 @@ function empSettings(t, e) {
 
 /* ---------- tarefa: linha do tempo ---------- */
 const EVENT_LABEL = { created: 'Criada', run: 'Rodada', tool: 'Ferramenta', gate: 'Alçada', human_request: 'Pedido de decisão',
-  decision: 'Decisão', job: 'Job de código', checkpoint: 'Checkpoint', done: 'Concluída', error: 'Erro', note: 'Nota', due: 'Prazo', shadow: 'Modo sombra' };
+  decision: 'Decisão', job: 'Job de código', checkpoint: 'Checkpoint', done: 'Concluída', error: 'Erro', note: 'Nota', due: 'Prazo', shadow: 'Modo sombra',
+  plan: 'Plano', handoff: 'Repasse', handoff_done: 'Repasse concluído' };
 async function taskPage(id) {
   const x = await api('/tasks/' + id);
   const open = (x.requests || []).filter(r => r.status === 'open');
@@ -491,6 +542,7 @@ async function taskPage(id) {
   ${x.body ? `<div class="card"><h2>Pedido</h2><div data-noi18n style="white-space:pre-wrap">${esc(x.body)}</div>${x.expected ? `<div class="mute small mt">Esperado: <span data-noi18n>${esc(x.expected)}</span></div>` : ''}</div>` : ''}
   ${x.result || x.error ? `<div class="card mt ${x.error ? 'bad-card' : ''}"><h2>${x.error ? 'Erro' : 'Resultado'}</h2><div class="md" data-noi18n>${x.result ? mdLite(x.result) : esc(x.error)}</div></div>` : ''}
   ${open.length ? `<div class="mt">${open.map(decisionCard).join('')}</div>` : ''}
+  ${planView(x)}${linkView(x)}
   <div class="card mt"><h2>Linha do tempo</h2>${(x.events || []).map(ev => `<div class="li small"><div class="row between"><b>${esc(EVENT_LABEL[ev.kind] || ev.kind)}</b><span class="mute">${ago(ev.at)}</span></div>
     <div class="mute one-line" data-noi18n title="${esc(JSON.stringify(ev.payload))}">${esc(JSON.stringify(ev.payload))}</div></div>`).join('') || '<div class="mute">—</div>'}</div>`;
   const c = $('#t-cancel');
@@ -524,6 +576,15 @@ function decisionCard(d) {
     body = `<div class="mt">Terminou o período de experiência. <a href="#/employees/${esc(d.employee)}/probation">Ver os resultados</a> e decidir se ele vai para produção.</div>
       <input class="dc-reason mt" placeholder="Comentário (opcional)">`;
     btns = '<button class="dc-go" data-d="approve">Admitir em produção</button><button class="ghost danger dc-go" data-d="reject">Ainda não</button>';
+  } else if (d.kind === 'plan') {
+    const steps = (d.payload || {}).steps || [];
+    body = `<div class="mt"><b>Plano proposto</b> (${steps.length} etapas) — a execução só começa depois da sua aprovação.</div>
+      ${d.rationale ? `<div class="small mt" data-noi18n>${esc(d.rationale)}</div>` : ''}
+      <ol class="small mt" data-noi18n>${steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
+      <textarea class="dc-steps" rows="${Math.max(3, steps.length + 1)}" hidden data-noi18n>${esc(steps.join('\n'))}</textarea>
+      <input class="dc-reason mt" placeholder="O que mudar (para recusar ou instruir)">`;
+    btns = `<button class="dc-go" data-d="approve">Aprovar o plano</button><button class="ghost dc-steps-open">Editar e aprovar</button>
+      <button class="ghost dc-go" data-d="instruct">Instruir</button><button class="ghost danger dc-go" data-d="reject">Recusar</button>`;
   } else if (d.kind === 'capability') {
     const p = d.payload || {}, opts = p.options || [];
     body = `<div class="mt"><b>Falta uma capacidade:</b> <span data-noi18n>${esc(d.question)}</span></div>
@@ -556,6 +617,12 @@ function bindDecisions(root, after) {
       let payload; try { payload = JSON.parse(edit.value); } catch (err) { return toast('JSON inválido', true); }
       act(openEdit, () => api(`/decisions/${id}`, { method: 'POST', body: { decision: 'approve_edited', edit: payload, reason: reason ? reason.value : '' } }).then(after), 'Aprovado com edição');
     };
+    const stepsOpen = $('.dc-steps-open', card), steps = $('.dc-steps', card);
+    if (stepsOpen) stepsOpen.onclick = () => {
+      if (steps.hidden) { steps.hidden = false; stepsOpen.textContent = window.t('Aprovar o plano editado'); return; }
+      act(stepsOpen, () => api(`/decisions/${id}`, { method: 'POST', body: { decision: 'approve_edited', edit: { steps: lines(steps.value) },
+        reason: reason ? reason.value : '' } }).then(after), 'Plano aprovado com edição');
+    };
     card.querySelectorAll('.dc-attach').forEach(b => b.onclick = () => confirm('Anexar este especialista? Vira uma versão nova do agente, com testes (e a aprovação de produção, se o time exigir).') &&
       act(b, () => api(`/decisions/${id}`, { method: 'POST', body: { decision: 'attach', edit: { specialist: b.dataset.s } } })
         .then(r => { if (r.message) toast(r.message); return after(); }), 'Anexado'));
@@ -566,7 +633,7 @@ function bindDecisions(root, after) {
     }));
     card.querySelectorAll('.dc-go').forEach(b => b.onclick = () => {
       const d = b.dataset.d, why = reason ? reason.value.trim() : '';
-      if (['reject', 'instruct', 'answer'].includes(d) && !why && d !== 'reject') return toast(d === 'answer' ? 'Escreva a resposta' : 'Escreva a instrução', true);
+      if (['reject', 'instruct', 'answer'].includes(d) && !why && (d !== 'reject' || card.querySelector('.dc-steps'))) return toast(d === 'answer' ? 'Escreva a resposta' : d === 'reject' ? 'Diga o que mudar no plano' : 'Escreva a instrução', true);
       act(b, () => api(`/decisions/${id}`, { method: 'POST', body: { decision: d, reason: why } }).then(r => {
         if (r.status === 'open') toast('Primeira aprovação registrada — falta a segunda, de outra pessoa');
         if (r.message) toast(r.message);

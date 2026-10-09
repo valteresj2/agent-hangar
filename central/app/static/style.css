@@ -274,3 +274,9 @@ a .g-node:hover rect{stroke-width:2.4}
 .guide-md ul,.guide-md ol{margin:4px 0 8px 20px}
 .guide-ex{margin:6px 0 0 18px}
 .guide-kv dd{overflow-wrap:anywhere}
+
+/* barra de progresso (plano das tarefas dos Digital employees) */
+.bar{height:6px;border-radius:3px;background:var(--line-2);overflow:hidden}
+.bar>div{height:100%;background:var(--go);transition:width .3s}
+li.st-done{color:var(--mute)}
+li.st-doing{font-weight:600}

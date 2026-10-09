@@ -5,6 +5,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Handoff between Digital employees (F4).** With the `handoff_task` tool, an employee hands part of a task to a
+  colleague its manager allowed.
+  - The handoff goes through the authority as `delegate` and is tracked in both tasks.
+  - With `wait=true`, the original task waits and resumes with the colleague's result.
+- **Visible plan for long tasks.** With `update_plan`, the employee records its steps and their status, and the task
+  page shows the progress.
+  - With the plan policy `approve`, or a task with `plan_approval`, work starts only after the manager approves the
+    plan. The manager can approve, edit, reject or instruct, also from Slack, Teams or e-mail.
+- **Memory of its own work.** The most similar finished tasks go into the prompt of a new task as a reference.
+  Similarity uses words and, with the memory service, embeddings. The manager can turn it off.
+- **E-mail inbox as an input channel (IMAP).**
+  - Unread e-mails from allowed senders become tasks, deduplicated by `Message-ID`. Without a list, only company
+    people may write.
+  - The content is marked as data, not an instruction, and actions still go through the authority.
+  - Company senders get the result by e-mail when the task ends.
+- Migration `0018_employee_teamwork`.
+
 ## [0.20.0] — 2026-10-09
 
 ### Added

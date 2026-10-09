@@ -49,7 +49,7 @@ def auto_classify(ref: str) -> tuple[str, bool]:
     kind, _, rest = ref.partition(":")
     if kind == "builtin":
         return "read", False
-    if kind == "agent":
+    if kind == "agent" or ref == "hangar:handoff_task":
         return "delegate", False
     if kind == "http":
         name, _, method = rest.rpartition(":")

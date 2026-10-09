@@ -135,7 +135,9 @@ an admin.
 | POST | `/api/employees/{slug}/probation` | Manage: deploys stage and queues the probation tasks |
 | POST | `/api/employees/{slug}/status` | Manage: `{to: paused \| active \| offboarded, reason}` |
 | PUT | `/api/employees/{slug}/authority` | Manage: `{rules: [...]}`; the answer includes `warnings` for rules below the company floor |
-| GET / POST | `/api/employees/{slug}/tasks` | List (`?status=`) or give a task `{title, body, priority, due_at}` |
+| GET / POST | `/api/employees/{slug}/tasks` | List (`?status=`) or give a task `{title, body, priority, due_at, plan_approval}` |
+| PUT | `/api/employees/{slug}/inbox` | Manage: the e-mail inbox `{host, port, user, password, folder, allowed, enabled}` (password stored encrypted, never returned) |
+| POST | `/api/employees/{slug}/inbox/test` | Connects to the inbox and returns the unread count |
 | GET / POST | `/api/employees/{slug}/reports` | List reports, or generate one now (manage; `?period=daily\|weekly`) |
 | GET / POST | `/api/employees/{slug}/routines` | List, or create `{title, body, cron, timezone?, priority?, enabled?}` (manage) |
 | PATCH / DELETE | `/api/employees/{slug}/routines/{id}` | Change (`enabled=false` pauses it) or remove a routine (manage) |
@@ -164,7 +166,10 @@ an admin.
 | POST | `/hooks/slack/interactions` | Slack buttons and forms. No session: authenticated by the Slack signature |
 | GET / POST | `/hooks/decide/{token}` | Signed decision link (Teams, e-mail). GET shows the action; only POST (`decision`, `reason`, `edit`) decides |
 
-Tasks have `due_state` (`""`, `soon`, `overdue`, `escalated`). Employees have `overdue_tasks`.
+Tasks have `due_state` (`""`, `soon`, `overdue`, `escalated`), `plan`, `plan_state`, `progress`, `parent_task_id` and
+`waiting_on`; the task detail adds `parent` and `children` (handoffs). Employees have `overdue_tasks`; the detail adds
+`colleagues`, `plan_policy`, `recall` and `inbox`. `PATCH /api/employees/{slug}` accepts `colleagues` (slugs),
+`plan_policy` (`off` | `auto` | `approve`) and `recall`.
 
 `GET /api/me` also returns `decisions`: how many decisions wait for you (notices excluded).
 

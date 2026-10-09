@@ -84,6 +84,7 @@ GUIDE_AUTOGEN = _env("GUIDE_AUTOGEN", "1") == "1"
 EMPLOYEE_WORKERS = int(_env("EMPLOYEE_WORKERS", "3"))
 EMPLOYEE_MAX_RUNS = int(_env("EMPLOYEE_MAX_RUNS", "12"))
 DECISION_EXPIRES_MIN = int(_env("DECISION_EXPIRES_MIN", "240"))
+INBOX_POLL_S = int(_env("INBOX_POLL_S", "60"))  # de quanto em quanto tempo a caixa de e-mail de um funcionário é lida
 DECISION_LINK_TTL_H = int(_env("DECISION_LINK_TTL_H", "48"))  # validade do link assinado de decisão (Teams/e-mail)
 # e-mail das decisões e do resumo diário (opcional): sem SMTP_HOST, o canal e-mail fica desligado
 SMTP_HOST = _env("SMTP_HOST")
