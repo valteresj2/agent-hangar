@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-10-08
+
 ### Added
 - **Shadow mode for Digital employees.** The employee works for real, but every action that changes something (other
   than read and delegate) is simulated.
