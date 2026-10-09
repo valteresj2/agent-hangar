@@ -5,6 +5,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Plugins (P2a): OAuth2 accounts.** `auth: {type: oauth2, authorize_url, token_url, scopes}`.
+  - The install takes the company app's client ID and secret.
+  - *Connect account* runs the authorization code flow with PKCE.
+  - Tokens are encrypted and renewed before they expire, and once more after a `401`, under a cluster lock.
+- **Plugin triggers.** System events become tasks for a Digital employee of the team.
+  - The manifest declares `triggers` with title and body templates (`{{event.path}}`), a `dedupe` field and an
+    optional HMAC `signature` (Stripe-, GitHub- and Shopify-style).
+  - The maintainer links each trigger to an employee. The system posts to `/hooks/plugins/<install>/<trigger>`, signed
+    or with the install token (stored as a hash).
+- Migration `0020_plugin_oauth_triggers`.
+
 ## [0.21.0] — 2026-10-09
 
 ### Added

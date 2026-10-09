@@ -4,7 +4,7 @@
 
 const PLUGIN_STATUS = { draft: ['Rascunho', ''], pending: ['Em revisão', 'warn'], approved: ['Liberado', 'ok'],
   rejected: ['Recusado', 'bad'], disabled: ['Desligado', 'bad'] };
-const AUTH_LABEL = { none: 'sem autenticação', api_key: 'chave de API', bearer: 'token (Bearer)', basic: 'usuário e senha (Basic)' };
+const AUTH_LABEL = { none: 'sem autenticação', api_key: 'chave de API', bearer: 'token (Bearer)', basic: 'usuário e senha (Basic)', oauth2: 'conta OAuth2' };
 const plStatus = s => { const [t, c] = PLUGIN_STATUS[s] || [s, '']; return `<span class="pill ${c}">${esc(t)}</span>`; };
 const plActions = acts => Object.entries(acts || {}).map(([k, n]) =>
   `<span class="pill ${['send_external', 'financial', 'delete', 'publish', 'prod_change', 'speak_for_company', 'run_code'].includes(k) ? 'warn' : ''}"><span>${esc(ACTION_LABEL[k] || k)}</span> · ${n}</span>`).join(' ');
@@ -74,7 +74,34 @@ async function pluginNewPage() {
     manifest: $('#pn-manifest').value, team: $('#pn-team').value || null, source } }).then(p => { location.hash = `#/plugins/${p.name}`; }), 'Rascunho salvo');
 }
 
-function plInstallForm(p, m, inst, team) {
+function plOauth(m, inst) {
+  if (m.auth.type !== 'oauth2') return '';
+  const o = (inst && inst.oauth) || {};
+  return `<div class="mt"><b>Conta OAuth2</b> ${o.connected ? `<span class="pill ok">conectada</span> <span class="mute small">${esc(o.connected_by)}</span>` : '<span class="pill">não conectada</span>'}
+    ${o.error ? `<div class="small bad-ic" data-noi18n>${esc(o.error)}</div>` : ''}
+    <div class="mute small">Registre um app OAuth no sistema com esta URL de retorno: ${copyable((inst && inst.redirect_uri) || `${location.origin}/api/plugins/oauth/callback`)}
+      <span>Escopos:</span> ${(m.auth.scopes || []).map(s => `<code class="inline" data-noi18n>${esc(s)}</code>`).join(' ') || '—'}</div>
+    <div class="grid g2 mt"><label>Client ID<input class="pl-oid" data-noi18n value="${esc(o.client_id || '')}"></label>
+      <label>Client secret<input class="pl-osec" type="password" autocomplete="off" placeholder="${o.client_secret ? window.t('cadastrado — digite outro para trocar') : ''}"></label></div>
+    ${inst ? `<div class="row mt"><button class="ghost pl-connect">${o.connected ? 'Reconectar conta' : 'Conectar conta'}</button></div>` : ''}</div>`;
+}
+
+function plTriggers(m, inst, emps) {
+  if (!(m.triggers || []).length) return '';
+  const cfg = Object.fromEntries(((inst && inst.triggers) || []).map(t => [t.name, t]));
+  return `<div class="mt"><b>Gatilhos</b><div class="mute small">Eventos do sistema que viram tarefas de um Digital employee do time. Configure a URL no sistema;
+      os assinados (HMAC) usam a configuração secreta do manifesto, os outros usam o token da instalação.</div>
+    ${m.triggers.map(t => { const c = cfg[t.name] || {}; return `<div class="li pl-trig" data-t="${esc(t.name)}"><div class="row between"><span><b data-noi18n>${esc(t.title || t.name)}</b>
+        ${t.signature ? '<span class="pill info">assinado</span>' : '<span class="pill">token</span>'} ${c.received ? `<span class="mute small"><span>recebidos:</span> ${c.received}</span>` : ''}</span>
+        <span class="row small" style="gap:6px"><select class="pl-temp"><option value="">— ninguém —</option>${emps.map(e => `<option value="${esc(e.slug)}" ${e.slug === c.employee ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
+        <label class="row" style="gap:4px"><input type="checkbox" class="pl-ton" ${c.enabled ? 'checked' : ''}> <span>ligado</span></label></span></div>
+      ${t.description ? `<div class="mute small" data-noi18n>${esc(t.description)}</div>` : ''}
+      ${c.url ? `<div class="small mt">${copyable(c.url)}</div>` : ''}</div>`; }).join('')}
+    ${inst && m.triggers.some(t => !t.signature) ? `<div class="row small mt" style="gap:8px"><button class="ghost pl-htok">${inst.hook_token ? 'Trocar o token' : 'Gerar o token'}</button>
+      ${inst.hook_token ? `<span class="mute"><span>token atual termina em</span> <code class="inline" data-noi18n>…${esc(inst.hook_token)}</code></span>` : ''}</div><div class="pl-htok-out"></div>` : ''}</div>`;
+}
+
+function plInstallForm(p, m, inst, team, emps) {
   const id = team || 'org';
   const settings = m.settings || [];
   return `<div class="card mt pl-inst" data-team="${esc(team || '')}"><div class="row between"><h3>${team ? `<span>Time</span> <span data-noi18n>${esc(team)}</span>` : 'Empresa toda'}</h3>
@@ -82,8 +109,9 @@ function plInstallForm(p, m, inst, team) {
     <div class="grid g2">${settings.map(s => `<label>${esc(s.title || s.key)}${s.required ? ' *' : ''}${s.description ? `<div class="mute small" data-noi18n>${esc(s.description)}</div>` : ''}
         <input class="pl-set" data-k="${esc(s.key)}" data-secret="${s.secret ? 1 : 0}" ${s.secret ? 'type="password" autocomplete="off"' : ''} data-noi18n
           value="${s.secret ? '' : esc((inst && inst.settings[s.key]) ?? s.default ?? '')}" placeholder="${s.secret && inst && inst.secrets[s.key] ? window.t('cadastrado — digite outro para trocar') : ''}"></label>`).join('')}
-      ${m.auth.type !== 'none' ? `<label>${esc(m.auth.label || AUTH_LABEL[m.auth.type])}${m.auth.type === 'basic' ? ' <span class="mute small">(usuário:senha)</span>' : ''}
+      ${!['none', 'oauth2'].includes(m.auth.type) ? `<label>${esc(m.auth.label || AUTH_LABEL[m.auth.type])}${m.auth.type === 'basic' ? ' <span class="mute small">(usuário:senha)</span>' : ''}
         <input class="pl-cred" type="password" autocomplete="off" placeholder="${inst && inst.credential ? window.t('cadastrada — digite outra para trocar') : ''}"></label>` : ''}</div>
+    ${plOauth(m, inst)}${plTriggers(m, inst, emps)}
     ${inst ? `<div class="mute small mt"><span>Chamadas:</span> ${inst.stats.calls || 0} · <span>erros:</span> ${inst.stats.errors || 0}${inst.stats.last_call ? ` · <span>última</span> <span>${ago(inst.stats.last_call)}</span>` : ''}
       ${inst.last_test ? ` · <span>teste:</span> ${inst.last_test.ok ? '<span class="pill ok">ok</span>' : `<span class="pill bad">falhou</span> <span data-noi18n>${esc(inst.last_test.sample || '')}</span>`}` : ''}</div>` : ''}
     <div class="row mt"><button class="pl-save" data-id="${esc(id)}">${inst ? 'Salvar' : 'Instalar'}</button>
@@ -93,6 +121,12 @@ function plInstallForm(p, m, inst, team) {
 
 async function pluginDetail(name) {
   const p = await api('/plugins/' + name);
+  const qs = new URLSearchParams(location.hash.split('?')[1] || '');
+  if (qs.get('oauth_ok')) toast(window.t('Conta conectada'));
+  if (qs.get('oauth_error')) toast(qs.get('oauth_error'), true);
+  const allEmps = (p.approved_manifest || {}).triggers ? await api('/employees').catch(() => []) : [];
+  const teamId = slug => ((ME.teams || []).find(t => t.slug === slug) || {}).id;
+  const empsFor = team => allEmps.filter(e => e.status !== 'offboarded' && (!team || e.team === teamId(team)));
   const m = p.approved_manifest || p.manifest, perm = p.permissions;
   const draftDiffers = p.approved_manifest && JSON.stringify(p.approved_manifest) !== JSON.stringify(p.manifest);
   const installs = Object.fromEntries((p.installs || []).map(i => [i.team || '', i]));
@@ -120,7 +154,7 @@ async function pluginDetail(name) {
   ${p.approved_version && p.status !== 'disabled' ? `<h2 class="mt">Instalação</h2>
     <div class="mute small">Cada time instala com a própria credencial (o mantenedor do time; um admin também instala para a empresa toda). Os agentes do time usam com
       <code class="inline">plugins: [${esc(p.name)}]</code> na spec, e as ferramentas chegam como <code class="inline">plugin-${esc(p.name)}__…</code>.</div>
-    ${targets.length ? targets.map(t => plInstallForm(p, p.approved_manifest, installs[t], t)).join('') : '<div class="card mute mt">Só o mantenedor de um time (ou um admin) instala.</div>'}` : ''}
+    ${targets.length ? targets.map(t => plInstallForm(p, p.approved_manifest, installs[t], t, empsFor(t))).join('') : '<div class="card mute mt">Só o mantenedor de um time (ou um admin) instala.</div>'}` : ''}
   ${p.can_edit ? `<div class="card mt"><div class="row between"><h2>Manifesto ${p.status === 'approved' ? '' : `<span class="mute small">(${esc(PLUGIN_STATUS[p.status] ? window.t(PLUGIN_STATUS[p.status][0]) : p.status)})</span>`}</h2>
       ${['draft', 'rejected'].includes(p.status) ? '<button id="pl-submit">Enviar para revisão</button>' : ''}</div>
     <div class="mute small">Para mudar um plugin aprovado, suba a <code class="inline">version</code>: a versão nova passa pela revisão e as instalações seguem na aprovada até lá.</div>
@@ -140,8 +174,22 @@ async function pluginDetail(name) {
       card.querySelectorAll('.pl-set').forEach(i => { if (i.dataset.secret === '1') { if (i.value) body.secrets[i.dataset.k] = i.value; } else body.settings[i.dataset.k] = i.value; });
       const cred = $('.pl-cred', card);
       if (cred && cred.value) body.credential = cred.value;
+      const oid = $('.pl-oid', card), osec = $('.pl-osec', card);
+      if (oid) body.oauth_client_id = oid.value.trim();
+      if (osec && osec.value) body.oauth_client_secret = osec.value;
+      const trig = [...card.querySelectorAll('.pl-trig')];
+      if (trig.length) body.triggers = Object.fromEntries(trig.map(r => [r.dataset.t, { employee: $('.pl-temp', r).value, enabled: $('.pl-ton', r).checked }]));
       act(ev.target, () => api(`/plugins/${name}/install`, { method: 'PUT', body }).then(route), 'Instalado');
     };
+    const con = $('.pl-connect', card);
+    if (con) con.onclick = ev => act(ev.target, () => api(`/plugins/${name}/install/connect`, { method: 'POST', body: { team } })
+      .then(r => { location.href = r.authorize_url; }));
+    const htok = $('.pl-htok', card);
+    if (htok) htok.onclick = ev => (!installs[team || ''].hook_token || confirm(window.t('Trocar o token? O antigo para de valer na hora.'))) &&
+      act(ev.target, () => api(`/plugins/${name}/install/hook-token`, { method: 'POST', body: { team } }).then(r => {
+        $('.pl-htok-out', card).innerHTML = `<div class="card warn-card mt"><b>${esc(window.t('Copie agora: o token não aparece de novo.'))}</b><div class="mt">${copyable(r.token)}</div>
+          <div class="mute small mt">${esc(window.t('Mande no header Authorization: Bearer <token> (ou X-Hangar-Token, ou ?token= na URL).'))}</div></div>`;
+      }));
     const tst = $('.pl-test', card);
     if (tst) tst.onclick = ev => act(ev.target, () => api(`/plugins/${name}/install/test`, { method: 'POST', body: { team } })
       .then(r => { toast(r.ok ? window.t('Conexão ok') : `${window.t('Falhou')}: ${r.sample}`, !r.ok); return route(); }));

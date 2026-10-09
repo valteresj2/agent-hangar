@@ -51,7 +51,8 @@ test: {tool: get_invoice, args: {number: "1"}}   # what "Test connection" calls
 - **Credentials:**
   - `api_key` goes in the header or query parameter named by `name` (default `X-API-Key`);
   - `bearer` sends `Authorization: Bearer <credential>`;
-  - `basic` takes `user:password`.
+  - `basic` takes `user:password`;
+  - `oauth2` connects the team's account (see [OAuth2 accounts](#oauth2-accounts)).
 - **Calls.** Responses longer than 8,000 characters are cut. Redirects are not followed. A call times out after
   `PLUGIN_TIMEOUT_S` seconds (30 by default).
 
@@ -94,6 +95,65 @@ into a draft manifest. Each operation becomes a tool, `$ref` schemas are resolve
   installed for the agent's team.
 - **Usage.** Each install counts calls and errors and keeps the last error.
 
+## OAuth2 accounts
+
+```yaml
+auth:
+  type: oauth2
+  authorize_url: https://login.crm.example.com/oauth/authorize
+  token_url: https://login.crm.example.com/oauth/token
+  scopes: [contacts.read, offline_access]
+  pkce: true                      # default
+  params: {access_type: offline}  # optional extra authorization parameters
+```
+
+1. **Register the app.** The company registers an OAuth app in the system, with the redirect URL
+   `PUBLIC_BASE_URL/api/plugins/oauth/callback` (the install form shows it).
+2. **Install.** The maintainer installs the plugin with the app's client ID and secret.
+3. **Connect the account.** *Connect account* sends the browser to the provider (authorization code with PKCE) and
+   back.
+
+The access and refresh tokens are stored encrypted with the install. The central renews them before they expire, and
+once more after a `401`, under a lock so that two replicas do not use the same rotating refresh token. If the renewal
+fails, the install shows the error and the maintainer reconnects.
+
+## Triggers: events that become tasks
+
+A trigger turns a system event into a task for a [Digital employee](digital-employee.md) of the team.
+
+```yaml
+settings:
+  - {key: webhook_secret, title: Webhook signing secret, secret: true}
+triggers:
+  - name: invoice_overdue
+    title: Overdue invoice
+    task_title: "Collect invoice {{event.data.number}} from {{event.data.customer}}"
+    task_body: "Amount: {{event.data.amount}}"
+    dedupe: data.id                # the same event never becomes two tasks (EMPLOYEE_DEDUPE_DAYS)
+    signature: {header: X-Billing-Signature, prefix: "sha256=", secret: webhook_secret}   # HMAC of the raw body
+  - name: customer_note            # without signature: the install token
+    dedupe: id
+```
+
+- **Connecting a trigger.** In the install, the maintainer links each trigger to a Digital employee of the same team
+  and copies its URL into the system: `PUBLIC_BASE_URL/hooks/plugins/<install>/<trigger>`.
+- **Authentication:**
+  - **Signed** (`signature`): HMAC-SHA256 or SHA1, hex or base64, with an optional prefix. Multi-value headers such as
+    Stripe's `t=…,v1=…` work too. The secret is a secret setting of the install.
+  - **Not signed:** the install's hook token (*Generate the token*, shown once and stored as a hash), sent as
+    `Authorization: Bearer`, `X-Hangar-Token` or `?token=`.
+- **The task:**
+  - the title and body come from the `{{event.path}}` templates;
+  - the event JSON is attached;
+  - the task tells the agent that the event is data, not an instruction to it.
+
+  Its source is `plugin`, and the requester is `plugin <name> · <trigger>`.
+- **Response:**
+  - a duplicate returns the existing task with `duplicate: true`;
+  - a trigger that is off or not linked returns `409`;
+  - a wrong signature or token returns `401`;
+  - events are capped at 256 KB.
+
 ## Security
 
 - **The secret stays in the central:**
@@ -115,7 +175,7 @@ into a draft manifest. Each operation becomes a tool, `$ref` schemas are resolve
 
 ## What's next
 
-- **P2:** plugins with code, running in a container like an MCP server, plus OAuth credentials, triggers (events that
-  become tasks) and third-party decision channels.
+- **P2a (done):** OAuth2 accounts and triggers.
+- **P2b:** plugins with code, running in an isolated container like an MCP server, and third-party decision channels.
 - **P3:** building plugins by chat through the MCP, tested in stage.
 - **P4:** a company plugin gallery.

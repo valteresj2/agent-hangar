@@ -202,6 +202,7 @@ app.include_router(employees.router)
 app.include_router(employees.hooks)
 app.include_router(notify.router)
 app.include_router(plugins.router)
+app.include_router(plugins.hooks)  # gatilhos dos plugins: assinatura HMAC ou token da instalação
 app.include_router(notify.hooks)  # Slack e link assinado: autenticados pela assinatura
 app.include_router(scim.router)
 app.include_router(schedules.router)

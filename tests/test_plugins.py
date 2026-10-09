@@ -129,7 +129,7 @@ def test_openapi_import_builds_a_reviewable_draft():
                      "/customers/{id}/notify": {"post": {"operationId": "sendReminder"}}}}
     m = plugmod.from_openapi(json.dumps(doc))
     assert m["name"] == "billing-api" and m["base_url"] == "https://billing.example.com/v2" and m["version"] == "2.1.0"
-    assert m["auth"] == {"type": "api_key", "in": "header", "name": "X-Billing-Key", "label": ""}
+    assert {k: m["auth"][k] for k in ("type", "in", "name")} == {"type": "api_key", "in": "header", "name": "X-Billing-Key"}
     tools = {t["name"]: t for t in m["tools"]}
     assert tools["get_customer"]["action"] == "read" and tools["get_customer"]["parameters"]["required"] == ["id"]
     assert tools["create_charge"]["action"] == "financial" and "amount" in tools["create_charge"]["parameters"]["properties"]

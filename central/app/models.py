@@ -728,5 +728,8 @@ class PluginInstall(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     stats: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {calls, errors, last_call, last_error}
     last_test: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    triggers: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {gatilho: {employee, enabled, priority, received}}
+    hook_token_hash: Mapped[str] = mapped_column(String(64), default="")  # sha256 do token dos webhooks dos gatilhos
+    hook_token_hint: Mapped[str] = mapped_column(String(12), default="")
     installed_by: Mapped[str] = mapped_column(String(254), default="")
     installed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

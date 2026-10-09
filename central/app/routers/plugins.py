@@ -1,18 +1,21 @@
 """Plugins: catálogo, rascunho/importação de OpenAPI, revisão (quatro olhos), instalação por time e o servidor MCP
 interno que os agentes chamam (/internal/plugins/<nome>/mcp, autenticado pelo token interno do agente)."""
 import json
+import urllib.parse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
+from .. import config
 from .. import services as svc
 from ..db import SessionLocal
 from .deps import acc, db_dep, guard
 from .internal import caller_agent, caller_specs
 
 router = APIRouter()
+hooks = APIRouter(prefix="/hooks")
 
 
 class ManifestBody(BaseModel):
@@ -39,6 +42,9 @@ class InstallBody(BaseModel):
     secrets: dict | None = None
     credential: str | None = None
     enabled: bool | None = None
+    oauth_client_id: str | None = None
+    oauth_client_secret: str | None = None
+    triggers: dict | None = None
 
 
 class TeamBody(BaseModel):
@@ -101,7 +107,8 @@ def enable(name: str, request: Request, db=Depends(db_dep)):
 @router.put("/api/plugins/{name}/install")
 def install(name: str, body: InstallBody, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.plugins.install(db, acc(request, db), name, body.team, body.settings, body.secrets,
-                                             body.credential, body.enabled))
+                                             body.credential, body.enabled, body.oauth_client_id,
+                                             body.oauth_client_secret, body.triggers))
 
 
 @router.delete("/api/plugins/{name}/install")
@@ -113,6 +120,42 @@ def uninstall(name: str, request: Request, team: str | None = None, db=Depends(d
 @router.post("/api/plugins/{name}/install/test")
 def test(name: str, body: TeamBody, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.plugins.test_install(db, acc(request, db), name, body.team))
+
+
+@router.post("/api/plugins/{name}/install/hook-token")
+def hook_token(name: str, body: TeamBody, request: Request, db=Depends(db_dep)):
+    """Gera (ou troca) o token dos webhooks dos gatilhos: aparece uma vez só."""
+    return guard(lambda: svc.plugins.new_hook_token(db, acc(request, db), name, body.team))
+
+
+# ------------------------------------------------------------------ OAuth2: conectar a conta do time no sistema
+@router.post("/api/plugins/{name}/install/connect")
+def oauth_connect(name: str, body: TeamBody, request: Request, db=Depends(db_dep)):
+    r = guard(lambda: svc.plugins.oauth_start(db, acc(request, db), name, body.team))
+    resp = JSONResponse({"authorize_url": r["authorize_url"]})
+    resp.set_cookie(svc.plugins.OAUTH_COOKIE, r["cookie"], max_age=600, httponly=True, samesite="lax",
+                    secure=config.COOKIE_SECURE, path="/api/plugins")
+    return resp
+
+
+@router.get("/api/plugins/oauth/callback")
+def oauth_callback(request: Request, code: str = "", state: str = "", error: str = "", error_description: str = "",
+                   db=Depends(db_dep)):
+    def back(name: str = "", msg: str = "") -> RedirectResponse:
+        q = urllib.parse.urlencode({"oauth_error": msg} if msg else {"oauth_ok": "1"})
+        resp = RedirectResponse(f"/app/#/plugins/{name}?{q}" if name else f"/app/#/plugins?{q}", 303)
+        resp.delete_cookie(svc.plugins.OAUTH_COOKIE, path="/api/plugins")
+        return resp
+    if error:
+        return back(msg=f"o provedor recusou a autorização ({error_description or error})"[:300])
+    try:
+        name = svc.plugins.oauth_finish(db, acc(request, db), code, state,
+                                        request.cookies.get(svc.plugins.OAUTH_COOKIE, ""))
+    except (svc.PlatformError, svc.access.Forbidden) as e:
+        return back(msg=str(e)[:300])
+    except Exception as e:  # noqa: BLE001 — state expirado (AuthError) e afins: volta para a tela com a mensagem
+        return back(msg=str(e)[:300] or "falha ao conectar")
+    return back(name)
 
 
 # ------------------------------------------------------------------ servidor MCP interno (agente -> central -> sistema)
@@ -139,3 +182,22 @@ async def plugin_mcp(name: str, request: Request):
         return JSONResponse({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "lotes não suportados"}}, 400)
     out = await run_in_threadpool(_mcp, request, name, msg)
     return JSONResponse(out) if out is not None else Response(status_code=202)
+
+
+# ------------------------------------------------------------------ gatilhos (webhook do sistema; autenticado pela
+# assinatura HMAC declarada no manifesto ou pelo token da instalação)
+@hooks.post("/plugins/{install_id}/{trigger}")
+async def trigger(install_id: int, trigger: str, request: Request, token: str = ""):
+    raw = await request.body()
+    headers = {k.lower(): v for k, v in request.headers.items()}
+
+    def go():
+        with SessionLocal() as db:
+            return svc.plugins.receive(db, install_id, trigger, raw, headers, token)
+    try:
+        return await run_in_threadpool(go)
+    except svc.access.Forbidden as e:
+        raise HTTPException(401, str(e)) from None
+    except svc.PlatformError as e:
+        raise HTTPException(409, str(e)) from None
+
