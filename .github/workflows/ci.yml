@@ -153,7 +153,7 @@ jobs:
         run: |
           docker run -d --name e2e-echo --network hangar_agents -v "$PWD/tests/e2e:/e2e:ro" "$PYTHON_IMAGE" python /e2e/echo_server.py
           docker network connect hangar_plugins e2e-echo
-          pip install mcp pyyaml
+          pip install "mcp>=1.10,<2" pyyaml
           HANGAR_TOKEN=$(grep '^ADMIN_TOKEN=' .env | cut -d= -f2-) ECHO_URL=http://e2e-echo:8080 python tests/e2e/workforce.py
       - name: Interface in English (no Portuguese left on screen)
         run: |
