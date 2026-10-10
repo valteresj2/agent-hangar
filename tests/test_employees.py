@@ -59,32 +59,33 @@ class FakeRuntime:
     def _act(self, slug, task_id, last):
         with SessionLocal() as db:
             agent = svc.get_agent(db, slug)
-            if re.search(r"(RECUSADO|EXPIROU|INSTRUÇÃO)", last):
+            reply = re.match(r"(DECISÃO|CAPACIDADE|PLANO|PLAN|TAREFA REPASSADA|HANDED-OFF TASK|RESPOSTA de)", last)
+            if re.match(r"(DECISÃO|CAPACIDADE|PLANO|PLAN) #\d+:? .{0,60}?(RECUSADO|EXPIROU|INSTRUÇÃO)", last, re.S):
                 return "não executei a ação; encerrando com o que ficou pendente"
             nd = re.search(r"\bneed:\s*(.+)", last)
             if nd and "CAPACIDADE" not in last:
                 g = tasksmod.gate(db, agent, task_id, "request_capability", "hangar:request_capability",
                                   {"need": nd.group(1).strip()}, "", "capability")
                 return f"[[HANGAR_WAITING:{g['request_id']}]] {g['message']}"
-            if "PLANO" in last and "APROVADO" in last:  # plano aprovado: executa as etapas e marca como feitas
+            if re.match(r"(PLANO|PLAN) #\d+ (APROVADO|APPROVED)", last):  # plano aprovado: executa as etapas e marca como feitas
                 steps = re.findall(r"^\d+\. (.+)$", last, re.M)
                 tasksmod.gate(db, agent, task_id, "update_plan", "hangar:update_plan",
                               {"steps": [{"title": s, "status": "done"} for s in steps]}, "", "plan")
                 return f"plano executado: {len(steps)} etapas"
             pl = re.search(r"\bplan:\s*(.+)", last)
-            if pl and "TERMINOU" not in last:
+            if pl and not reply:
                 g = tasksmod.gate(db, agent, task_id, "update_plan", "hangar:update_plan",
                                   {"steps": [s.strip() for s in pl.group(1).split(";") if s.strip()]}, "", "plan")
                 if g["status"] == "waiting":
                     return f"[[HANGAR_WAITING:{g['request_id']}]] {g['message']}"
             ho = re.search(r"\bhandoff:\s*([\w-]+)\s*\|\s*([^|\n]+)(\|\s*wait)?", last)
-            if ho and "TERMINOU" not in last:
+            if ho and not reply:
                 g = tasksmod.gate(db, agent, task_id, "handoff_task", "hangar:handoff_task",
                                   {"to": ho.group(1), "title": ho.group(2).strip(), "wait": bool(ho.group(3))}, "", "handoff")
                 if g["status"] == "waiting":
                     return f"[[HANGAR_WAITING:{g['request_id']}]] {g['message']}"
                 return f"negado: {g['message']}" if g["status"] == "denied" else f"repassado: {g.get('result', '')}"
-            if "TERMINOU" in last:
+            if last.startswith(("TAREFA REPASSADA", "HANDED-OFF TASK")):
                 return f"recebi o resultado do colega: {last[:200]}"
             q = re.search(r"\bask:\s*(.+)", last)
             if q and "RESPOSTA de" not in last:

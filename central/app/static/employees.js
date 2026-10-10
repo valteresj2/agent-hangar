@@ -474,7 +474,7 @@ async function empSettings(t, e) {
       como dado, nunca como instrução, e as ações continuam passando pela alçada. Quem é da empresa recebe a resposta por e-mail quando a tarefa termina.</div>
     <div class="grid g2 mt"><label>Servidor IMAP<input id="ib-host" value="${esc(ib.host || '')}" placeholder="imap.empresa.com" data-noi18n></label>
       <label>Porta (SSL)<input id="ib-port" type="number" value="${ib.port || 993}"></label>
-      <label>Usuário<input id="ib-user" value="${esc(ib.user || '')}" placeholder="renovacoes@empresa.com" data-noi18n></label>
+      <label><span data-noi18n>${window.t('Usuário', 'login')}</span><input id="ib-user" value="${esc(ib.user || '')}" placeholder="renovacoes@empresa.com" data-noi18n></label>
       <label>Senha (de app)<input id="ib-pass" type="password" autocomplete="off" placeholder="${ib.password ? 'cadastrada — digite outra para trocar' : ''}"></label>
       <label>Pasta<input id="ib-folder" value="${esc(ib.folder || 'INBOX')}" data-noi18n></label>
       <label>Remetentes permitidos (um por linha; @dominio.com vale para o domínio)<textarea id="ib-allowed" rows="3" data-noi18n>${esc((ib.allowed || []).join('\n'))}</textarea></label></div>

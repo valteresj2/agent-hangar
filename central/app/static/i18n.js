@@ -567,6 +567,7 @@
     'Credencial de TESTE (sandbox do sistema), usada só nos testes do rascunho. Nunca serve os agentes.': 'A TEST credential (the system’s sandbox), used only by the draft’s tests. It never serves agents.',
     'Salvar a credencial de teste': 'Save the test credential',
     'Os testes ainda não rodaram nesta versão.': 'The tests have not run on this version yet.',
+    'Sem testes declarados (`tests` no manifesto).': 'No tests declared (`tests` in the manifest).',
     'testes passaram': 'tests passed',
     'testes falharam': 'tests failed',
     'desatualizado: o rascunho mudou': 'outdated: the draft changed',
@@ -1160,7 +1161,14 @@
     if (!document.querySelector('.lang-float')) document.body.append(langSwitch('lang-float'));
   };
   if (document.body) addSwitches(); else document.addEventListener('DOMContentLoaded', addSwitches);
-  window.t = s => (LANG === 'en' && D[s]) || s;
+  // t(texto, contexto): o mesmo texto em português pode virar coisas diferentes em inglês ("no ar" é "live" para um agente e
+  // "running" para o servidor de um plugin; "Usuário" é "User" numa lista e "Username" num login). Quem chama com
+  // contexto marca o elemento com data-noi18n para a camada do DOM não traduzir de novo.
+  const DC = {
+    'servidor|no ar': 'running',
+    'login|Usuário': 'Username',
+  };
+  window.t = (s, ctx) => (LANG === 'en' && ((ctx && DC[ctx + '|' + s]) || D[s])) || s;
   if (LANG !== 'en') return;
 
   const exact = new Map(Object.entries(D));

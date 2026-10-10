@@ -13,7 +13,7 @@ x-build-only: &build-only
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-hangar}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?rode scripts/setup.sh para gerar o .env}
@@ -33,7 +33,7 @@ services:
   # (criar/listar/parar/remover/logs), volumes e redes — sem exec, build, pull, images, swarm, secrets.
   # Veja docs/security.md para o que isso protege e o que NÃO protege.
   docker-proxy:
-    image: tecnativa/docker-socket-proxy:v0.4.1
+    image: ${DOCKER_PROXY_IMAGE:-tecnativa/docker-socket-proxy:v0.4.1}
     environment:
       CONTAINERS: 1
       POST: 1
@@ -52,40 +52,43 @@ services:
   agent-runtime:
     <<: *build-only
     image: ${HANGAR_REGISTRY:-agent-hangar}/agent-runtime:${HANGAR_VERSION:-latest}
-    build: ./runtime
+    build: { context: ./runtime, args: { PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}" } }
 
   harness-base:
     <<: *build-only
     image: ${HANGAR_REGISTRY:-agent-hangar}/harness-base:${HANGAR_VERSION:-latest}
-    build: { context: ./harness, target: base }
+    build: { context: ./harness, target: base, args: { NODE_IMAGE: "${NODE_IMAGE:-node:22-slim}" } }
 
   harness-claude-code:
     <<: *build-only
     profiles: [harness]
     image: ${HANGAR_REGISTRY:-agent-hangar}/harness-claude-code:${HANGAR_VERSION:-latest}
-    build: { context: ./harness, target: claude-code }
+    build: { context: ./harness, target: claude-code, args: { NODE_IMAGE: "${NODE_IMAGE:-node:22-slim}" } }
 
   harness-codex:
     <<: *build-only
     profiles: [harness]
     image: ${HANGAR_REGISTRY:-agent-hangar}/harness-codex:${HANGAR_VERSION:-latest}
-    build: { context: ./harness, target: codex }
+    build: { context: ./harness, target: codex, args: { NODE_IMAGE: "${NODE_IMAGE:-node:22-slim}" } }
 
   harness-deepseek-harness:
     <<: *build-only
     profiles: [harness]
     image: ${HANGAR_REGISTRY:-agent-hangar}/harness-deepseek-harness:${HANGAR_VERSION:-latest}
-    build: { context: ./harness, target: deepseek-harness }
+    build: { context: ./harness, target: deepseek-harness, args: { NODE_IMAGE: "${NODE_IMAGE:-node:22-slim}" } }
 
   harness-hermes:
     <<: *build-only
     profiles: [hermes]
     image: ${HANGAR_REGISTRY:-agent-hangar}/harness-hermes:${HANGAR_VERSION:-latest}
-    build: { context: ./harness, target: hermes }
+    build: { context: ./harness, target: hermes, args: { NODE_IMAGE: "${NODE_IMAGE:-node:22-slim}" } }
 
   central:
     image: ${HANGAR_REGISTRY:-agent-hangar}/central:${HANGAR_VERSION:-latest}
-    build: { context: ., dockerfile: central/Dockerfile }
+    build:
+      context: .
+      dockerfile: central/Dockerfile
+      args: { PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}", NODE_ALPINE_IMAGE: "${NODE_ALPINE_IMAGE:-node:22-alpine}" }
     depends_on:
       postgres: { condition: service_healthy }
       docker-proxy: { condition: service_started }
@@ -170,7 +173,7 @@ services:
   data-studio:
     profiles: [data-studio]
     image: ${HANGAR_REGISTRY:-agent-hangar}/mcp-data-studio:${HANGAR_VERSION:-latest}
-    build: ./mcp-servers/data-studio
+    build: { context: ./mcp-servers/data-studio, args: { PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}" } }
     depends_on: [data-studio-docker]   # proxy do Docker para os sandboxes (SANDBOX=container)
     environment:
       PUBLIC_URL: ${DATA_STUDIO_PUBLIC_URL:-http://localhost:8095}
@@ -200,7 +203,7 @@ services:
   # Docker (via proxy restrito a containers) só para o Data Studio criar os sandboxes por sessão (SANDBOX=container)
   data-studio-docker:
     profiles: [data-studio]
-    image: tecnativa/docker-socket-proxy:v0.4.1
+    image: ${DOCKER_PROXY_IMAGE:-tecnativa/docker-socket-proxy:v0.4.1}
     environment:
       CONTAINERS: 1
       POST: 1
@@ -270,7 +273,7 @@ services:
 
   mcp-gateway-docker:
     profiles: [mcp-gateway]
-    image: tecnativa/docker-socket-proxy:v0.4.1
+    image: ${DOCKER_PROXY_IMAGE:-tecnativa/docker-socket-proxy:v0.4.1}
     environment:
       CONTAINERS: 1
       IMAGES: 1          # baixa as imagens assinadas dos servidores
@@ -357,7 +360,7 @@ services:
   memory:
     profiles: [memory, memory-falkordb]
     image: ${HANGAR_REGISTRY:-agent-hangar}/mcp-memory:${HANGAR_VERSION:-latest}
-    build: { context: mcp-servers/memory }
+    build: { context: mcp-servers/memory, args: { PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}" } }
     environment:
       MEMORY_BACKEND: ${MEMORY_BACKEND:-neo4j}
       MEMORY_TOKEN: ${MEMORY_TOKEN:-}

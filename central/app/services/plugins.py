@@ -413,6 +413,11 @@ def _can_install(acc: Access, team_id: int | None) -> bool:
     return team_id is not None and acc.teams.get(team_id) == "maintainer"
 
 
+def smoke_case(m: dict) -> dict | None:
+    """O que o "Testar conexão" chama: `test`, ou o primeiro caso de `tests` que não espera erro."""
+    return m.get("test") or next((c for c in m.get("tests") or [] if not c.get("expect_error")), None)
+
+
 def mof(p: Plugin, i: PluginInstall | None) -> dict:
     """O manifesto de uma instalação: a de stage roda o rascunho; as de produção, a versão aprovada."""
     return (p.manifest if i is not None and i.stage else p.approved_manifest) or {}
@@ -745,10 +750,10 @@ def test_install(db, acc: Access, name: str, team: str | None, stage: bool = Fal
         i.last_test = _test_server(db, p, i)
         db.commit()
         return i.last_test
-    t = m.get("test") or {"tool": next((x["name"] for x in m["tools"] if x["method"] == "GET"), m["tools"][0]["name"]),
-                          "args": {}}
+    t = smoke_case(m) or {"tool": next((x["name"] for x in m["tools"] if x["method"] == "GET"), m["tools"][0]["name"]),
+                           "args": {}}
     tool = next(x for x in m["tools"] if x["name"] == t["tool"])
-    if tool["method"] != "GET" and not m.get("test"):
+    if tool["method"] != "GET" and not smoke_case(m):
         raise PlatformError("sem ferramenta de leitura para testar: declare `test` no manifesto")
     text, err, status = _execute(db, m, i, tool, t.get("args") or {})
     i.last_test = {"ok": not err, "status": status, "at": iso(now()), "tool": tool["name"], "sample": text[:300]}
@@ -1374,9 +1379,10 @@ def _test_server(db, p: Plugin, i: PluginInstall) -> dict:
     if missing:
         return {"ok": False, "status": 0, "at": iso(now()), "tool": "",
                 "sample": f"o servidor não oferece: {', '.join(missing)}"}
-    if m.get("test"):
-        text, err = server_call(db, p, i, m["test"]["tool"], m["test"].get("args") or {})
-        return {"ok": not err, "status": 0, "at": iso(now()), "tool": m["test"]["tool"], "sample": text[:300]}
+    case = smoke_case(m)
+    if case:
+        text, err = server_call(db, p, i, case["tool"], case.get("args") or {})
+        return {"ok": not err, "status": 0, "at": iso(now()), "tool": case["tool"], "sample": text[:300]}
     hidden = sorted(offered - {t["name"] for t in m["tools"]})
     return {"ok": True, "status": 0, "at": iso(now()), "tool": "",
             "sample": f"{len(m['tools'])} ferramenta(s) declarada(s) no ar" + (f"; escondidas: {', '.join(hidden)}" if hidden else "")}

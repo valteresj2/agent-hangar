@@ -2,7 +2,9 @@
 # Modo "process" (padrão): o servidor roda como root DENTRO do container só para trocar de uid — cada sessão
 # (conversa) executa Python com um uid próprio e workspace 700 (app/kernels.py). Modo "container": cada sessão ganha
 # o seu próprio container sandbox desta mesma imagem (app/sandbox.py).
-FROM python:3.12-slim
+ARG PYTHON_IMAGE=python:3.12-slim
+# imagem base parametrizada: o CI usa a cópia do espelho no GHCR (.github/base-images.txt); localmente, o Docker Hub
+FROM ${PYTHON_IMAGE}
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 MPLBACKEND=Agg
 # LibreOffice (headless) renderiza PPTX/DOCX/XLSX em imagens para preview_file; Carlito/Liberation têm as métricas
 # de Calibri/Arial, então o slide renderizado fica fiel ao que o PowerPoint mostra.

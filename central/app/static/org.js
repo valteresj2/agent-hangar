@@ -87,7 +87,7 @@ async function showLogin() {
 async function overviewLimited(t, a) {
   const mineReq = a.access === 'viewer' ? ((await api('/approvals').catch(() => ({ my_access: [] }))).my_access || []).find(r => r.agent === a.slug && r.status === 'pending') : null;
   const useCard = a.access === 'viewer'
-    ? `<div class="card hero"><h2>Quer usar este agente?</h2><div>Ele é do time <b>${esc(a.team ? a.team.name : '—')}</b>. ${mineReq ? `Seu pedido de ${ago(mineReq.created_at)} atrás está <b>aguardando</b> o mantenedor do time.` : 'Peça acesso: um mantenedor do time aprova, e aí você conecta o agente nas suas ferramentas (aba Conectar).'}</div>
+    ? `<div class="card hero"><h2>Quer usar este agente?</h2><div>Ele é do time <b>${esc(a.team ? a.team.name : '—')}</b>. ${mineReq ? `Seu pedido de ${when(mineReq.created_at)} está <b>aguardando</b> o mantenedor do time.` : 'Peça acesso: um mantenedor do time aprova, e aí você conecta o agente nas suas ferramentas (aba Conectar).'}</div>
        ${mineReq ? '' : '<button class="mt" id="ov-req">Solicitar acesso</button>'}</div>`
     : `<div class="card hero"><h2>Pronto para usar</h2><div>Conecte nas suas ferramentas pela aba <a href="#/agents/${a.slug}/connect">Conectar</a> (Claude, Codex, OpenCode, LibreChat, Open WebUI…) ou teste no <a href="#/agents/${a.slug}/playground">Playground</a>.</div></div>`;
   t.innerHTML = `${useCard}<div class="grid g2 mt">
@@ -116,7 +116,7 @@ async function agentAccess(t, a) {
       <button id="ac-save" class="mt">Salvar</button></div>
     <div class="card"><h2>Pedidos e acessos concedidos (${grants.length})</h2>
       ${grants.length ? `<table><tr><th>Pessoa</th><th>Motivo</th><th>Status</th><th></th></tr>${grants.map(g => `<tr><td><b>${esc(g.user_name || g.user)}</b><div class="mute small">${esc(g.user)}</div></td>
-        <td class="small">${esc(g.reason) || '<span class="mute">—</span>'}</td><td>${g.status === 'pending' ? '<span class="pill warn">pendente</span>' : '<span class="pill ok">liberado</span>'}<div class="mute small">${ago(g.created_at)} atrás</div></td>
+        <td class="small">${esc(g.reason) || '<span class="mute">—</span>'}</td><td>${g.status === 'pending' ? '<span class="pill warn">pendente</span>' : '<span class="pill ok">liberado</span>'}<div class="mute small">${when(g.created_at)}</div></td>
         <td>${g.status === 'pending' ? `<button class="gr-ok" data-id="${g.id}">Aprovar</button> <button class="ghost gr-no" data-id="${g.id}">Recusar</button>` : `<button class="ghost gr-rev" data-id="${g.id}">Revogar</button>`}</td></tr>`).join('')}</table>`
         : '<div class="mute">Nenhum pedido. Com visibilidade “empresa”, pessoas de outros times pedem acesso pelo catálogo.</div>'}</div></div>`;
   $('#ac-save').onclick = e => act(e.target, () => api(`/agents/${a.slug}/access`, { method: 'PATCH', body: { visibility: $('#ac-vis').value, expose_spec: $('#ac-spec').checked, team: $('#ac-team').value } }).then(route), 'Acesso atualizado');
@@ -137,17 +137,17 @@ async function approvalsPage() {
   <div class="card"><h2>Para você decidir (${r.to_decide.length})</h2>
     ${r.to_decide.length ? r.to_decide.map(x => x.kind === 'promotion' ? `
       <div class="card mt"><div class="row between"><div><span class="pill info">produção</span> <a href="#/agents/${x.agent}"><b>${esc(x.agent_name)}</b></a> v${x.version}
-        <div class="mute small">pedido por ${esc(x.requested_by)} · ${ago(x.created_at)} atrás${x.note ? ` · “${esc(x.note)}”` : ''}</div>
+        <div class="mute small">pedido por ${esc(x.requested_by)} · ${when(x.created_at)}${x.note ? ` · “${esc(x.note)}”` : ''}</div>
         ${x.stale ? '<div class="bad-text small">O agente mudou depois do pedido — aprovar não vale; peça de novo.</div>' : ''}</div>
         <div class="row"><button class="pr-ok" data-id="${x.id}" ${x.stale ? 'disabled' : ''}>Aprovar e publicar</button><button class="ghost pr-no" data-id="${x.id}">Recusar</button></div></div></div>` : `
       <div class="card mt"><div class="row between"><div><span class="pill">acesso</span> <b>${esc(x.user_name || x.user)}</b> <span class="mute small">${esc(x.user)}</span> quer usar <a href="#/agents/${x.agent}"><b>${esc(x.agent_name)}</b></a>
-        <div class="mute small">${ago(x.created_at)} atrás${x.reason ? ` · “${esc(x.reason)}”` : ''}</div></div>
+        <div class="mute small">${when(x.created_at)}${x.reason ? ` · “${esc(x.reason)}”` : ''}</div></div>
         <div class="row"><button class="ac-ok" data-id="${x.id}">Liberar</button><button class="ghost ac-no" data-id="${x.id}">Recusar</button></div></div></div>`).join('')
       : '<div class="mute">Nada pendente.</div>'}</div>
   <div class="grid g2 mt">
-    <div class="card"><h2>Seus pedidos de acesso</h2>${r.my_access.length ? `<table><tr><th>Agente</th><th>Status</th><th></th></tr>${r.my_access.map(x => `<tr><td><a href="#/agents/${x.agent}">${esc(x.agent_name)}</a><div class="mute small">${ago(x.created_at)} atrás</div></td><td>${reqPill(x.status)}</td>
+    <div class="card"><h2>Seus pedidos de acesso</h2>${r.my_access.length ? `<table><tr><th>Agente</th><th>Status</th><th></th></tr>${r.my_access.map(x => `<tr><td><a href="#/agents/${x.agent}">${esc(x.agent_name)}</a><div class="mute small">${when(x.created_at)}</div></td><td>${reqPill(x.status)}</td>
       <td>${x.status === 'approved' ? `<button class="ghost my-rev" data-id="${x.id}">Abrir mão</button>` : ''}</td></tr>`).join('')}</table>` : '<div class="mute">Nenhum. Procure agentes no <a href="#/agents/catalog">catálogo da empresa</a>.</div>'}</div>
-    <div class="card"><h2>Suas promoções</h2>${r.my_promotions.length ? `<table><tr><th>Agente</th><th>Versão</th><th>Status</th></tr>${r.my_promotions.map(x => `<tr><td><a href="#/agents/${x.agent}">${esc(x.agent_name)}</a><div class="mute small">${ago(x.created_at)} atrás</div></td><td>v${x.version}</td><td>${reqPill(x.status)}${x.decided_by ? `<div class="mute small">por ${esc(x.decided_by)}</div>` : ''}</td></tr>`).join('')}</table>` : '<div class="mute">Nenhuma.</div>'}</div></div>`;
+    <div class="card"><h2>Suas promoções</h2>${r.my_promotions.length ? `<table><tr><th>Agente</th><th>Versão</th><th>Status</th></tr>${r.my_promotions.map(x => `<tr><td><a href="#/agents/${x.agent}">${esc(x.agent_name)}</a><div class="mute small">${when(x.created_at)}</div></td><td>v${x.version}</td><td>${reqPill(x.status)}${x.decided_by ? `<div class="mute small">por ${esc(x.decided_by)}</div>` : ''}</td></tr>`).join('')}</table>` : '<div class="mute">Nenhuma.</div>'}</div></div>`;
   const bind = (sel, url, msg, ask) => document.querySelectorAll(sel).forEach(b => b.onclick = e => (!ask || confirm(ask)) &&
     act(e.target, () => api(url(b.dataset.id), { method: 'POST', body: {} }).then(approvalsPage), msg));
   bind('.pr-ok', id => `/promotions/${id}/approve`, 'Aprovado — agente publicado em produção', 'Aprovar e publicar esta versão em produção?');
@@ -240,7 +240,7 @@ async function usersPage() {
       <td>${u.username ? `<span class="chip" title="Conta local">${icon('user')}${esc(u.username)}</span> ` : ''}${u.provider ? `<span class="chip">${esc(u.provider)}</span>` : (u.username ? '' : '<span class="mute small">pré-cadastro</span>')}${u.scim ? ' <span class="chip">scim</span>' : ''}</td>
       <td>${ME.is_admin ? `<select class="u-role" data-id="${u.id}" style="width:auto">${['member', 'auditor', 'admin'].map(r => `<option value="${r}" ${r === u.org_role ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('')}</select>` : esc(ROLE_LABEL[u.org_role])}</td>
       <td>${u.teams.map(t => `<span class="chip" title="${esc(ROLE_LABEL[t.role])}">${esc(t.name)} · ${esc(ROLE_LABEL[t.role])}</span>`).join('') || '<span class="mute small">—</span>'}</td>
-      <td class="mute small">${u.last_login_at ? ago(u.last_login_at) + ' atrás' : 'nunca'}</td>
+      <td class="mute small">${u.last_login_at ? when(u.last_login_at) : 'nunca'}</td>
       <td>${ME.is_admin ? `<button class="ghost u-pw" data-id="${u.id}" data-u="${esc(u.username || '')}" data-n="${esc(u.email)}">${u.username ? 'Redefinir senha' : 'Criar login local'}</button> ` : ''}${ME.is_admin ? `<button class="ghost u-act ${u.active ? '' : 'on'}" data-id="${u.id}" data-a="${u.active ? 0 : 1}" data-n="${esc(u.email)}">${u.active ? 'Desativar' : 'Reativar'}</button>` : (u.active ? '' : '<span class="pill bad">desativado</span>')}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Nenhum usuário</td></tr>';
     document.querySelectorAll('.u-role').forEach(s => s.onchange = () => api(`/users/${s.dataset.id}`, { method: 'PATCH', body: { org_role: s.value } }).then(() => toast('Papel atualizado')).catch(e => toast(e.message, true)));
     document.querySelectorAll('.u-pw').forEach(b => b.onclick = async () => {
@@ -311,7 +311,7 @@ async function ssoPage() {
     <div class="card"><h2>SCIM 2.0 (provisionamento)</h2><div class="mute small">No Entra ID: Aplicativos empresariais → seu app → Provisionamento → Automático. Okta: app SCIM 2.0. Desligar alguém no diretório encerra as sessões e revoga as chaves dele aqui.</div>
       <div class="small mt">URL do locatário: ${copyable(c.scim_url)}</div>
       <div class="row mt"><input id="sc-name" placeholder="nome do token (ex.: entra-id)" value="entra-id"><button id="sc-go">Gerar token SCIM</button></div><div id="sc-new"></div>
-      ${scimKeys.length ? `<table class="mt"><tr><th>Token</th><th>Último uso</th><th></th></tr>${scimKeys.map(k => `<tr><td><b>${esc(k.name)}</b> <code class="inline">${esc(k.prefix)}…</code></td><td class="mute small">${k.last_used_at ? ago(k.last_used_at) + ' atrás' : 'nunca'}</td><td><button class="ghost sc-rev" data-id="${k.id}">Revogar</button></td></tr>`).join('')}</table>` : ''}</div>
+      ${scimKeys.length ? `<table class="mt"><tr><th>Token</th><th>Último uso</th><th></th></tr>${scimKeys.map(k => `<tr><td><b>${esc(k.name)}</b> <code class="inline">${esc(k.prefix)}…</code></td><td class="mute small">${k.last_used_at ? when(k.last_used_at) : 'nunca'}</td><td><button class="ghost sc-rev" data-id="${k.id}">Revogar</button></td></tr>`).join('')}</table>` : ''}</div>
     <div class="card"><h2>Primeiro acesso e emergência</h2><div class="small">E-mails em <code>BOOTSTRAP_ADMIN_EMAILS</code> viram admin no login: ${c.bootstrap_admins.length ? c.bootstrap_admins.map(e => `<span class="chip">${esc(e)}</span>`).join('') : '<span class="mute">nenhum definido</span>'}</div>
       <div class="mute small mt">O <code>ADMIN_TOKEN</code> continua funcionando como acesso de emergência (“Entrar com token”): guarde-o num cofre e use só se o SSO cair.</div></div></div>`;
   document.querySelectorAll('.sp-save').forEach(b => b.onclick = e => {
@@ -343,7 +343,7 @@ async function agentSchedules(t, a) {
       ${list.map(s => `<tr><td><b>${esc(s.name)}</b><div class="mute small">${esc(s.when)} (${esc(s.timezone)})${s.notify_url ? ' · webhook' : ''}</div></td>
         <td class="small one-line" style="max-width:280px" title="${esc(s.message)}">${esc(s.message)}</td>
         <td>${s.enabled ? (s.next_run_local ? esc(s.next_run_local) : '—') : '<span class="pill">pausado</span>'}</td>
-        <td>${schPill(s.last_status)}${s.last_run_at ? `<div class="mute small">${ago(s.last_run_at)} atrás</div>` : ''}</td>
+        <td>${schPill(s.last_status)}${s.last_run_at ? `<div class="mute small">${when(s.last_run_at)}</div>` : ''}</td>
         <td class="row" style="flex-wrap:nowrap;justify-content:flex-end">
           <button class="ghost sc-hist" data-id="${s.id}">Histórico</button>
           ${edit ? `<button class="ghost sc-run" data-id="${s.id}">Rodar agora</button>
@@ -390,7 +390,7 @@ async function agentSchedules(t, a) {
     const row = $(`#sc-runs-${b.dataset.id}`);
     if (!row.hidden) { row.hidden = true; return; }
     const runs = await api(`/schedules/${b.dataset.id}/runs?limit=10`);
-    row.firstElementChild.innerHTML = runs.length ? runs.map(r => `<div class="card mt"><div class="row between"><div>${schPill(r.status)} <span class="mute small">${ago(r.started_at)} atrás${r.trigger !== 'schedule' ? ` (${r.trigger === 'manual' ? 'manual' : 'atrasado'})` : ''}${r.version ? `, v${r.version}` : ''}</span></div>
+    row.firstElementChild.innerHTML = runs.length ? runs.map(r => `<div class="card mt"><div class="row between"><div>${schPill(r.status)} <span class="mute small">${when(r.started_at)}${r.trigger !== 'schedule' ? ` (${r.trigger === 'manual' ? 'manual' : 'atrasado'})` : ''}${r.version ? `, v${r.version}` : ''}</span></div>
       <span class="mute small">${fmt(r.tokens)} tokens, ${usd(r.cost_usd)}${r.notify_status ? `, webhook ${esc(r.notify_status)}` : ''}</span></div>
       ${r.output ? `<div class="msg a md run-out">${mdLite(r.output)}</div>` : ''}${r.error ? `<div class="bad-text small mt">${esc(r.error)}</div>` : ''}</div>`).join('') : '<div class="mute small">Nenhuma execução ainda.</div>';
     row.hidden = false;
@@ -409,6 +409,7 @@ async function agentSchedules(t, a) {
 async function gatewayCatalog(box, q = '') {
   const [st, cat] = await Promise.all([api('/mcp-gateway/status').catch(e => ({ online: false, error: e.message })),
     api('/mcp-gateway/catalog?limit=24&q=' + encodeURIComponent(q)).catch(e => ({ error: e.message, servers: [] }))]);
+  if (!box.isConnected) return;  // a pessoa já saiu da tela enquanto o catálogo carregava
   const tools = st.tools || {};
   box.innerHTML = `<div class="card"><div class="row between"><h2>Catálogo Docker MCP ${cat.total ? `(${cat.total} servidores)` : ''}</h2>
       ${st.online ? `<span class="pill ok">gateway no ar, ${st.total_tools} ferramentas</span>` : '<span class="pill warn">gateway fora do ar</span>'}</div>
@@ -428,9 +429,9 @@ async function gatewayCatalog(box, q = '') {
       <div class="row mt">${s.enabled
         ? `<button class="ghost gw-off" data-n="${esc(s.name)}">Desativar</button>${s.secrets.length || s.config.length ? `<button class="ghost gw-on" data-n="${esc(s.name)}" data-f="${s.secrets.length + s.config.length}">Atualizar</button>` : ''}`
         : `<button class="gw-on" data-n="${esc(s.name)}" data-f="${s.secrets.length + s.config.length}">Ativar</button>`}</div></div>`).join('')}</div></div>`;
-  const reload = () => gatewayCatalog(box, $('#gw-q').value.trim());
-  $('#gw-go').onclick = reload;
-  $('#gw-q').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); reload(); } };
+  const reload = () => gatewayCatalog(box, box.querySelector('#gw-q').value.trim());
+  box.querySelector('#gw-go').onclick = reload;
+  box.querySelector('#gw-q').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); reload(); } };
   box.querySelectorAll('.gw-on').forEach(b => b.onclick = e => {
     const form = box.querySelector(`.gw-form[data-n="${b.dataset.n}"]`);
     if (+b.dataset.f && form.hidden) { form.hidden = false; b.textContent = 'Confirmar'; return; }  // pede os segredos antes

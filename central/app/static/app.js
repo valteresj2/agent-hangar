@@ -323,7 +323,7 @@ async function agentConnect(t, a) {
     $('#cn-list').innerHTML = `<div class="card mt"><h2>Conexões ativas (${list.length})</h2>
     ${list.length ? `<div class="scroll"><table><tr><th>Ferramenta</th><th>Modo</th><th>Chave</th><th>Criada</th><th>Último uso</th><th></th></tr>
     ${list.map(k => `<tr><td><b>${esc(k.client_label)}</b></td><td>${esc(modeLabel[k.mode] || k.mode)}</td><td><code class="inline">${esc(k.prefix)}…</code></td>
-      <td class="mute">${ago(k.created_at)}</td><td class="mute">${k.last_used_at ? ago(k.last_used_at) + ' atrás' : 'nunca'}</td>
+      <td class="mute">${ago(k.created_at)}</td><td class="mute">${k.last_used_at ? when(k.last_used_at) : 'nunca'}</td>
       <td><button class="ghost cn-rev" data-id="${k.id}" data-n="${esc(k.client_label)}">Desconectar</button></td></tr>`).join('')}</table></div>`
       : '<div class="mute">Nenhuma ainda — escolha uma ferramenta abaixo.</div>'}</div>`;
     $('#cn-list').querySelectorAll('.cn-rev').forEach(b => b.onclick = e => confirm(`Desconectar ${b.dataset.n}? Essa ferramenta perde o acesso ao agente.`) &&
@@ -396,7 +396,7 @@ function overview(t, a) {
     <div class="card"><h2>Registro</h2><dl class="kv">
       <dt>Slug</dt><dd>${copyable(a.slug)}</dd><dt>Saída final</dt><dd>${esc(a.final_output)}</dd>
       <dt>Time</dt><dd>${esc(a.team ? a.team.name : '—')}</dd><dt>Contato</dt><dd>${esc(a.owner) || '—'}</dd><dt>Versão atual</dt><dd>v${a.version}</dd>
-      <dt>Criado</dt><dd>${ago(a.created_at)} atrás</dd><dt>Atualizado</dt><dd>${ago(a.updated_at)} atrás</dd></dl></div>
+      <dt>Criado</dt><dd>${when(a.created_at)}</dd><dt>Atualizado</dt><dd>${when(a.updated_at)}</dd></dl></div>
     ${compositionCard}
     <div class="card"><h2>Instruções</h2><pre>${esc(s.instructions) || '(sem instruções)'}</pre></div>
     <div class="card"><h2>Endpoints (produção)</h2><div class="mute small">Header <code>Authorization: Bearer &lt;chave invoke&gt;</code> (gere em <a href="#/keys">Chaves de API</a>); opcional <code>X-Channel: slack</code> para métricas por canal.
@@ -561,7 +561,7 @@ function guideDoc(a, g, editing = false) {
 function versions(t, a) {
   const tested = new Set(a.tests.filter(x => x.status === 'passed').map(x => x.version));
   t.innerHTML = [...a.versions].sort((x, y) => y.version - x.version).map(v => `<div class="card mt"><div class="row between"><b>v${v.version}${v.version === a.version ? ' <span class="pill ok">atual</span>' : ''}${tested.has(v.version) ? ' <span class="pill info">testada</span>' : ''}</b>
-    <span class="row"><span class="mute small">${esc(v.created_by)} · ${ago(v.created_at)} atrás</span>
+    <span class="row"><span class="mute small">${esc(v.created_by)} · ${when(v.created_at)}</span>
     ${v.version !== a.version && can(a, 'edit') ? `<button class="ghost rb" data-v="${v.version}">Restaurar</button>` : ''}</span></div>
     <details><summary>Ver spec</summary><pre>${esc(JSON.stringify(v.spec, null, 2))}</pre></details></div>`).join('');
   t.querySelectorAll('.rb').forEach(b => b.onclick = e => confirm(`Restaurar a spec da v${b.dataset.v} como uma nova versão? (depois rode testes/ship)`) &&
@@ -570,7 +570,7 @@ function versions(t, a) {
 
 function testCard(r) {
   return `<div class="card mt"><div class="row between"><div>${pill(r.status)} <b>v${r.version}</b> · ${esc(r.env)} · <span data-noi18n>${esc(window.tr ? window.tr(r.summary) : r.summary)}</span></div>
-    <span class="mute small">${ago(r.created_at)} atrás · ${r.duration_ms}ms</span></div>
+    <span class="mute small">${when(r.created_at)} · ${r.duration_ms}ms</span></div>
     <table>${r.results.map(x => `<tr><td style="width:24px">${x.passed ? `${icon('check', 'ok-ic')}` : `${icon('x', 'bad-ic')}`}</td><td data-noi18n>${esc(x.name)}</td><td class="mute small" data-noi18n>${esc(x.detail)}</td><td class="mute small">${x.latency_ms}ms</td></tr>`).join('')}</table></div>`;
 }
 function tests(t, a) {
@@ -579,7 +579,7 @@ function tests(t, a) {
 
 function jobCard(j) {
   return `<div class="card mt"><div class="row between"><div>${pill(j.status)} <b>#${j.id}</b> · v${j.version} · ${esc(j.env)} · ${esc(j.harness_id)}${j.connection ? ' · ' + esc(j.connection) : ' · mock'}</div>
-    <span class="mute small">${ago(j.created_at)} atrás · ${fmt(j.duration_ms)}ms · ${fmt((j.tokens_in || 0) + (j.tokens_out || 0))} tokens · ${usd(j.cost_usd)}</span></div>
+    <span class="mute small">${when(j.created_at)} · ${fmt(j.duration_ms)}ms · ${fmt((j.tokens_in || 0) + (j.tokens_out || 0))} tokens · ${usd(j.cost_usd)}</span></div>
     <div class="mt"><b>Tarefa:</b> <span data-noi18n>${esc(j.task)}</span></div>
     <div class="mt"><b>Resultado:</b><pre>${esc(j.result) || '(vazio)'}</pre></div>
     ${j.diff ? `<details class="mt"><summary>Diff</summary><pre>${esc(j.diff)}</pre></details>` : ''}
@@ -954,7 +954,7 @@ async function templatesPage() {
   ${myTeams.length ? `<div class="card row"><b>Aplicar no time</b><select id="tp-team" style="width:auto">${myTeams.map(t => `<option value="${esc(t.slug)}">${esc(t.name)}</option>`).join('')}</select></div>` : '<div class="card warn-card">Só developers e maintainers de um time aplicam templates.</div>'}<div class="mt"></div>
   <div class="grid g2">${list.map(t => `<div class="card tpl"><div class="row between"><h2>${esc(t.title)}</h2>${t.harness ? harnessPill({ id: t.harness }) : t.agents.length > 1 ? kindPill('multi') : kindPill('single')}</div>
     <div data-noi18n>${esc(t.description)}</div><div class="mt">${t.tags.map(x => `<span class="chip">${esc(x)}</span>`).join('')}</div>
-    <div class="mute small mt">Agentes: ${t.agents.map(esc).join(', ')}<br>Precisa de: ${esc(t.needs)}</div>
+    <div class="mute small mt">Agentes: ${t.agents.map(esc).join(', ')}<br>Precisa de: <span data-noi18n>${esc(t.needs)}</span></div>
     <div class="grid g2 mt">${t.harness
       ? `<select id="tp-${t.id}-h">${opts(HP[t.harness], `conexão ${HP[t.harness]} (vazio = mock)`)}</select>`
       : `<select id="tp-${t.id}-c">${opts('openai', 'conexão openai (vazio = mock)')}</select>`}

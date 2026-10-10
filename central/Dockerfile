@@ -1,6 +1,9 @@
 # Contexto de build: raiz do repositório (para levar os templates e a extensão do VS Code junto).
 # Estágio 1: a extensão Agent Hangar do VS Code (.vsix), servida pela central em /downloads/.
-FROM node:22-alpine AS vscode-ext
+ARG NODE_ALPINE_IMAGE=node:22-alpine
+ARG PYTHON_IMAGE=python:3.12-slim
+# imagem base parametrizada: o CI usa a cópia do espelho no GHCR (.github/base-images.txt); localmente, o Docker Hub
+FROM ${NODE_ALPINE_IMAGE} AS vscode-ext
 WORKDIR /ext
 COPY extensions/vscode/package.json ./
 RUN npm install --no-audit --no-fund
@@ -8,7 +11,7 @@ COPY extensions/vscode/ ./
 COPY LICENSE /LICENSE
 RUN LICENSE_PATH=/LICENSE npm test && LICENSE_PATH=/LICENSE npm run package
 
-FROM python:3.12-slim
+FROM ${PYTHON_IMAGE}
 # correções de segurança do Debian publicadas depois da imagem base (o Trivy do CI acusa as que faltarem)
 RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1

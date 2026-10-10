@@ -140,7 +140,7 @@ function plTriggers(m, inst, emps) {
 function plServer(inst) {
   const s = inst && inst.server;
   if (!s) return '';
-  const pill = s.state === 'running' ? '<span class="pill ok">no ar</span>' : s.state === 'missing' ? '<span class="pill">parado</span>' : `<span class="pill bad">${esc(s.state)}</span>`;
+  const pill = s.state === 'running' ? `<span class="pill ok" data-noi18n>${window.t('no ar', 'servidor')}</span>` : s.state === 'missing' ? '<span class="pill">parado</span>' : `<span class="pill bad">${esc(s.state)}</span>`;
   return `<div class="mt"><b>Servidor</b> ${pill} <code class="inline" data-noi18n>${esc(s.name)}</code>
     ${s.started ? `<span class="mute small"><span>desde</span> <span>${ago(s.started)}</span></span>` : ''}
     ${s.error ? `<div class="small bad-ic" data-noi18n>${esc(s.error)}</div>` : ''}

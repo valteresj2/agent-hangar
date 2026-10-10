@@ -1,0 +1,45 @@
+name: Base images mirror
+
+# Copia as imagens de terceiros que os builds e o CI usam (.github/base-images.txt) para o GHCR, preservando todas as
+# arquiteturas. Roda toda semana (pega as correções de segurança das imagens base), quando a lista muda e à mão.
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/base-images.txt, .github/workflows/base-images.yml]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Copy each image (multi-arch, with retries)
+        env:
+          MIRROR: ghcr.io/${{ github.repository_owner }}/hangar-mirror
+          SOURCE: https://github.com/${{ github.repository }}
+        run: |
+          set -u
+          fail=0
+          while read -r var src tag; do
+            case "$var" in ''|\#*) continue ;; esac
+            ok=0
+            for i in 1 2 3 4; do
+              # a anotação liga o pacote ao repositório: ele herda o acesso do repositório (o GITHUB_TOKEN lê)
+              if docker buildx imagetools create -t "$MIRROR:$tag" \
+                   --annotation "index:org.opencontainers.image.source=$SOURCE" "$src"; then ok=1; break; fi
+              sleep $((i * 20))
+            done
+            [ "$ok" = 1 ] && echo "ok  $src -> $MIRROR:$tag" || { echo "::error::falhou: $src"; fail=1; }
+          done < .github/base-images.txt
+          exit $fail

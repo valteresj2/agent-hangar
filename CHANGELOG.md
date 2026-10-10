@@ -5,6 +5,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Base images (Python, Node, Postgres, docker-socket-proxy, Trivy, BuildKit) are mirrored weekly to
+  `ghcr.io/<owner>/hangar-mirror`. CI and the release build use the mirror and fall back to Docker Hub when a tag is
+  missing, so a Docker Hub outage no longer breaks a release. Dockerfiles take the base image as a build argument.
+- The GitHub release is created by the *Release images* workflow after the images and chart are published, with the
+  VS Code extension attached. Notes come from `release-notes/<tag>.md` or the CHANGELOG section.
+- The Digital employees and plugins end-to-end tests now live in `tests/e2e/` and run in CI, plus a crawler that fails
+  when Portuguese is left on the English interface.
+
+### Fixed
+- "Test connection" on a plugin without a `test` block uses its first stage test case instead of calling a tool
+  without its arguments.
+- "just now ago" in activity lists; leftover Portuguese on the plugin and inbox screens; a JavaScript error when
+  leaving the Docker MCP catalog before it loaded.
+
 ## [0.23.0] — 2026-10-09
 
 ### Added

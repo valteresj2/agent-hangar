@@ -33,12 +33,16 @@ jobs:
           - {platform: linux/arm64, runner: ubuntu-24.04-arm, tag: arm64}
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v3   # antes do buildx: o buildkit e as imagens base vêm do espelho no GHCR
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Use the base images mirror
+        run: sh .github/scripts/use-mirror.sh
+      - uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: image=${{ env.BUILDKIT_IMAGE }}
       - id: meta
         uses: docker/metadata-action@v6
         with:
@@ -50,6 +54,10 @@ jobs:
           file: ${{ matrix.image.file }}
           target: ${{ matrix.image.target }}
           platforms: ${{ matrix.arch.platform }}
+          build-args: |
+            PYTHON_IMAGE=${{ env.PYTHON_IMAGE }}
+            NODE_IMAGE=${{ env.NODE_IMAGE }}
+            NODE_ALPINE_IMAGE=${{ env.NODE_ALPINE_IMAGE }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/${{ matrix.image.name }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.arch.tag }}
@@ -77,17 +85,22 @@ jobs:
         name: [central, agent-runtime, harness-base, harness-claude-code, harness-codex, harness-deepseek-harness,
                harness-hermes, mcp-data-studio, mcp-memory]
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
           pattern: digests-${{ matrix.name }}-*
           merge-multiple: true
-      - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Use the base images mirror
+        run: sh .github/scripts/use-mirror.sh
+      - uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: image=${{ env.BUILDKIT_IMAGE }}
       - id: meta
         uses: docker/metadata-action@v6
         with:
@@ -125,3 +138,28 @@ jobs:
           helm push "agent-hangar-$VERSION.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts" 2>&1 | tee push.log
           DIGEST=$(grep -o 'sha256:[0-9a-f]\{64\}' push.log | head -1)
           cosign sign --yes "ghcr.io/${{ github.repository_owner }}/charts/agent-hangar@${DIGEST}"
+
+  # A release do GitHub nasce sozinha, depois que as imagens e o chart foram publicados e assinados: título vindo da
+  # tag anotada, notas de release-notes/<tag>.md (ou da seção do CHANGELOG) e a extensão do VS Code anexada.
+  github-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [images, chart]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fetch the annotated tag (its subject becomes the title)
+        run: git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Build the VS Code extension
+        working-directory: extensions/vscode
+        run: |
+          npm ci --no-audit --no-fund
+          LICENSE_PATH=../../LICENSE npm run package
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: sh .github/scripts/github-release.sh "$GITHUB_REF_NAME"

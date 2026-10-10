@@ -524,7 +524,10 @@ async def mock_llm(messages, tools, client_tools=None):
     last = next((text_of(m["content"]) for m in reversed(messages) if m["role"] == "user"), "")
     by_name = {t.name: t for t in tools}
     if EMPLOYEE:  # modo mock de um Digital employee: "use <tool> {json}" e "ask: <pergunta>" exercitam o gate de verdade
-        if re.search(r"(RECUSADO|EXPIROU|INSTRUÇÃO)", last) and "use ask_" not in last:
+        # as respostas da plataforma começam sempre do mesmo jeito; o resto do prompt (memória, lições) pode citá-las
+        reply = re.match(r"(DECISÃO|CAPACIDADE|PLANO|PLAN|TAREFA REPASSADA|HANDED-OFF TASK|RESPOSTA de)", last)
+        refused = re.match(r"(DECISÃO|CAPACIDADE|PLANO|PLAN) #\d+:? .{0,60}?(RECUSADO|EXPIROU|INSTRUÇÃO)", last, re.S)
+        if refused and "use ask_" not in last:
             return f"[mock:{SLUG}] entendido: não executei a ação. {last[:200]}"
         nd = re.search(r"\bneed:\s*(.+)", last)
         if nd and "CAPACIDADE" not in last:
@@ -532,23 +535,23 @@ async def mock_llm(messages, tools, client_tools=None):
                                                               "arguments": json.dumps({"need": nd.group(1).strip()})}},
                                    by_name, [], [])
         pl = re.search(r"\bplan:\s*(.+)", last)
-        if pl and "APROVADO" not in last and "APPROVED" not in last and "TERMINOU" not in last:
+        if pl and not reply:
             steps = [s.strip() for s in pl.group(1).split(";") if s.strip()]
             await _run_server_call({"id": "mock", "function": {"name": "update_plan",
                                                               "arguments": json.dumps({"steps": steps})}}, by_name, [], [])
-        if re.search(r"(APROVADO|APPROVED)", last) and "PLAN" in last:
+        if re.match(r"(PLANO|PLAN) #\d+ (APROVADO|APPROVED)", last):
             steps = re.findall(r"^\d+\. (.+)$", last, re.M)
             if steps:
                 await _run_server_call({"id": "mock", "function": {"name": "update_plan", "arguments": json.dumps(
                     {"steps": [{"title": s, "status": "done"} for s in steps]})}}, by_name, [], [])
                 return f"[mock:{SLUG}] plano executado: {len(steps)} etapas"
         ho = re.search(r"\bhandoff:\s*([\w-]+)\s*\|\s*([^|\n]+)(\|\s*wait)?", last)
-        if ho and "TERMINOU" not in last and "FINISHED" not in last:
+        if ho and not reply:
             msgs: list = []
             await _run_server_call({"id": "mock", "function": {"name": "handoff_task", "arguments": json.dumps(
                 {"to": ho.group(1), "title": ho.group(2).strip(), "wait": bool(ho.group(3))})}}, by_name, [], msgs)
             return f"[mock:{SLUG}] handoff_task -> {msgs[-1]['content'] if msgs else ''}"
-        if "TERMINOU" in last or "FINISHED" in last:
+        if last.startswith(("TAREFA REPASSADA", "HANDED-OFF TASK")):
             return f"[mock:{SLUG}] recebi o resultado do colega: {last[:300]}"
         q = re.search(r"\bask:\s*(.+)", last)
         if q and "RESPOSTA de" not in last:

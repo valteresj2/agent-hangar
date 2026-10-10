@@ -74,7 +74,7 @@ async function homePage() {
       <div class="mute small">Chaves suas em uso (Claude, Codex, LibreChat…). Revogue as que não usa mais.</div>
       ${h.keys.length ? h.keys.map(k => `<div class="row between li"><span><b>${esc(k.name)}</b> ${k.client ? `<span class="chip">${esc(k.client)}</span>` : ''}
           ${k.stale ? '<span class="pill warn">sem uso há 60+ dias</span>' : ''}
-          <div class="mute small">${(k.agents || []).length ? esc(k.agents.join(', ')) : esc((k.scopes || []).join(', '))} · último uso: ${k.last_used_at ? ago(k.last_used_at) + ' atrás' : 'nunca'}</div></span>
+          <div class="mute small">${(k.agents || []).length ? esc(k.agents.join(', ')) : esc((k.scopes || []).join(', '))} · último uso: ${k.last_used_at ? when(k.last_used_at) : 'nunca'}</div></span>
           <button class="ghost key-rv" data-id="${k.id}" data-n="${esc(k.name)}">Revogar</button></div>`).join('')
         : '<div class="mute small mt">Nenhuma chave ativa.</div>'}</div>
   </div>

@@ -1,0 +1,11 @@
+# Imagens de terceiros que os builds e o CI usam, copiadas para ghcr.io/<dono>/hangar-mirror:<tag>.
+# Uma queda do Docker Hub (como a de 09/10/2026, "auth.docker.io: 504") não derruba mais os builds nem o CI: eles usam a
+# cópia e só voltam ao Docker Hub se a cópia não existir (.github/scripts/use-mirror.sh).
+# VARIÁVEL                origem                                     tag no espelho
+PYTHON_IMAGE              docker.io/library/python:3.12-slim         python-3.12-slim
+NODE_IMAGE                docker.io/library/node:22-slim             node-22-slim
+NODE_ALPINE_IMAGE         docker.io/library/node:22-alpine           node-22-alpine
+POSTGRES_IMAGE            docker.io/library/postgres:16-alpine       postgres-16-alpine
+DOCKER_PROXY_IMAGE        docker.io/tecnativa/docker-socket-proxy:v0.4.1   docker-socket-proxy-v0.4.1
+TRIVY_IMAGE               docker.io/aquasec/trivy:0.58.1             trivy-0.58.1
+BUILDKIT_IMAGE            docker.io/moby/buildkit:buildx-stable-1    buildkit-buildx-stable-1

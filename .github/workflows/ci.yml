@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  packages: read   # o espelho das imagens base (.github/base-images.txt)
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -77,14 +78,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: docker/login-action@v3   # o espelho das imagens base no GHCR (forks sem acesso caem no Docker Hub)
+        continue-on-error: true
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Use the base images mirror
+        run: sh .github/scripts/use-mirror.sh
       - name: Build the central image
-        run: docker build -q -t hangar-central:ci -f central/Dockerfile .
+        run: docker build -q -t hangar-central:ci --build-arg PYTHON_IMAGE --build-arg NODE_ALPINE_IMAGE -f central/Dockerfile .
       - name: Scan the image (Trivy)
         run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.1 image             --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --no-progress hangar-central:ci
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image             --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --no-progress hangar-central:ci
       - name: Scan the Helm chart (Trivy misconfiguration)
         run: |
-          docker run --rm -v "$PWD:/src" aquasec/trivy:0.58.1 config --severity CRITICAL,HIGH --ignorefile /src/.trivyignore --exit-code 1 /src/charts/agent-hangar
+          docker run --rm -v "$PWD:/src" "$TRIVY_IMAGE" config --severity CRITICAL,HIGH --ignorefile /src/.trivyignore --exit-code 1 /src/charts/agent-hangar
 
   vscode-extension:
     runs-on: ubuntu-latest
@@ -118,9 +127,20 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - uses: docker/login-action@v3   # o espelho das imagens base no GHCR (forks sem acesso caem no Docker Hub)
+        continue-on-error: true
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Use the base images mirror
+        run: sh .github/scripts/use-mirror.sh
       - name: Configure
         run: sh scripts/setup.sh
       - name: Build and start (mock mode, no harness CLIs, with the Data Studio MCP)
+        env:
+          PLUGIN_ALLOW_PRIVATE: "1"    # o sistema de mentira dos plugins está numa rede privada
+          PLUGIN_ALLOW_UNPINNED: "1"   # o plugin com código usa a imagem local do runtime
         run: |
           docker compose --profile data-studio up -d --build
           for i in $(seq 1 60); do curl -fs http://localhost:8090/api/health && exit 0; sleep 2; done
@@ -129,6 +149,17 @@ jobs:
         run: |
           pip install httpx
           HANGAR_TOKEN=$(grep '^ADMIN_TOKEN=' .env | cut -d= -f2-) SMOKE_DATA_STUDIO=1 python tests/e2e/smoke.py
+      - name: Digital employees and plugins (E2E)
+        run: |
+          docker run -d --name e2e-echo --network hangar_agents -v "$PWD/tests/e2e:/e2e:ro" "$PYTHON_IMAGE" python /e2e/echo_server.py
+          docker network connect hangar_plugins e2e-echo
+          pip install mcp pyyaml
+          HANGAR_TOKEN=$(grep '^ADMIN_TOKEN=' .env | cut -d= -f2-) ECHO_URL=http://e2e-echo:8080 python tests/e2e/workforce.py
+      - name: Interface in English (no Portuguese left on screen)
+        run: |
+          pip install httpx playwright==1.63.0
+          python -m playwright install --with-deps chromium
+          HANGAR_TOKEN=$(grep '^ADMIN_TOKEN=' .env | cut -d= -f2-) python tests/e2e/i18n_crawl.py
       - name: Harness job with a workspace owned by another user (Kubernetes emptyDir)
         run: sh harness/tests/workspace_owner_check.sh agent-hangar/harness-base:latest
       - name: Logs on failure
@@ -140,6 +171,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: docker/login-action@v3   # o espelho das imagens base no GHCR (forks sem acesso caem no Docker Hub)
+        continue-on-error: true
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Use the base images mirror
+        run: sh .github/scripts/use-mirror.sh
       - name: Configure
         run: sh scripts/setup.sh
       - name: Build and start the Data Studio MCP server
