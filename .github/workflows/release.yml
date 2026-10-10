@@ -33,7 +33,7 @@ jobs:
           - {platform: linux/arm64, runner: ubuntu-24.04-arm, tag: arm64}
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/login-action@v3   # antes do buildx: o buildkit e as imagens base vêm do espelho no GHCR
+      - uses: docker/login-action@v4   # antes do buildx: o buildkit e as imagens base vêm do espelho no GHCR
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -91,7 +91,7 @@ jobs:
           path: /tmp/digests
           pattern: digests-${{ matrix.name }}-*
           merge-multiple: true
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
