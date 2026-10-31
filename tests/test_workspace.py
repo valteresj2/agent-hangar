@@ -244,6 +244,13 @@ def test_my_agents_also_lists_regular_agents_i_created_or_maintain(client, env, 
     mgr = {a["slug"]: a for a in client.get("/api/me/workspace", headers=env["h"]["mgr"]).json()["built_agents"]}
     assert {by_mgr, by_dev} <= set(mgr) and elsewhere not in mgr and employee not in mgr  # o Digital employee fica na outra lista
     assert mgr[by_dev]["why"] == "maintainer" and mgr[by_dev]["team"] and mgr[by_dev]["version"] >= 1
+    assert mgr[by_dev]["last_used_at"] is None  # nunca usado ("Último uso" no app desktop vem daqui)
+    with SessionLocal() as db:
+        db.add(UsageEvent(agent_id=db.query(Agent).filter_by(slug=by_dev).one().id, env="prod", channel="mcp", protocol="openai",
+                          latency_ms=5, ok=True))
+        db.commit()
+    mgr = {a["slug"]: a for a in client.get("/api/me/workspace", headers=env["h"]["mgr"]).json()["built_agents"]}
+    assert mgr[by_dev]["last_used_at"]
     dev = {a["slug"]: a for a in client.get("/api/me/workspace", headers=env["h"]["own"]).json()["built_agents"]}
     assert by_dev in dev and dev[by_dev]["why"] == "creator" and by_mgr not in dev
     # e o organograma do portal mostra os mesmos agentes abaixo da pessoa

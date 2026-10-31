@@ -214,6 +214,14 @@ def get_connection(db: Session, name: str) -> LlmConnection:
     return conn
 
 
+def default_chat_llm(db: Session) -> dict | None:
+    """O LLM de um agente de chat criado sem `llm` (montagem, multiagente, contratação): a primeira conexão
+    protocol='openai' da empresa, com o modelo padrão dela (sem `model`, segue o padrão da conexão). None sem nenhuma
+    conexão: o agente fica no mock, como antes."""
+    conn = db.scalar(select(LlmConnection).where(LlmConnection.protocol == "openai").order_by(LlmConnection.id))
+    return {"connection": conn.name} if conn else None
+
+
 def resolve_llm(db: Session, spec: dict, env: str) -> dict:
     """LlmConnection do catálogo (com override por ambiente) -> {connection, base_url, api_key, model,
     temperature} prontos para o container do agente de chat."""

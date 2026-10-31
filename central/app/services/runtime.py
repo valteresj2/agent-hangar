@@ -199,6 +199,9 @@ def stop(db: Session, slug: str, env: str, actor="admin"):
             d.status, d.stopped_at = "stopped", now()
     if env == "prod" and a.status == "production":
         a.status = "stage" if active_deployment(a, "stage") else "tested"
+    elif env == "stage" and a.status == "stage":
+        # sem nada no ar: parar prod e depois stage deixava o agente marcado "stage" para sempre
+        a.status = "tested"
     db.commit()
     _forget_cors(slug)
     audit(db, actor, f"stop.{env}", slug)

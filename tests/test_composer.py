@@ -345,3 +345,44 @@ def test_shipping_a_composed_agent_never_touches_its_specialists(client, cat, mo
         assert len(a.tests) == n_tests  # nenhum teste rodou no especialista
         prod = next(d for d in a.deployments if d.env == "prod" and d.status == "running")
         assert prod.version < a.current_version
+
+
+def test_mcp_compose_without_llm_uses_the_company_chat_connection(client, cat):
+    """Pelo MCP (as IAs esquecem o modelo), montado sem `llm` o agente usa a conexão de chat da empresa: no mock ele
+    só ecoaria o pedido. Pela API, sem `llm`, continua no mock; um LLM escolhido sempre vale."""
+    from app.models import LlmConnection
+    from app.services.catalog import default_chat_llm
+    h = cat["h"]
+    pat = {"Authorization": "Bearer " + client.post("/api/keys", headers=h["sdev"], json={"name": "ia", "scopes": ["user"]}).json()["key"]}
+    with SessionLocal() as db:
+        db.add(LlmConnection(name=f"chat-{cat['n']}", base_url="http://llm.test/v1", model_name="m", api_key="",
+                             protocol="openai"))
+        db.commit()
+        default = default_chat_llm(db)["connection"]
+
+    def compose(args):
+        body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "compose_agent", "arguments": args}}
+        r = client.post("/mcp", json=body, headers={**MCP_HDR, **pat}).json()["result"]
+        assert not r["isError"], r
+        slug = json.loads(r["content"][0]["text"])["slug"]
+        return client.get(f"/api/agents/{slug}", headers=h["sdev"]).json()["spec"]
+
+    base = {"objective": "Resume textos.", "final_output": "Um resumo."}
+    assert compose({"name": f"Sem LLM {cat['n']}", **base})["llm"]["connection"] == default
+    chosen = compose({"name": f"Com LLM {cat['n']}", **base, "llm": {"connection": f"chat-{cat['n']}", "model": "outro"}})
+    assert chosen["llm"]["connection"] == f"chat-{cat['n']}" and chosen["llm"]["model"] == "outro"
+    r = client.post("/api/compose", headers=h["sdev"], json={"name": f"Pela API {cat['n']}", **base})
+    assert r.status_code == 200, r.text
+    assert not (client.get(f"/api/agents/{r.json()['slug']}", headers=h["sdev"]).json()["spec"].get("llm") or {}).get("connection")
+
+
+def test_stopping_prod_then_stage_leaves_nothing_marked_as_running(client, cat):
+    """Parar prod e depois stage (a ordem de quem desliga um agente) deixava o status "stage" sem nada no ar."""
+    slug = cat["s"]["writer"]
+    with SessionLocal() as db:
+        svc.deploy_env(db, slug, "stage")
+        assert svc.get_agent(db, slug).status == "production"
+        svc.stop(db, slug, "prod")
+        assert svc.get_agent(db, slug).status == "stage"
+        svc.stop(db, slug, "stage")
+        assert svc.get_agent(db, slug).status == "tested"

@@ -366,7 +366,10 @@ def compose(db: Session, acc: Access, name: str, objective: str, final_output: s
             skills: list | None = None, new_skills: list | None = None, mcps: list | None = None,
             tools: list | None = None, tests: list | None = None, copy_tests_from: list | None = None,
             copy_base_tests: bool = True, include_skill_tests: bool = True, llm: dict | None = None,
-            memory: dict | None = None, plan_id: str = "", personal: bool = False, avatar: str | None = None) -> dict:
+            memory: dict | None = None, plan_id: str = "", personal: bool = False, avatar: str | None = None,
+            default_llm: bool = False) -> dict:
+    """default_llm: sem LLM escolhido (nem na base) e sem harness, usa a conexão de chat da empresa (os pedidos das
+    IAs pelo MCP, que esquecem o modelo); sem ele o agente fica no mock, como pela API."""
     from .registry import create_agent, replace_spec  # import tardio: registry importa deste módulo
 
     t = acc.team_for_new_agent(team or None, any_role=personal)
@@ -446,6 +449,12 @@ def compose(db: Session, acc: Access, name: str, objective: str, final_output: s
                 tools=_dedupe(list(base_spec.get("tools") or []) + list(tools or [])))
     if llm:
         spec["llm"] = {**(spec.get("llm") or {}), **llm}
+    if default_llm and not spec.get("harness") and not any((spec.get("llm") or {}).get(k) for k in ("connection", "model")):
+        # pedido de uma IA sem LLM escolhido (nem na base): a conexão de chat da empresa; no mock o agente só ecoaria
+        from .catalog import default_chat_llm
+        default = default_chat_llm(db)
+        if default:
+            spec["llm"] = {**(spec.get("llm") or {}), **default}
     if memory is not None:
         spec["memory"] = memory
     try:

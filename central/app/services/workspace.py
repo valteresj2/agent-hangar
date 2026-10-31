@@ -540,11 +540,12 @@ def built_agents(db, acc: Access) -> list[dict]:
         nxt = min((s.next_run_at for s in sch if s.next_run_at), default=None)
         cost = float(db.scalar(select(func.coalesce(func.sum(UsageEvent.cost_usd), 0.0)).where(
             UsageEvent.agent_id == a.id, UsageEvent.created_at >= since)) or 0)
+        last = db.scalar(select(func.max(UsageEvent.created_at)).where(UsageEvent.agent_id == a.id))
         out.append({"slug": a.slug, "name": a.name, "objective": (a.objective or "")[:200], "status": a.status,
                     "version": a.current_version, "kind": a.kind, "team": teams.get(a.team_id, ""), "why": why,
                     "personal": bool(a.personal_owner_id), "schedules": len(sch),
                     "next_run_at": iso(nxt) if nxt else None, "cost_30d_usd": round(cost, 4),
-                    "avatar_url": avatars.url(avatars.of(a))})
+                    "last_used_at": iso(last) if last else None, "avatar_url": avatars.url(avatars.of(a))})
     return out
 
 

@@ -235,7 +235,8 @@ def hire(db: Session, acc: Access, request: str = "", **f) -> dict:
                   "Cada tarefa concluída, com o resultado." if pt else "Each task completed, with its result.",
                   _instructions(f, pt), f.get("team") or "", f.get("visibility") or "", f.get("specialists"),
                   f.get("base") or "", f.get("skills"), f.get("new_skills"), f.get("mcps"), f.get("tools"), tests,
-                  None, True, True, f.get("llm"), f.get("memory"), f.get("plan_id") or "", personal=personal)
+                  None, True, True, f.get("llm"), f.get("memory"), f.get("plan_id") or "", personal=personal,
+                  default_llm=bool(f.get("default_llm")))
     a = get_agent(db, out["slug"])
     if personal:
         from . import workspace
@@ -377,6 +378,7 @@ def employee_dict(db: Session, e: Employee, acc: Access | None = None, detail: b
     since = now() - timedelta(days=30)
     cost = db.scalar(select(func.coalesce(func.sum(EmployeeTask.cost_usd), 0.0)).where(
         EmployeeTask.employee_id == e.id, EmployeeTask.created_at >= since)) or 0.0
+    last_task = db.scalar(select(func.max(EmployeeTask.created_at)).where(EmployeeTask.employee_id == e.id))
     uid = acc.p.user_id if acc else None
     d = {"slug": a.slug, "name": a.name, "title": e.title, "mission": e.mission, "status": e.status,
          "avatar_url": avatars.url(avatars.of(a)),
@@ -385,6 +387,7 @@ def employee_dict(db: Session, e: Employee, acc: Access | None = None, detail: b
          "tasks": counts, "open_decisions": open_req, "overdue_tasks": overdue, "cost_30d": round(float(cost), 4),
          "hired_at": iso(tasksmod._aware(e.hired_at)) if e.hired_at else None, "shadow": bool(e.shadow),
          "created_at": iso(tasksmod._aware(e.created_at)), "runtime": e.runtime or "hangar",
+         "last_task_at": iso(tasksmod._aware(last_task)) if last_task else None,
          "can_manage": bool(acc and (acc.can("manage", a) or (uid and uid in (e.owner_user_id, e.manager_user_id))))}
     if detail:
         d.update(responsibilities=e.responsibilities, kpis=e.kpis, systems=e.systems, channels=e.channels,

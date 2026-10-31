@@ -5,6 +5,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.54.0] — 2026-10-31
+
+Found by a hands-on test from the Hangar desktop app against a running platform: a simple agent, a multi-agent team and a Digital employee created by asking for them, then a conversation with each one and their pause or stop.
+
+### Fixed
+- **Agents built without a model ran on the mock.** `compose_agent`, `build_multi_agent` and `hire_employee` left `llm` empty when the caller didn't choose a model. A new Digital employee then answered its probation tasks by echoing them back, and a multi-agent team did the same. Without a model, these MCP tools now use the company's chat connection (the first `openai`-protocol LLM connection, on its default model). Harness agents, explicit choices and the REST API (where no model still means the mock, for tests) are unchanged.
+- **"Last used" was always empty in *My agents*.** The member's built agents had no `last_used_at`, so the desktop app showed "—" even right after a conversation. Built agents now carry the time of their last call, and Digital employees carry `last_task_at`.
+- **An agent with nothing running stayed "stage".** Stopping production and then stage, which is the usual order when turning an agent off, left the status at `stage`. Stopping stage when nothing else runs now sets it to `tested`.
+
+### Changed
+- **Desktop app guide** (`docs/desktop-app.md`): connected sessions get the platform's tools through a local bridge with the person's own token, and *My agents* has a **Conversar** (talk) button.
+
 ## [0.53.0] — 2026-10-25
 
 ### Added

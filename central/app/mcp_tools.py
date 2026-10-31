@@ -520,7 +520,7 @@ async def compose_agent(ctx: Context, name: str, objective: str, final_output: s
         out = svc.composer.compose(
             db, acc, name, objective, final_output, instructions, team, visibility, specialists, base, skills,
             new_skills, mcps, tools, tests, copy_tests_from, copy_base_tests, include_skill_tests, llm, memory, plan_id,
-            avatar=avatar or None)
+            avatar=avatar or None, default_llm=True)
         a = svc.get_agent(db, out["slug"])
         if guide:
             svc.guides.set_text(db, acc, a.slug, guide, acc.p.name, version=a.current_version)
@@ -625,6 +625,7 @@ async def hire_employee(ctx: Context, request: str = "", title: str = "", missio
                          autonomy_level, probation_tasks, kpis, working_hours, task_budget_usd, task_time_limit_min,
                          report_webhook, report_hour, name, visibility, plan_id, routines, report_weekday, shadow)
     f["personal"] = personal
+    f["default_llm"] = True  # sem modelo escolhido, a conexão de chat da empresa (no mock ele só ecoaria as tarefas)
     return await _run(ctx, lambda db, acc: svc.employees.hire(db, acc, request, **f))
 
 
@@ -855,6 +856,9 @@ async def build_multi_agent(ctx: Context, name: str, objective: str, final_outpu
     def go(db, acc):
         t = acc.team_for_new_agent(team or None)
         llm_patch = {k: v for k, v in (("connection", connection), ("model", model)) if v}
+        if not llm_patch:
+            # sem conexão, a de chat da empresa (no mock a equipe só ecoaria o pedido)
+            llm_patch = {**(svc.catalog.default_chat_llm(db) or {}), **llm_patch}
         slugs = []
         for m in members:
             a = svc.create_agent(db, m["name"], m["objective"], m["final_output"], owner=owner, actor=acc.p.name,

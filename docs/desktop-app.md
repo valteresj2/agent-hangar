@@ -7,6 +7,9 @@ platform, it:
 - signs in with the person's company account;
 - can use the token models the admins sync;
 - shows the member's workspace (home, their agents, decisions and inbox) with live updates.
+- gives every session the platform's tools: people create agents, multi-agents and Digital employees, talk to them
+  and follow their work just by asking, without setting up an MCP client. *My agents* has a **Conversar** (talk) button that
+  opens a session ready to talk to that agent.
 
 The platform side of the contract is in [app-hangar.md](app-hangar.md) (sign-in and devices),
 [app-hangar-models.md](app-hangar-models.md) (synced token models) and
@@ -39,6 +42,11 @@ The app's interface is in Portuguese for now.
 Admins can set the platform for everyone with a Windows policy, which takes precedence over the app settings:
 `HKLM\Software\Policies\Hangar` (then `HKCU\Software\Policies\Hangar`), values `PlatformUrl` and `Mode`
 (`off`, `optional` or `required`). With `required`, the app creates no sessions until it is connected.
+
+While connected, the app gives each session the platform's MCP server through a local bridge on `127.0.0.1`. The
+bridge forwards to `/mcp` with the person's own token (the `mcp` scope) and refreshes it, so the token never reaches
+Claude Code and long sessions outlive the one-hour access token. The tools act with the person's own access, like any
+MCP client.
 
 The `app` scope opens `/api/app/*` and an explicit list of member routes, always with the person's own access; it
 never opens admin, settings, keys or OAuth routes, and `/mcp` needs the `mcp` scope. MCP clients that ask for no
