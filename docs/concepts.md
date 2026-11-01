@@ -221,3 +221,28 @@ single-use callback token. Jobs can be followed live over SSE (`/api/jobs/<id>/e
 Chat agents compute cost from the connection's prices and the LLM's reported usage. Jobs use the harness's reported
 tokens: Claude Code and Codex give token counts, and Hermes also reports its own cost estimate, which is used when
 the connection has no prices. DeepSeek Harness does not report usage yet.
+
+## Hangar desktop app
+
+[Hangar](https://github.com/valteresj2/hangar) is the platform's desktop app (Windows, macOS and Linux). It runs
+agent sessions on the person's own computer, in their project folders. It is inspired by Claude Code and can also use
+open models. On its own it works with the person's Claude subscription or their own API keys. Connected to a
+platform, it becomes the member's front door to the hangar:
+
+- **Sign-in and devices.** The person signs in with their company account over OAuth (the `app` and `mcp` scopes),
+  and the app registers as a **device**. Admins see devices in *App Hangar* and can revoke one, and a Windows policy
+  can set the platform for everyone or make it required.
+- **Token models.** Sessions can run on the models the admins sync from an LLM connection. Calls go through the
+  central's LLM proxy, so the provider key stays in the vault, and hidden models, the code policy and budgets apply.
+  Each call shows up in [usage and cost](#usage-and-cost).
+- **Platform tools in every session.** A local bridge gives each session the platform's MCP server with the person's
+  own token. People can build agents, multi-agents and Digital employees, talk to them and follow their work just by
+  asking.
+- **Workspace.** *Início* (home), *Meus agentes* (my agents), *Decisões* (decisions) and *Caixa de entrada* (inbox)
+  show the same data as the member portal and update live over `/api/app/events`. People decide, work the inbox, and
+  stop, ship, delete, pause or offboard their own agents without leaving the app. The app only gets the person's own
+  access and never reaches admin, settings, keys or OAuth routes.
+
+The app doesn't replace the gateway. The agents it builds are ordinary registry agents with versions, stage and prod,
+tests and the promotion gate. The app is only another way to create and steer them. Setup, the console pages and
+upgrades are in [desktop-app.md](desktop-app.md).

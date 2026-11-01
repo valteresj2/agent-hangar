@@ -1,8 +1,8 @@
 # Hangar desktop app
 
-[Hangar](https://github.com/valteresj2/hangar) is a desktop app for running and steering Claude Code sessions on a
-person's computer, inspired by Claude Desktop. Claude Code ships inside the app. Connected to an Agent Hangar
-platform, it:
+[Hangar](https://github.com/valteresj2/hangar) is a desktop app for running and steering agent sessions on a
+person's computer. It is inspired by Claude Code and can also use open models, and the agent engine ships inside the
+app. Connected to an Agent Hangar platform, it:
 
 - signs in with the person's company account;
 - can use the token models the admins sync;
