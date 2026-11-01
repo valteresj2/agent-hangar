@@ -16,6 +16,14 @@ The files and the terminal never leave your machine.
 **The platform MCP (Agent Hangar).** Ask the chat to *create*, *edit*, *test* or *publish* an agent without leaving
 the editor, with your roles and teams.
 
+**A Digital employee's workstation.** **Agent Hangar: Trabalhar como Digital employee nesta pasta** (or *Trabalhar
+no VS Code* in the Hangar desktop app) makes this VS Code the worker of an employee you manage:
+- it picks up the employee's tasks and thinks with the employee itself over AG-UI (instructions, skills, MCPs and
+  memory stay on the platform);
+- it reads and writes files in the folder, runs commands in a terminal you watch live, and can publish the folder to
+  your GitHub;
+- everything goes through the employee's authority: what needs approval waits in *Decisões* (app, portal, Slack).
+
 **One-click sign-in.**
 1. **Agent Hangar: Entrar pelo portal** opens the company portal. You are already signed in there (SSO or a local
    account), so you just confirm.

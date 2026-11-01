@@ -44,6 +44,9 @@ _SEND = re.compile(r"(^|_)(send|email|mail|message|post_message|notify|reply|twe
 _DELETE = re.compile(r"(^|_)(delete|remove|drop|destroy|purge|erase|archive)(_|$)")
 _MONEY = re.compile(r"(^|_)(pay|payment|charge|refund|transfer|invoice|payout|purchase|order)(_|$)")
 _PUBLISH = re.compile(r"(^|_)(publish|deploy|release|merge|push)(_|$)")
+# o posto de trabalho no VS Code (extensão Agent Hangar): ferramentas conhecidas, com o tipo certo de saída
+VSCODE = {"list_files": "read", "read_file": "read", "search_files": "read", "write_file": "write_internal",
+          "edit_file": "write_internal", "run_command": "run_code", "publish_github": "publish"}
 
 
 def auto_classify(ref: str) -> tuple[str, bool]:
@@ -60,6 +63,8 @@ def auto_classify(ref: str) -> tuple[str, bool]:
         if method in ("GET", "DELETE"):
             return {"GET": "read", "DELETE": "delete"}[method], False
         return _by_name(name.lower(), read=False), True  # POST/PUT/PATCH: o nome diz o risco; o admin revisa
+    if kind == "vscode" and rest in VSCODE:
+        return VSCODE[rest], False
     if ref == "mcp:memory:recall":
         return "read", False
     if ref == "mcp:memory:remember":

@@ -5,6 +5,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.57.0] — 2026-11-01
+
+### Added
+- **A Digital employee works in VS Code.** Found by a hands-on test: a data scientist employee, hired from the desktop app, had to train a model in the person's own VS Code and publish the result. See [docs/digital-employee.md](docs/digital-employee.md#working-in-vs-code).
+  - **The employee's own brain over AG-UI:** `POST /hooks/worker/tasks/{id}/agui`, with the worker token, answers with the employee's agent (instructions, skills, MCPs, memory and model; stage while on probation). The worker's tools travel as AG-UI client tools. The stream passes through unchanged and ends with `CUSTOM hangar.task`. Tokens and cost go on the task. DLP, the LLM data-class block, the task budget and the code policy apply as in a platform round.
+  - **VS Code extension as the workstation:** **Agent Hangar: Trabalhar como Digital employee nesta pasta** makes VS Code the employee's external worker. It has `list_files`, `read_file`, `search_files`, `write_file`, `edit_file`, `run_command` (a terminal the person watches live) and `publish_github` (creates the repository in the GitHub account signed in to VS Code and pushes, with the token only in the push header). Each task's conversation is kept on the machine, so a task that waits for a decision resumes where it stopped.
+  - **Decisions reach the workstation:** an approval runs the action once; a rejection or an instruction comes back to the agent with the decider's text (the `DECISÃO #n` message the platform puts in the task's conversation), so an instruction such as "clean this folder, then ask again" is followed instead of being read as a refusal. Comments written on the task while it waited come in too. While a task runs, the workstation keeps sending heartbeats, so the employee page shows it online.
+  - **Action types for the workstation:** `vscode:<tool>` is classified without guessing: reading is `read`, files are `write_internal`, commands are `run_code`, publishing is `publish`.
+
 ## [0.56.0] — 2026-11-01
 
 ### Added

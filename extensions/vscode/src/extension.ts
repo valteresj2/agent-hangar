@@ -2,14 +2,19 @@
    VS Code executa arquivos e terminal localmente, com a sua aprovação) e o MCP da plataforma para criar e editar
    agentes sem sair do editor. Login pelo portal (SSO ou conta local) com PKCE; nada de colar chave. */
 import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import {
   Env, exchangeCode, HangarAgent, HangarClient, HangarError, pkce, toOpenAIMessages, toOpenAITools,
 } from './core';
+import { Workstation } from './worker';
 
 const SECRET = 'agentHangar.token';
 const KEY_ID = 'agentHangar.keyId';
 const USER = 'agentHangar.user';
+const WORK = 'agentHangar.work';  // workspaceState: o funcionário que trabalha nesta pasta ({slug, name})
+const PENDING_WORK = 'agentHangar.pendingWork';  // globalState: pedido do link /work que espera uma pasta abrir
+const workerSecret = (slug: string) => `agentHangar.worker.${slug}`;
 
 interface HangarModel extends vscode.LanguageModelChatInformation { slug: string }
 
@@ -56,11 +61,103 @@ export function activate(ctx: vscode.ExtensionContext) {
     vscode.window.showInformationMessage('Confirme a conexão no navegador (portal do Agent Hangar). O VS Code volta sozinho.');
   };
 
+  // ------------------------------------------------------------------ posto de trabalho de um Digital employee
+  let station: Workstation | undefined;
+  const workStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 49);
+  workStatus.command = 'agentHangar.menu';
+  ctx.subscriptions.push(workStatus, { dispose: () => station?.dispose() });
+  const folder = () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+  const launch = async (slug: string, name: string) => {
+    const t = await ctx.secrets.get(workerSecret(slug));
+    const root = folder();
+    if (!t || !root) return;
+    station?.dispose();
+    const version = String((ctx.extension.packageJSON as { version?: string }).version ?? '');
+    station = new Workstation({
+      base: cfg().base, token: t, slug, name, root, version, storage: vscode.Uri.joinPath(ctx.globalStorageUri, slug),
+      onStatus: (text, tooltip) => { workStatus.text = `$(person) ${text}`; workStatus.tooltip = tooltip ?? text; workStatus.show(); },
+      onRevoked: () => { void stopWork(false); },
+    });
+    station.start();
+  };
+
+  const startWork = async (preset?: string) => {
+    const c = await client();
+    if (!c) return signIn();
+    const root = folder();
+    const employees = await c.manageableEmployees();
+    if (!employees.length) {
+      vscode.window.showWarningMessage('Agent Hangar: você não gerencia nenhum Digital employee em atividade.');
+      return;
+    }
+    let pick = employees.find(e => e.slug === preset);
+    if (!pick) {
+      const chosen = await vscode.window.showQuickPick(employees.map(e => ({ label: e.name, description: e.title, detail: `${e.slug} · ${e.status}`, e })),
+        { title: 'Qual Digital employee trabalha neste VS Code?' });
+      if (!chosen) return;
+      pick = chosen.e;
+    }
+    if (!root) {  // sem pasta aberta: guarda o pedido e abre a pasta (a janela recarrega e retoma daqui)
+      const dir = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, title: `Pasta de trabalho de ${pick.name}` });
+      if (!dir?.length) return;
+      await ctx.globalState.update(PENDING_WORK, { slug: pick.slug, folder: dir[0].fsPath });
+      await vscode.commands.executeCommand('vscode.openFolder', dir[0]);
+      return;
+    }
+    const ok = await vscode.window.showWarningMessage(`${pick.name} vai trabalhar nesta pasta`, {
+      modal: true,
+      detail: `${root}\n\nEle pega as tarefas dele na plataforma e as executa aqui: lê e escreve arquivos, roda comandos no terminal e pode publicar no seu GitHub. `
+        + 'Tudo passa pela alçada dele — o que precisa de aprovação para em Decisões (app, portal, Slack). As instruções, skills e MCPs continuam na plataforma. '
+        + 'Enquanto este posto estiver ligado, a plataforma não roda as tarefas dele por conta própria.',
+    }, 'Começar a trabalhar');
+    if (ok !== 'Começar a trabalhar') return;
+    try {
+      const r = await c.setRuntime(pick.slug, 'external');
+      if (!r.token) throw new Error('a plataforma não devolveu o token do posto');
+      await ctx.secrets.store(workerSecret(pick.slug), r.token);
+      await ctx.workspaceState.update(WORK, { slug: pick.slug, name: pick.name });
+      await launch(pick.slug, pick.name);
+      vscode.window.showInformationMessage(`Agent Hangar: ${pick.name} está trabalhando nesta pasta. Passe tarefas para ele pelo app, portal ou MCP.`);
+    } catch (e) {
+      vscode.window.showErrorMessage(`Agent Hangar: ${(e as Error).message}`);
+    }
+  };
+
+  const stopWork = async (backToPlatform: boolean) => {
+    const w = ctx.workspaceState.get<{ slug: string; name: string }>(WORK);
+    station?.dispose();
+    station = undefined;
+    workStatus.hide();
+    if (!w) return;
+    if (backToPlatform) {
+      const c = await client();
+      await c?.setRuntime(w.slug, 'hangar').catch(e => vscode.window.showErrorMessage(`Agent Hangar: ${(e as Error).message}`));
+    }
+    await ctx.secrets.delete(workerSecret(w.slug));
+    await ctx.workspaceState.update(WORK, undefined);
+    vscode.window.showInformationMessage(backToPlatform
+      ? `Agent Hangar: ${w.name} voltou a trabalhar na plataforma.`
+      : `Agent Hangar: o posto de ${w.name} neste VS Code foi desligado.`);
+  };
+
   ctx.subscriptions.push(vscode.window.registerUriHandler({
     async handleUri(uri: vscode.Uri) {
       const q = new URLSearchParams(uri.query);
       if (uri.path === '/signin') {  // "Abrir no VS Code" no portal: já traz o endereço
         await signIn(q.get('url') || undefined);
+        return;
+      }
+      if (uri.path === '/work') {  // "Trabalhar no VS Code" no app Hangar: já traz o funcionário (e o endereço)
+        const url = q.get('url');
+        if (url && url.replace(/\/$/, '') !== cfg().base) {
+          await vscode.workspace.getConfiguration('agentHangar').update('url', url.replace(/\/$/, ''), vscode.ConfigurationTarget.Global);
+        }
+        if (!(await token())) {
+          vscode.window.showInformationMessage('Agent Hangar: entre primeiro; depois use "Agent Hangar: Trabalhar como Digital employee".');
+          return signIn(url || undefined);
+        }
+        await startWork(q.get('employee') || undefined);
         return;
       }
       if (uri.path !== '/auth') return;
@@ -195,6 +292,9 @@ export function activate(ctx: vscode.ExtensionContext) {
     vscode.commands.registerCommand('agentHangar.signOut', signOut),
     vscode.commands.registerCommand('agentHangar.testConnection', testConnection),
     vscode.commands.registerCommand('agentHangar.refresh', () => changed()),
+    vscode.commands.registerCommand('agentHangar.startWork', () => startWork()),
+    vscode.commands.registerCommand('agentHangar.stopWork', () => stopWork(false)),
+    vscode.commands.registerCommand('agentHangar.releaseEmployee', () => stopWork(true)),
     vscode.commands.registerCommand('agentHangar.openPortal', () => vscode.env.openExternal(vscode.Uri.parse(`${cfg().base}/app/`))),
     vscode.commands.registerCommand('agentHangar.signInWithToken', async () => {
       const t = await vscode.window.showInputBox({ title: 'Agent Hangar', prompt: 'Token pessoal (Minhas chaves → token pessoal)', password: true, ignoreFocusOut: true });
@@ -209,8 +309,13 @@ export function activate(ctx: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand('agentHangar.menu', async () => {
       const signedIn = !!(await token());
+      const working = ctx.workspaceState.get<{ name: string }>(WORK);
+      const work = working
+        ? [{ label: `$(debug-pause) Desligar o posto de ${working.name}`, id: 'agentHangar.stopWork' },
+           { label: `$(cloud-upload) Devolver ${working.name} à plataforma`, id: 'agentHangar.releaseEmployee' }]
+        : [{ label: '$(person) Trabalhar como Digital employee nesta pasta', id: 'agentHangar.startWork' }];
       const items = signedIn
-        ? [{ label: '$(beaker) Testar conexão com um agente', id: 'agentHangar.testConnection' },
+        ? [...work, { label: '$(beaker) Testar conexão com um agente', id: 'agentHangar.testConnection' },
            { label: '$(refresh) Atualizar a lista de agentes', id: 'agentHangar.refresh' },
            { label: '$(globe) Abrir o portal', id: 'agentHangar.openPortal' },
            { label: '$(sign-out) Sair', id: 'agentHangar.signOut' }]
@@ -222,6 +327,15 @@ export function activate(ctx: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('agentHangar')) changed(); }),
   );
   void refreshStatus();
+  // a pasta que o link /work pediu acabou de abrir: segue o pedido; senão, o posto desta pasta volta a trabalhar
+  const pendingWork = ctx.globalState.get<{ slug: string; folder: string }>(PENDING_WORK);
+  const root = folder();
+  if (pendingWork && root && path.resolve(pendingWork.folder) === path.resolve(root)) {
+    void ctx.globalState.update(PENDING_WORK, undefined).then(() => startWork(pendingWork.slug));
+  } else {
+    const w = ctx.workspaceState.get<{ slug: string; name: string }>(WORK);
+    if (w) void launch(w.slug, w.name);
+  }
 }
 
 export function deactivate() { /* nada a liberar além das subscriptions */ }

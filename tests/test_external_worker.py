@@ -106,3 +106,57 @@ def test_worker_failure_and_a_stuck_task_goes_back_to_the_queue(client, env, rt)
     r = _call(client, new, tid, "result", {"status": "failed", "error": "o sistema do cliente caiu"}).json()
     assert r["status"] == "failed"
     assert task(client, env, tid)["error"] == "o sistema do cliente caiu"
+
+
+def test_worker_agui_round_uses_the_employee_brain_and_bills_the_task(client, env, rt, monkeypatch):
+    """O VS Code (ou outro worker) pensa com o próprio funcionário por AG-UI: o stream do runtime passa intacto, o custo
+    entra na tarefa, e as ferramentas do posto de trabalho têm o tipo certo na alçada."""
+    import json
+
+    import httpx
+
+    from app import deploy
+    from app.routers import employees as router
+    slug = hire(client, env)
+    make_active(client, env, slug, rt)
+    token = client.put(f"/api/employees/{slug}/runtime", headers=env["h"]["own"], json={"runtime": "external"}).json()["token"]
+    tid = assign(client, env, slug, "treine um modelo no bank-full")
+    assert _hb(client, token).json()["task"]["id"] == tid
+    seen = {}
+
+    def handler(req: httpx.Request):
+        seen["url"], seen["headers"], seen["body"] = str(req.url), dict(req.headers), json.loads(req.content)
+        events = [{"type": "RUN_STARTED"},
+                  {"type": "TOOL_CALL_START", "toolCallId": "c1", "toolCallName": "run_command"},
+                  {"type": "TOOL_CALL_ARGS", "toolCallId": "c1", "delta": '{"command": "python --version"}'},
+                  {"type": "TOOL_CALL_END", "toolCallId": "c1"},
+                  {"type": "CUSTOM", "name": "hangar.usage", "value": {"total_tokens": 1200, "cost_usd": 0.04}},
+                  {"type": "RUN_FINISHED"}]
+        return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                              content="".join(f"data: {json.dumps(e)}\n\n" for e in events).encode())
+    real = httpx.AsyncClient
+    monkeypatch.setattr(router.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(deploy, "ensure_up", lambda s, e: None)
+    monkeypatch.setattr(deploy, "internal_url", lambda s, e: f"http://agent-{s}-{e}:8000")
+    body = {"threadId": f"task-{tid}", "runId": "r1", "messages": [{"id": "m1", "role": "user", "content": "comece"}],
+            "tools": [{"name": "run_command", "description": "terminal", "parameters": {"type": "object"}}]}
+    assert _call(client, "ewk_nope", tid, "agui", body).status_code == 401
+    r = _call(client, token, tid, "agui", body)
+    assert r.status_code == 200, r.text
+    frames = [json.loads(x[6:]) for x in r.text.split("\n") if x.startswith("data: ")]
+    assert [f["type"] for f in frames][:2] == ["RUN_STARTED", "TOOL_CALL_START"]
+    assert frames[-1]["name"] == "hangar.task" and frames[-1]["value"]["status"] == "in_progress"
+    assert seen["url"] == f"http://agent-{slug}-prod:8000/agui"
+    assert seen["headers"]["x-hangar-task"] == str(tid) and seen["headers"]["x-channel"] == "employee"
+    assert seen["body"]["tools"][0]["name"] == "run_command"
+    assert abs(task(client, env, tid)["cost_usd"] - 0.04) < 1e-9
+    # o posto de trabalho no VS Code: comando é run_code, publicar no GitHub é publish, ler é read
+    from app.db import SessionLocal
+    from app.services import employee_gate
+    with SessionLocal() as db:
+        kinds = {n: employee_gate.classify(db, f"vscode:{n}").action_type for n in ("read_file", "run_command", "publish_github")}
+    assert kinds == {"read_file": "read", "run_command": "run_code", "publish_github": "publish"}
+    g = _call(client, token, tid, "gate", {"tool": "vscode:publish_github", "args": {"repo": "bank-ml", "public": True}}).json()
+    assert g["status"] == "waiting" and g["action_type"] == "publish"
+    # a tarefa saiu do worker (espera a decisão): a rodada AG-UI não roda mais
+    assert _call(client, token, tid, "agui", body).status_code == 409

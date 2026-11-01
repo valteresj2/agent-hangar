@@ -11,6 +11,9 @@ app. Connected to an Agent Hangar platform, it:
 - gives every session the platform's tools: people create agents, multi-agents and Digital employees, talk to them
   and follow their work just by asking, without setting up an MCP client. *My agents* has a **Conversar** (talk) button that
   opens a session ready to talk to that agent.
+- lets a Digital employee work in the person's VS Code: *Trabalhar no VS Code* in *My agents* hands the employee to
+  the Agent Hangar extension, which runs its tasks in a folder of the person's choosing (platform 0.57 or later; see
+  [digital-employee.md](digital-employee.md#working-in-vs-code)).
 
 The platform side of the contract is in [app-hangar.md](app-hangar.md) (sign-in and devices),
 [app-hangar-models.md](app-hangar-models.md) (synced token models) and

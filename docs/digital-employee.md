@@ -563,6 +563,41 @@ longer runs that employee's tasks: your worker asks for them.
   LLM). Replace its `think()` with your agent. When a task comes back after a decision, the worker runs it again from
   the start: keep actions that already happened idempotent (or check the timeline notes).
 
+### The employee's own brain over AG-UI (`/agui`)
+
+A worker doesn't have to bring its own LLM. `POST /hooks/worker/tasks/{id}/agui` takes an AG-UI `RunAgentInput` and
+answers with the employee's own agent: its instructions, skills, MCPs, memory and model, in stage while it's on
+probation. The worker sends its own tools in `tools`. The runtime runs the platform's tools under the task's authority,
+as in a platform round, and hands the worker's tools back as `TOOL_CALL_*` events for the worker to run (after asking
+`/gate`) and send back in the next round.
+
+- The stream passes through unchanged. Tokens and cost go on the task and in the agent's usage (channel `employee`,
+  protocol `agui`).
+- The last event is `CUSTOM hangar.task` with the task's status. `waiting_human` means a platform tool stopped for a
+  decision: the worker stops, and the task comes back through the heartbeat.
+- The DLP masking, the LLM data-class block, the task budget and the code policy (client tools are code) apply as in a
+  platform round.
+
+### Working in VS Code
+
+The Agent Hangar extension for VS Code is a ready-made worker built on that route. In the desktop app, *Meus agentes →
+Trabalhar no VS Code* (or **Agent Hangar: Trabalhar como Digital employee nesta pasta** in VS Code) asks which folder
+to use and for a confirmation. From then on, the employee picks up its tasks in that folder:
+
+| Tool | Action type | |
+|---|---|---|
+| `list_files`, `read_file`, `search_files` | `read` | Never asks |
+| `write_file`, `edit_file` | `write_internal` | Files open in the editor |
+| `run_command` | `run_code` | PowerShell on Windows, `sh` elsewhere. The person watches it live in a *Hangar · <employee>* terminal |
+| `publish_github` | `publish` | Creates the repository (if needed) in the GitHub account signed in to VS Code, then commits and pushes. The token stays with VS Code and goes only in the push header |
+
+- The action types are fixed in the catalog as `vscode:<tool>`, so the employee's authority decides: with the default
+  levels, a `senior` runs commands and notifies, and publishing waits for an approval in *Decisões*.
+- The conversation of each task is kept on the machine, so a task that waits for a decision picks up where it
+  stopped. A rejected action comes back to the agent as rejected, so it isn't asked again.
+- *Desligar o posto* stops the worker in that window. *Devolver à plataforma* revokes the token and the platform runs
+  the employee's tasks again.
+
 ## Goals
 
 Each goal (`kpis`) can point to a metric the platform measures, with a target:

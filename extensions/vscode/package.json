@@ -1,8 +1,8 @@
 {
   "name": "agent-hangar",
   "displayName": "Agent Hangar",
-  "description": "Os agentes de IA da sua empresa no chat do VS Code: como modelos (agente de código que edita e testa o seu projeto) e o MCP da plataforma para criar e editar agentes.",
-  "version": "0.56.0",
+  "description": "Os agentes de IA da sua empresa no chat do VS Code: como modelos (agente de código que edita e testa o seu projeto), o MCP da plataforma para criar e editar agentes e o posto de trabalho de um Digital employee (AG-UI, sob a alçada).",
+  "version": "0.57.0",
   "publisher": "agent-hangar",
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "https://github.com/valteresj2/agent-hangar" },
@@ -24,6 +24,9 @@
       { "command": "agentHangar.signOut", "title": "Sair", "category": "Agent Hangar" },
       { "command": "agentHangar.testConnection", "title": "Testar conexão com um agente", "category": "Agent Hangar" },
       { "command": "agentHangar.refresh", "title": "Atualizar a lista de agentes", "category": "Agent Hangar" },
+      { "command": "agentHangar.startWork", "title": "Trabalhar como Digital employee nesta pasta", "category": "Agent Hangar" },
+      { "command": "agentHangar.stopWork", "title": "Desligar o posto de trabalho do Digital employee", "category": "Agent Hangar" },
+      { "command": "agentHangar.releaseEmployee", "title": "Devolver o Digital employee à plataforma", "category": "Agent Hangar" },
       { "command": "agentHangar.openPortal", "title": "Abrir o portal", "category": "Agent Hangar" },
       { "command": "agentHangar.menu", "title": "Menu", "category": "Agent Hangar" }
     ],

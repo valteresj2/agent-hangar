@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 
-import { HangarClient, parseSSE, pkce, ROLE, toOpenAIMessages, toOpenAITools } from '../src/core';
+import {
+  compact, decisionResult, gateArgs, HangarClient, parseAgui, parseSSE, pkce, ROLE, toAguiMessages, toOpenAIMessages, toOpenAITools, WorkerClient,
+} from '../src/core';
 
 // partes no formato das classes do VS Code (LanguageModelTextPart, ToolCallPart, ToolResultPart)
 const text = (value: string) => ({ value });
@@ -77,4 +79,70 @@ test('usableAgents: prod exige consume e estar no ar; stage exige edit; harness 
   const c = new HangarClient('http://h', 't', fake);
   assert.deepEqual((await c.usableAgents('prod')).map(a => a.slug), ['a']);
   assert.deepEqual((await c.usableAgents('stage')).map(a => a.slug), ['b']);
+});
+
+// ------------------------------------------------------------------ posto de trabalho (Digital employee por AG-UI)
+async function* feed(...parts: string[]) { for (const p of parts) yield p; }
+const ev = (e: object) => `data: ${JSON.stringify(e)}\n\n`;
+
+test('AG-UI: texto na hora, ferramenta do servidor com resultado, as do app saem no fim', async () => {
+  const out = [];
+  for await (const e of parseAgui(feed(
+    ev({ type: 'RUN_STARTED' }), ev({ type: 'TEXT_MESSAGE_CONTENT', messageId: 'm', delta: 'Vou ' }),
+    ev({ type: 'TEXT_MESSAGE_CONTENT', messageId: 'm', delta: 'treinar.' }),
+    ev({ type: 'TOOL_CALL_START', toolCallId: 's1', toolCallName: 'memory_recall' }),
+    ev({ type: 'TOOL_CALL_ARGS', toolCallId: 's1', delta: '{}' }), ev({ type: 'TOOL_CALL_END', toolCallId: 's1' }),
+    ev({ type: 'TOOL_CALL_RESULT', toolCallId: 's1', content: 'nada' }),
+    ev({ type: 'TOOL_CALL_START', toolCallId: 'c1', toolCallName: 'run_command' }),
+    // argumentos partidos entre pedaços do stream
+    'data: {"type":"TOOL_CALL_ARGS","toolCallId":"c1","delta":"{\\"command\\": \\"python', ' --version\\"}"}\n\n',
+    ev({ type: 'TOOL_CALL_END', toolCallId: 'c1' }),
+    ev({ type: 'CUSTOM', name: 'hangar.usage', value: { total_tokens: 10, cost_usd: 0.01 } }),
+    ev({ type: 'RUN_FINISHED' }), ev({ type: 'CUSTOM', name: 'hangar.task', value: { status: 'in_progress' } }),
+  ))) out.push(e);
+  assert.deepEqual(out.filter(e => e.type === 'text').map(e => (e as { text: string }).text).join(''), 'Vou treinar.');
+  assert.deepEqual(out.find(e => e.type === 'server_tool'), { type: 'server_tool', id: 's1', name: 'memory_recall' });
+  const calls = out.filter(e => e.type === 'client_call');
+  assert.equal(calls.length, 1);
+  assert.deepEqual((calls[0] as { input: object }).input, { command: 'python --version' });
+  assert.deepEqual(out.find(e => e.type === 'task'), { type: 'task', value: { status: 'in_progress' } });
+  assert.equal(out.at(-1)?.type, 'client_call');  // as do app vêm depois de tudo
+});
+
+test('a alçada vê a ação, não o conteúdo inteiro do arquivo', () => {
+  assert.deepEqual(gateArgs('write_file', { path: 'a.py', content: 'x'.repeat(50) }), { path: 'a.py', chars: 50 });
+  assert.deepEqual(gateArgs('run_command', { command: 'pytest' }), { command: 'pytest', cwd: '.' });
+  assert.deepEqual(gateArgs('publish_github', { repo: 'r' }), { repo: 'r', public: true, description: '' });
+});
+
+test('conversa da tarefa vira AG-UI e as saídas antigas encolhem', () => {
+  const msgs = toAguiMessages([{ role: 'user', content: 'tarefa' }, { role: 'assistant', content: 'ok' }]);
+  assert.deepEqual(msgs.map(m => m.role), ['user', 'assistant']);
+  const long = Array.from({ length: 20 }, (_, i) => ({ id: `t${i}`, role: 'tool' as const, toolCallId: `c${i}`, content: 'x'.repeat(20_000) }));
+  const small = compact([...msgs, ...long], 100_000, 3);
+  assert.ok(small.slice(-3).every(m => m.content?.length === 20_000));  // as recentes ficam inteiras
+  assert.ok((small[2].content ?? '').includes('saída antiga resumida'));
+  assert.equal(long[0].content.length, 20_000);  // não muda o original
+});
+
+test('WorkerClient: token do funcionário, erros viram HangarError com status', async () => {
+  const seen: { url: string; auth: string; body: unknown }[] = [];
+  const fake = (async (url: string, init: RequestInit) => {
+    seen.push({ url, auth: (init.headers as Record<string, string>).Authorization, body: JSON.parse(String(init.body)) });
+    if (url.endsWith('/gate')) return new Response(JSON.stringify({ detail: 'a tarefa não está com o worker' }), { status: 409 });
+    return new Response(JSON.stringify({ employee: 'cd', task: null, next_heartbeat_s: 5 }), { status: 200 });
+  }) as typeof fetch;
+  const c = new WorkerClient('http://h/', 'ewk_x', fake);
+  assert.equal((await c.heartbeat({ name: 'vs' })).employee, 'cd');
+  assert.equal(seen[0].url, 'http://h/hooks/worker/heartbeat');
+  assert.equal(seen[0].auth, 'Bearer ewk_x');
+  await assert.rejects(c.gate(7, 'vscode:run_command', {}), (e: Error & { status: number }) => e.status === 409 && /worker/.test(e.message));
+});
+
+test('decisão que não libera: o texto de quem decidiu volta como resultado da ação', () => {
+  const arrived = [{ content: 'DECISÃO #575: INSTRUÇÃO de ana: apague catboost_info/ e peça de novo' }];
+  assert.equal(decisionResult({ id: 575, decision: 'instruct' }, arrived), arrived[0].content);
+  assert.match(decisionResult({ id: 9, decision: 'reject' }, [])!, /^DECISÃO #9: RECUSADO/);
+  assert.equal(decisionResult({ id: 575, decision: 'approve' }, arrived), undefined);
+  assert.equal(decisionResult(undefined, arrived), undefined);
 });

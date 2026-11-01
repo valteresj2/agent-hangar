@@ -1,11 +1,18 @@
 """API do Digital employee: contratação, ciclo de vida, alçada, tarefas, decisões (humano no circuito), relatórios e,
 para o admin, a força de trabalho digital (catálogo de ações, piso da empresa e parada geral)."""
+import json
+import time
 from datetime import datetime
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from .. import deploy
 from .. import services as svc
+from ..db import SessionLocal
 from .deps import acc, db_dep, guard, member_route
 
 router = APIRouter(prefix="/api")
@@ -490,3 +497,65 @@ def worker_progress(task_id: int, body: ProgressBody, request: Request, db=Depen
 def worker_result(task_id: int, body: ResultBody, request: Request, db=Depends(db_dep)):
     return _worker(request, lambda t: svc.employee_external.result(db, t, task_id, body.status, body.result, body.error,
                                                                    body.cost_usd, body.tokens, body.findings, body.summary))
+
+
+def _sse(ev: dict) -> bytes:
+    return ("data: " + json.dumps(ev, ensure_ascii=False) + "\n\n").encode()
+
+
+@hooks.post("/worker/tasks/{task_id}/agui")
+async def worker_agui(task_id: int, request: Request):
+    """AG-UI com o cérebro do funcionário (instruções, skills, MCPs, memória do cargo) para o worker que tem a tarefa.
+    O stream do runtime passa intacto; no fim vem um CUSTOM `hangar.task` com o estado da tarefa (waiting_human:
+    uma ferramenta da plataforma parou na alçada — o worker para e a tarefa volta pelo heartbeat)."""
+    from .gateway import usage_of
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError
+    except ValueError:
+        return JSONResponse({"error": "corpo inválido: envie um RunAgentInput (JSON)"}, 400)
+
+    def prep(token: str):
+        with SessionLocal() as db:
+            return svc.employee_external.agui_round(db, token, task_id, body)
+    try:
+        r = await run_in_threadpool(lambda: _worker(request, prep))
+    except HTTPException as e:
+        return JSONResponse({"error": e.detail}, e.status_code)
+    t0 = time.time()
+    client = httpx.AsyncClient(timeout=httpx.Timeout(900, connect=10))
+    try:
+        await run_in_threadpool(deploy.ensure_up, r["slug"], r["env"])
+        req = client.build_request("POST", deploy.internal_url(r["slug"], r["env"]) + "/agui", json=r["body"], headers={
+            "accept": "text/event-stream", "x-channel": "employee", "x-hangar-task": str(task_id),
+            "x-session-id": f"task-{task_id}"})
+        upstream = await client.send(req, stream=True)
+    except Exception as e:  # noqa: BLE001 — o worker tenta de novo; a tarefa continua com ele
+        await client.aclose()
+        return JSONResponse({"error": f"agente indisponível: {e}"}, 502)
+
+    def done(usage, ok) -> dict:
+        with SessionLocal() as db:
+            return svc.employee_external.agui_done(db, task_id, r["agent_id"], r["env"], usage, ok,
+                                                   int((time.time() - t0) * 1000))
+
+    async def relay():
+        usage, ok, buf, finished = None, upstream.status_code < 400, b"", False
+        try:
+            async for chunk in upstream.aiter_bytes():
+                yield chunk
+                buf += chunk
+                *lines, buf = buf.split(b"\n")
+                for line in lines:
+                    usage = usage_of(line.strip()) or usage
+                    ok = ok and b'"RUN_ERROR"' not in line
+            finished = True
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+            if not finished:  # o worker caiu no meio: a conta da rodada ainda entra na tarefa
+                await run_in_threadpool(done, usage, False)
+        yield _sse({"type": "CUSTOM", "name": "hangar.task", "value": await run_in_threadpool(done, usage, ok)})
+    return StreamingResponse(relay(), status_code=upstream.status_code, media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

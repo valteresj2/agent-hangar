@@ -121,6 +121,7 @@ serves it at `/downloads/agent-hangar-vscode.vsix`. The source is in [extensions
 | **Sign-in** | Through the portal, with PKCE: the extension opens `/app/#/vscode`, you confirm (you are already signed in with SSO or a local account), and VS Code comes back connected. No keys to copy |
 | **Test** | **Agent Hangar: Testar conexão** runs the same end-to-end check as the Connect tab |
 | **stage** | Set `agentHangar.environment` to `stage` to see the stage version of the agents you edit, and test them before publishing |
+| **Digital employee's workstation** | **Agent Hangar: Trabalhar como Digital employee nesta pasta** (or *Trabalhar no VS Code* in the desktop app) makes VS Code the worker of an employee you manage. It takes the employee's tasks, thinks with the employee over AG-UI, and runs files, terminal and GitHub publishing in the folder under the employee's authority. See [digital-employee.md](digital-employee.md#working-in-vs-code) |
 
 **How sign-in works:**
 1. `POST /api/vscode/authorize` runs in the portal, with your session. It returns a signed, single-use code, valid

@@ -9,6 +9,8 @@ O worker se autentica com o token do funcionário (ewk_…, mostrado uma vez) e 
   ela vem liberada); denied: não execute; simulated: modo sombra, siga como se tivesse feito.
 - POST /hooks/worker/tasks/{id}/progress — nota na linha do tempo e custo parcial.
 - POST /hooks/worker/tasks/{id}/result — done | failed | waiting, com o texto, o custo e os tokens.
+- POST /hooks/worker/tasks/{id}/agui — opcional: o "cérebro" do próprio funcionário por AG-UI (instruções, skills,
+  MCPs, memória), com as ferramentas do worker como ferramentas do app. É o que a extensão do VS Code usa.
 
 Uma tarefa reservada que fica sem resultado além do limite de tempo do funcionário volta para a fila (a mesma
 varredura das tarefas internas); a plataforma nunca chama o worker — ele é quem pergunta.
@@ -173,6 +175,48 @@ def progress(db, token: str, task_id: int, note: str = "", cost_usd: float = 0, 
     t.started_at = now()  # quem dá notícia não está preso: o prazo da rodada recomeça
     db.commit()
     return {"id": t.id, "status": t.status, "cost_usd": t.cost_usd, "stop": t.cost_usd > e.task_budget_usd}
+
+
+def agui_round(db, token: str, task_id: int, body: dict) -> dict:
+    """Uma rodada AG-UI do worker com o cérebro do próprio funcionário: o worker manda a conversa e as ferramentas
+    dele (ex.: o VS Code com arquivos e terminal) e o runtime do agente responde com as instruções, skills, MCPs e
+    memória do cargo. As ferramentas da plataforma passam pela alçada da tarefa (X-Hangar-Task), como numa rodada
+    interna; as do worker ele executa depois de perguntar no /gate. Devolve para onde mandar e o corpo já com DLP."""
+    e, a = _employee(db, token)
+    t = _task(db, e, task_id)
+    if t.cost_usd > e.task_budget_usd:
+        raise PlatformError(f"orçamento da tarefa (US$ {e.task_budget_usd}) estourado")
+    from . import governance
+    from .catalog import code_allowed
+    from .common import spec_of
+    why = governance.llm_blocked(db, t, a)
+    if why:
+        raise PlatformError(why)
+    env = "stage" if (t.probation or e.status == "probation") else "prod"
+    if body.get("tools"):
+        ok, msg = code_allowed(db, spec_of(a), env)
+        if not ok:  # o worker mandaria arquivos e saídas de terminal para esse LLM
+            raise PlatformError(msg)
+    body = {**body, "messages": governance.mask_messages(db, t, [m for m in body.get("messages") or [] if isinstance(m, dict)])}
+    t.started_at = now()  # a rodada está viva: o prazo recomeça
+    db.commit()
+    return {"slug": a.slug, "agent_id": a.id, "env": env, "task_id": t.id, "body": body}
+
+
+def agui_done(db, task_id: int, agent_id: int, env: str, usage: dict | None, ok: bool, latency_ms: int) -> dict:
+    """Depois da rodada: tokens e custo na tarefa e nas métricas do agente; se uma ferramenta da plataforma parou na
+    alçada, a tarefa sai do worker até alguém decidir (volta pelo heartbeat, como no /gate)."""
+    from .usage import record_usage
+    t = db.get(EmployeeTask, task_id)
+    record_usage(db, agent_id, env, "employee", "agui", latency_ms, ok, {"usage": usage} if usage else None)
+    if usage:
+        _spend(t, usage.get("cost_usd"), usage.get("total_tokens"))
+    waiting = db.scalar(select(HumanRequest.id).where(HumanRequest.task_id == t.id, HumanRequest.status == "open",
+                                                      HumanRequest.kind.in_(tasksmod.BLOCKING)))
+    if waiting and t.status == "in_progress":
+        t.status, t.worker = "waiting_human", ""
+    db.commit()
+    return {"id": t.id, "status": t.status, "cost_usd": t.cost_usd, "request": waiting}
 
 
 def _spend(t: EmployeeTask, cost_usd, tokens):
