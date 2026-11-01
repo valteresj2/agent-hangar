@@ -309,6 +309,7 @@ async function agentDetail(slug, tab = 'overview') {
     </div></div>
   <div id="av-pick"></div>
   ${a.pending_promotion ? `<div class="card warn-card">Há um pedido de promoção para produção aguardando aprovação — veja em <a href="#/approvals">Aprovações</a>.</div>` : ''}
+  <div id="model-dep"></div>
   <div class="tabs">${shown.map(t => `<a href="#/agents/${slug}/${t}" class="${t === tab ? 'on' : ''}">${names[t]}</a>`).join('')}</div>
   <div id="tab"></div>`;
   const reload = () => route();
@@ -320,6 +321,7 @@ async function agentDetail(slug, tab = 'overview') {
   on('#b-del', e => confirm(`Excluir ${a.name} e seus containers?`) && act(e.target, () => api('/agents/' + slug, { method: 'DELETE' }).then(() => location.hash = '#/agents')));
   on('#b-req', () => requestAccessDialog(slug));
   on('#b-av', () => avatarPicker($('#av-pick'), a));
+  deprecationBanner($('#model-dep'), a, can(a, 'edit'));
   const t = $('#tab');
   const key = shown.includes(tab) ? tab : 'overview';
   ({ overview, connect: agentConnect, guide: agentGuide, spec: specEditor, versions, tests, jobs, deployments, usage, playground, schedules: agentSchedules, memory: agentMemory, access: agentAccess })[key](t, a);

@@ -156,8 +156,11 @@ def _code_policy_approved(db: Session) -> bool:
 
 def context(db: Session) -> dict:
     """O que o ranking lê uma vez só (fichas, custo, desempenho real e modelos), para avaliar vários agentes."""
+    from .model_deprecation import horizon
+    leaving = now().date() + timedelta(days=horizon() * 2)  # um modelo de saída marcada não é recomendado
     q = (select(LlmModel, LlmConnection).join(LlmConnection, LlmConnection.id == LlmModel.connection_id)
-         .where(LlmModel.available.is_(True), LlmModel.kind == "text", LlmConnection.protocol == "openai"))
+         .where(LlmModel.available.is_(True), LlmModel.kind == "text", LlmConnection.protocol == "openai",
+                (LlmModel.deprecates_on.is_(None)) | (LlmModel.deprecates_on > leaving)))
     return {"profs": mp.profiles_by_key(db), "cost": mp.cost_scores(db), "real": real_performance(db),
             "rows": db.execute(q).all(), "approved": _code_policy_approved(db)}
 

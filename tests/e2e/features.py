@@ -139,6 +139,35 @@ def phase_execution(conn: str):
     return slug
 
 
+# ------------------------------------------------------------------ modelo que o provedor vai descontinuar
+def phase_deprecation(conn: str):
+    from datetime import date, timedelta
+    a = ok(admin.post("/api/agents", json={"name": f"Aviso de modelo {RUN}", "objective": "responde", "final_output": "texto"}))
+    slug = a["slug"]
+    made["agents"].append(slug)
+    ok(admin.patch(f"/api/agents/{slug}", json={"llm": {"connection": conn, "model": "e2e/thinker"},
+                                                "tests": [{"name": "eco", "input": f"dep-{RUN}", "expect_contains": f"dep-{RUN}"}]}))
+    when = (date.today() + timedelta(days=10)).isoformat()
+    m = ok(admin.patch(f"/api/catalog/llm/{conn}/models/e2e/thinker", json={"deprecates_on": when}))
+    check("descontinuação: o admin informa a data", m["deprecates_on"] == when and m["deprecation_source"] == "admin", m)
+    try:
+        lst = ok(admin.get("/api/catalog/models/deprecations"))
+        row = next((x for x in lst["models"] if x["connection"] == conn and x["model"] == "e2e/thinker"), None)
+        check("descontinuação: a lista do admin mostra quem usa", row and slug in [u["agent"] for u in row["agents"]]
+              and row["stage"] == 14, row)
+        d = ok(admin.get(f"/api/agents/{slug}/model-deprecation"))["models"]
+        check("descontinuação: o agente vê o aviso", d and d[0]["soon"] and d[0]["where"] == ["llm"], d)
+        check("descontinuação: sem substituto com contexto parecido", d and d[0]["replacement"] is None, d)
+        out = ok(admin.post(f"/api/agents/{slug}/model-deprecation/swap",
+                            json={"connection": conn, "model": "e2e/thinker", "to": "e2e/plain"}))
+        check("descontinuação: a troca vira versão nova testada em stage",
+              out["to"] == "e2e/plain" and (out.get("tests") or {}).get("status") == "passed", out)
+        check("descontinuação: o agente deixa de usar o modelo",
+              not ok(admin.get(f"/api/agents/{slug}/model-deprecation"))["models"])
+    finally:
+        admin.patch(f"/api/catalog/llm/{conn}/models/e2e/thinker", json={"deprecates_on": ""})
+
+
 def _agui(slug: str, messages: list, tools: list | None = None, state: dict | None = None) -> list[dict]:
     body = {"threadId": f"e2e-{RUN}", "runId": uuid.uuid4().hex[:8], "messages": messages, "tools": tools or [],
             "context": [{"description": "tela", "value": "pedidos"}], "state": state or {}, "forwardedProps": {}}
@@ -333,6 +362,7 @@ def main():
         phase_company()
         conn = phase_llm()
         phase_agui(phase_execution(conn))
+        phase_deprecation(conn)
         phase_remote()
         phase_harness()
         phase_connectors()

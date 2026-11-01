@@ -52,6 +52,7 @@ from . import (  # noqa: F401  (svc.access.Access, svc.connect.snippet, svc.org.
                       mcp_oauth,
                       meetings,
                       memory,
+                      model_deprecation,
                       model_profiles,
                       model_selection,
                       notify,

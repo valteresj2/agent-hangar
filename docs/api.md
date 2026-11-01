@@ -380,6 +380,10 @@ Agents reach the memory at `/internal/memory/mcp` with their internal token and 
 | POST | `/api/agents/{slug}/execution/trials` | `{levels?}`: compare effort levels on the test cases in stage, in the background (costs model calls) |
 | GET | `/api/agents/{slug}/execution/trials/{id}` | One profile comparison, with partial results while it runs |
 | GET | `/api/agents/{slug}/model-recommendation?role=` | The agent's role, current model and suggestion (a multi-agent returns the orchestrator and each specialist). Nothing is changed |
+| GET | `/api/catalog/models/deprecations?all=` | (Admin) Models with a deprecation date within `MODEL_DEPRECATION_WARN_DAYS` (`all=true`: every date), who uses each one and the replacement |
+| PATCH | `/api/catalog/llm/{name}/models/{model}` with `{"deprecates_on": "YYYY-MM-DD"}` | (Admin) Sets the date the provider deprecates the model; `""` goes back to the public table's date |
+| GET | `/api/agents/{slug}/model-deprecation` | The agent's models that have a deprecation date, where each is used, the replacement and the ready `changes` |
+| POST | `/api/agents/{slug}/model-deprecation/swap` | `{connection, model, to?, test?}`: swaps the model as a new version tested in stage; production keeps the previous version |
 | GET · PUT | `/api/catalog/model-profiles/settings` | How profiles are researched: `connection`, `model`, `auto` (`off`/`used`/`all`), `monthly_budget_usd`, `per_run`, `max_age_days`, `web` (`brave`/`tavily`/`searxng`), `search_key` and `aa_key` as `secret://name`, `search_url`. PUT is admin |
 | POST | `/api/catalog/model-profiles/refresh` | Fill profiles from the free sources now. Admin |
 | GET | `/api/catalog/model-profiles/{model}` | A model's profile: summary, strengths, weaknesses, best_for, scores `{area: {value, source, basis}}`, metrics, sources |
@@ -423,7 +427,7 @@ The client acts with the key owner's roles. The tools are:
 - **Guidance:** `platform_guide`, `get_spec_schema`, `whoami`.
 - **Access:** `request_agent_access`, `list_approvals`, `decide_approval`.
 - **Schedules:** `schedule_agent`, `list_schedules`, `update_schedule`, `delete_schedule`, `run_schedule_now`, `schedule_runs`.
-- **Catalog:** `list_catalog`, `list_llm_models`, `get_model_profile`, `check_model_needs`, `recommend_models`, `suggest_agent_models`, `get_execution_profile`, `get_execution_tuning`, `compare_execution_profiles`, `register_llm_connection`, `register_skill`, `register_mcp_server`.
+- **Catalog:** `list_catalog`, `list_llm_models`, `get_model_profile`, `check_model_needs`, `recommend_models`, `suggest_agent_models`, `list_model_deprecations`, `get_execution_profile`, `get_execution_tuning`, `compare_execution_profiles`, `register_llm_connection`, `register_skill`, `register_mcp_server`.
 - **Templates:** `list_templates`, `apply_template`.
 - **Build:** `register_agent`, `design_agent` (merge patch plus `remove`), `rollback_agent`, `build_multi_agent`, `list_avatars`.
 - **Inspect:** `list_agents`, `get_agent`, `get_agent_spec` (spec, plus which version runs in prod and in stage).

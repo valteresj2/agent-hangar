@@ -5,6 +5,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.56.0] — 2026-11-01
+
+### Added
+- **Warnings before a provider deprecates a model in use.** Providers retire models on a set date, and an agent whose model is gone stops working. The platform now warns ahead of time (see [docs/concepts.md](docs/concepts.md#models-the-provider-is-deprecating)).
+  - **The date:** each model gets the `deprecation_date` from LiteLLM's public model table when the connection's list is refreshed. An admin can set or correct it in *Provedores de LLM*, and refreshes don't undo it. Migration `0055`.
+  - **Who uses it:** the agent's model, the harness, the test judge and the model per response, in stage and production, plus the connection's default model and the models synced with the Hangar desktop.
+  - **Warnings:** at 60, 30, 14, 7 and 1 day(s) before the date and after it (`MODEL_DEPRECATION_WARN_DAYS`, default 60). Each tier is a new inbox item. Admins see each model with every agent that uses it, and a summary at the top of *Provedores de LLM*; whoever edits an agent sees a warning for it and a banner on its page.
+  - **The replacement:** a model on the same connection with the same output type and features, without a near deprecation date, preferring the same family, a similar price and a newer version. Recommendations by role no longer suggest models with a near date.
+  - **Swap:** *Trocar e testar em stage* on the agent's page swaps the model everywhere the agent uses it, as a new version tested in stage. Nothing changes by itself: production keeps the previous version until someone publishes.
+  - **MCP:** a new `list_model_deprecations` tool lists the agents you edit that use a model on its way out, with the `changes` ready for `edit_agent`. `design_agent` and `edit_agent` return `model_warnings`, and the builder avoids those models for new agents.
+
 ## [0.55.0] — 2026-11-01
 
 ### Added

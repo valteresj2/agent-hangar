@@ -7,7 +7,9 @@ depois a cada hora — e guarda cada modelo com o tipo de saída, o contexto e o
 - tipo: o que o provedor informa (OpenRouter, LiteLLM, Together, Mistral, Cohere), senão a tabela pública de modelos do
   LiteLLM, senão o nome (`*embed*`, `whisper`, `tts`…); o admin corrige e a coleta não desfaz;
 - preço: o do provedor, senão a tabela pública (só quando o nome bate com o provedor, para não pegar o preço de outro);
-- modelo que sumiu da lista fica indisponível (não é apagado); se algum agente usa, aparece na caixa de entrada.
+- modelo que sumiu da lista fica indisponível (não é apagado); se algum agente usa, aparece na caixa de entrada;
+- data de descontinuação: a da tabela pública (deprecation_date), ou a que o admin informar; quem usa é avisado antes
+  (services/model_deprecation.py).
 
 O construtor de agentes (MCP) lê essa lista para saber se a empresa tem o tipo de modelo que o agente precisa.
 """
@@ -15,7 +17,7 @@ import logging
 import re
 import threading
 import time
-from datetime import timedelta
+from datetime import date, timedelta
 
 import httpx
 from sqlalchemy import select
@@ -255,6 +257,15 @@ def public_catalog() -> dict:
         return _catalog["data"]
 
 
+def deprecation_of(entry: dict | None) -> date | None:
+    """A data de descontinuação da entrada da tabela pública (deprecation_date, AAAA-MM-DD), se houver."""
+    v = (entry or {}).get("deprecation_date")
+    try:
+        return date.fromisoformat(str(v)[:10]) if v else None
+    except ValueError:
+        return None
+
+
 def catalog_entry(cat: dict, prov: dict, model_id: str) -> tuple[dict | None, bool]:
     """(entrada, exata). Exata = o nome bate com o provedor (o preço vale); só o fim do nome bate = só o tipo vale."""
     pre = prov.get("prefix") or ""
@@ -339,6 +350,7 @@ def enrich(items: list[dict], prov: dict, cat: dict | None = None) -> list[dict]
         it["kind_source"] = "provider" if it.get("kind") else ""
         it["price_source"] = "provider" if it.get("price_in") is not None or it.get("price_out") is not None else ""
         e, exact = catalog_entry(cat, prov, it["id"]) if cat else (None, False)
+        it["deprecates_on"] = deprecation_of(e)
         if e:
             if not it.get("kind") and _LITELLM_MODE.get(e.get("mode") or ""):
                 it["kind"], it["kind_source"] = _LITELLM_MODE[e["mode"]], "catalog"
@@ -384,6 +396,13 @@ def sync_connection(db: Session, conn: LlmConnection, actor: str = "agendador") 
         m.context_length = it.get("context_length") or m.context_length
         if m.price_source != "admin" and it.get("price_source"):
             m.price_in_per_mtok, m.price_out_per_mtok, m.price_source = it["price_in"], it["price_out"], it["price_source"]
+        if m.deprecation_source != "admin":
+            m.deprecates_on, m.deprecation_source = it.get("deprecates_on"), "catalog" if it.get("deprecates_on") else ""
+    cat = public_catalog()
+    for mid, m in have.items():  # os incluídos à mão (provedor sem lista) também ganham a data da tabela pública
+        if mid not in seen and m.deprecation_source != "admin" and cat:
+            m.deprecates_on = deprecation_of(catalog_entry(cat, prov, mid)[0])
+            m.deprecation_source = "catalog" if m.deprecates_on else ""
     if prov["list"] != "none" or conn.provider not in BY_ID:
         for mid, m in have.items():
             if mid not in seen and not m.manual and m.available:
@@ -438,6 +457,9 @@ def model_dict(m: LlmModel, conn: LlmConnection | None = None) -> dict:
             "context_length": m.context_length, "price_in_per_mtok": m.price_in_per_mtok,
             "price_out_per_mtok": m.price_out_per_mtok, "price_source": m.price_source, "available": bool(m.available),
             "manual": bool(m.manual), "first_seen": iso(m.first_seen), "last_seen": iso(m.last_seen),
+            "deprecates_on": m.deprecates_on.isoformat() if m.deprecates_on else None,
+            "deprecation_source": m.deprecation_source or "",
+            "days_left": (m.deprecates_on - now().date()).days if m.deprecates_on else None,
             **({"connection": conn.name, "provider": conn.provider, "protocol": conn.protocol,
                 "default": conn.model_name == m.model_id} if conn else {})}
 
@@ -495,6 +517,10 @@ def add_manual(db: Session, conn: LlmConnection, model_id: str, kind: str = "", 
         m.context_length = int(context_length)
     if price_in is not None or price_out is not None:
         m.price_in_per_mtok, m.price_out_per_mtok, m.price_source = price_in, price_out, "admin"
+    if m.deprecation_source != "admin":
+        cat = public_catalog()
+        m.deprecates_on = deprecation_of(catalog_entry(cat, provider(conn.provider), model_id)[0]) if cat else None
+        m.deprecation_source = "catalog" if m.deprecates_on else ""
     if not conn.model_name and kind == "text":
         conn.model_name = model_id
     db.commit()
@@ -503,8 +529,20 @@ def add_manual(db: Session, conn: LlmConnection, model_id: str, kind: str = "", 
 
 
 def edit_model(db: Session, conn: LlmConnection, model_id: str, kind: str | None = None, price_in=None, price_out=None,
-               set_price: bool = False, actor="admin") -> LlmModel:
+               set_price: bool = False, actor="admin", deprecates_on: str | None = None) -> LlmModel:
+    """deprecates_on: AAAA-MM-DD informa a data de descontinuação (a coleta não desfaz); "" volta à da tabela pública."""
     m = _model(db, conn, model_id)
+    if deprecates_on is not None:
+        if deprecates_on.strip():
+            try:
+                m.deprecates_on = date.fromisoformat(deprecates_on.strip()[:10])
+            except ValueError:
+                raise PlatformError("deprecates_on: use AAAA-MM-DD") from None
+            m.deprecation_source = "admin"
+        else:
+            cat = public_catalog()
+            m.deprecates_on = deprecation_of(catalog_entry(cat, provider(conn.provider), model_id)[0]) if cat else None
+            m.deprecation_source = "catalog" if m.deprecates_on else ""
     if kind is not None:
         if kind not in KINDS:
             raise PlatformError(f"kind: {' | '.join(KINDS)}")
@@ -515,7 +553,8 @@ def edit_model(db: Session, conn: LlmConnection, model_id: str, kind: str | None
             price_in is not None or price_out is not None) else ""
     db.commit()
     audit(db, actor, "llm_models.edit", conn.name, f"{model_id}: {m.kind}"
-          + (f" · US$ {m.price_in_per_mtok} / {m.price_out_per_mtok}" if set_price else ""))
+          + (f" · US$ {m.price_in_per_mtok} / {m.price_out_per_mtok}" if set_price else "")
+          + (f" · sai em {m.deprecates_on or '—'} ({m.deprecation_source or 'sem data'})" if deprecates_on is not None else ""))
     return m
 
 

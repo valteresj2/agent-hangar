@@ -108,6 +108,7 @@ Everything Agent Hangar does, grouped by who uses it, with where to find it. **P
 | Companies: create, SSO domains, suspend; act inside one (selector / `X-Hangar-Org`) | Console → Companies | [work.md](work.md#companies-multi-company) |
 | Members, teams, roles, SSO (OIDC/SAML) and SCIM | Console → Membros, Times, SSO e SCIM | [access.md](access.md) |
 | LLM providers and connections | Console → LLM providers | [install.md](install.md) |
+| Warnings before a provider deprecates a model in use, with the replacement and a swap tested in stage | Inbox, agent page, Console → LLM providers | [concepts.md](concepts.md#models-the-provider-is-deprecating) |
 | Digital workforce: overview, action catalog, authority floor, decision channels (Slack, Teams, Telegram, Discord, e-mail) | Console → Digital employees | [digital-employee.md](digital-employee.md) |
 | Secrets vault (`secret://`), rotation, proposals approved by someone else | Console → Secrets | [work.md](work.md#secrets-vault) |
 | Announcements | Console → Announcements | [work.md](work.md#getting-started-announcements-favorites-and-live-view) |

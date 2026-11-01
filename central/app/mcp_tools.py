@@ -9,7 +9,7 @@ from . import auth, config
 from . import services as svc
 from . import spec as specmod
 from .db import SessionLocal
-from .models import Job, LlmConnection, McpServer, Skill
+from .models import Agent, Job, LlmConnection, McpServer, Skill
 
 INSTRUCTIONS = """
 Você está conectado ao Agent Hangar da empresa. Sua missão: construir agentes (ou multiagentes)
@@ -132,7 +132,9 @@ FLUXO
    agente precisa (texto, embedding, rerank, imagem, voz…)? Se faltar, mostre message_for_user e espere o cadastro.
    list_llm_models -> os modelos por tipo, cada um com a ficha (para que é bom, notas por área, preço): use para
    escolher o modelo de cada agente (ex.: o planejador com a melhor nota de reasoning, o de código com a melhor de
-   coding, um classificador simples com boa nota de cost) e diga ao usuário o porquê da escolha. Sem conexão de LLM: peça ao usuário url e api key e registre
+   coding, um classificador simples com boa nota de cost) e diga ao usuário o porquê da escolha. Não escolha um modelo
+   com deprecates_on próximo (o provedor vai descontinuá-lo); se design_agent/edit_agent devolver model_warnings, conte
+   ao usuário e ofereça o substituto (list_model_deprecations). Sem conexão de LLM: peça ao usuário url e api key e registre
    com register_llm_connection (ou siga em mock/echo para testar).
 4. compose_agent (com peças) ou register_agent(name, objective, final_output) -> devolve o slug.
 5. design_agent(slug, ...) define o comportamento. É um JSON Merge Patch: objetos mesclam, listas e
@@ -301,7 +303,8 @@ async def list_llm_models(ctx: Context, kind: str = "", connection: str = "") ->
     de preferência, rerank; voz precisa de stt e tts; ler imagens precisa de um text com cap vision). Se faltar um tipo,
     NÃO improvise: diga ao usuário qual tipo falta e por quê, e peça para um admin cadastrar um provedor que o tenha
     (console → Configurações → Provedores de LLM). Para usar um modelo que não é o padrão da conexão:
-    design_agent(llm={"connection": "<conexão>", "model": "<id>"})."""
+    design_agent(llm={"connection": "<conexão>", "model": "<id>"}). Um modelo com deprecates_on (data em que o
+    provedor o descontinua) e poucos days_left não deve ser escolhido para um agente novo: prefira outro."""
     def go(db, acc):
         models = svc.llm_models.list_models(db, connection, kind)
         have = sorted({m["kind"] for m in svc.llm_models.list_models(db, connection)})
@@ -485,9 +488,13 @@ async def design_agent(ctx: Context, slug: str, instructions: str | None = None,
         if guide:
             svc.guides.set_text(db, acc, slug, guide, acc.p.name, version=a.current_version)
         g = svc.guides.status(db, a)
-        return {"slug": a.slug, "version": a.current_version, "status": a.status, "kind": a.kind, "guide": g,
-                "next": "ship_agent (testa em stage e promove) ou run_tests" if g["written"]
-                        else "escreva o guia (set_agent_guide ou design_agent(guide=...)) e depois ship_agent"}
+        out = {"slug": a.slug, "version": a.current_version, "status": a.status, "kind": a.kind, "guide": g,
+               "next": "ship_agent (testa em stage e promove) ou run_tests" if g["written"]
+                       else "escreva o guia (set_agent_guide ou design_agent(guide=...)) e depois ship_agent"}
+        warn = svc.model_deprecation.warnings_for(db, a)
+        if warn:
+            out["model_warnings"] = warn  # avise o usuário e prefira o substituto antes de publicar
+        return out
     return await _run(ctx, go)
 
 
@@ -1107,7 +1114,31 @@ async def edit_agent(ctx: Context, slug: str, changes: dict | None = None, instr
         a = svc.get_agent(db, slug)
         if guide:
             svc.guides.set_text(db, acc, slug, guide, acc.p.name, version=a.current_version)
-        return {**out, "guide": svc.guides.status(db, a)}
+        warn = svc.model_deprecation.warnings_for(db, a)
+        return {**out, "guide": svc.guides.status(db, a), **({"model_warnings": warn} if warn else {})}
+    return await _run(ctx, go)
+
+
+@mcp.tool()
+async def list_model_deprecations(ctx: Context, all_dates: bool = False) -> dict:
+    """Modelos que o provedor vai descontinuar e os agentes que você edita (admin: todos) que ainda os usam, com o
+    substituto recomendado e as mudanças prontas. Para trocar: edit_agent(slug, changes=<changes>) — cria uma versão
+    nova e testa em stage; produção só muda quando você publicar. Avise o usuário da data e confirme a troca antes.
+    all_dates=True (admin): todos os modelos com data, mesmo os que saem daqui a muito tempo."""
+    def go(db, acc):
+        mine = []
+        for a in acc.visible(db.scalars(select(Agent)).all()):
+            if not acc.can("edit", a):
+                continue
+            for x in svc.model_deprecation.for_agent(db, a):
+                if x["soon"] or all_dates:
+                    mine.append({"agent": a.slug, "name": a.name, **x})
+        out = {"warn_days": svc.model_deprecation.horizon(), "agents": mine,
+               "how_to_swap": "edit_agent(slug, changes=<changes>) e depois ship_agent/promote quando os testes passarem"}
+        if acc.p.is_admin:
+            out["models"] = [{k: v for k, v in x.items() if k != "model_pk"}
+                             for x in svc.model_deprecation.deprecations(db, all_dates=all_dates)]
+        return out
     return await _run(ctx, go)
 
 

@@ -58,10 +58,11 @@ async function providersPage() {
     ${missing.length && c.llm_connections.length ? `<div class="small mute mt"><span>Ainda sem modelo de:</span> ${missing.map(k => `<span class="chip" title="${esc(MODEL_KIND_HINT[k])}">${esc(MODEL_KIND[k])}</span>`).join(' ')}
       <div>Um agente que precisar desses tipos vai pedir para você cadastrar um provedor que os tenha.</div></div>` : ''}</div>
     ${ME.is_admin ? `<label class="small" style="min-width:230px">Código e LLMs<select id="code-policy"><option value="any">Qualquer conexão recebe código</option><option value="approved">Só conexões aprovadas para código</option></select></label>` : ''}</div></div>
-  ${ME.is_admin ? '<div id="mr-card" class="mt"></div>' : ''}
+  ${ME.is_admin ? '<div id="dep-card" class="mt"></div><div id="mr-card" class="mt"></div>' : ''}
   ${PV_GROUPS.map(section).join('')}
   <div class="mute small mt">Logos dos provedores: projeto 9router (licença MIT). As marcas são dos respectivos donos.</div>`;
   if ($('#mr-card')) researchCard($('#mr-card'), c);
+  deprecationsCard($('#dep-card'));
   const pol = $('#code-policy');
   if (pol) {
     pol.value = (ME.org && ME.org.code_policy) || 'any';
@@ -171,7 +172,9 @@ async function connWire(x, p) {
     const price = m => m.price_in_per_mtok == null && m.price_out_per_mtok == null ? '<span class="mute">—</span>'
       : `${m.price_in_per_mtok ?? 0} · ${m.price_out_per_mtok ?? 0}`;
     q('.cc-rows').innerHTML = shown.map(m => `<tr class="${m.available ? '' : 'mute'}"><td><a href="#" class="cc-prof" data-m="${esc(m.id)}" title="ver a ficha"><code class="inline" data-noi18n>${esc(m.id)}</code></a>
-        ${m.default ? ' <span class="pill ok">padrão</span>' : ''}${m.available ? '' : ' <span class="pill bad">saiu do provedor</span>'}${m.manual ? ' <span class="pill">incluído à mão</span>' : ''}</td>
+        ${m.default ? ' <span class="pill ok">padrão</span>' : ''}${m.available ? '' : ' <span class="pill bad">saiu do provedor</span>'}${m.manual ? ' <span class="pill">incluído à mão</span>' : ''}
+        ${m.deprecates_on ? ` <span class="pill ${m.days_left <= 7 ? 'bad' : m.days_left <= 60 ? 'warn' : ''}" title="${esc(m.deprecation_source === 'admin' ? 'data informada pelo admin' : 'data da tabela pública de modelos')}">sai em <span data-noi18n>${esc(m.deprecates_on)}</span></span>` : ''}
+        ${ME.is_admin ? ` <a href="#" class="small cc-dep" data-m="${esc(m.id)}" data-d="${esc(m.deprecates_on || '')}">${m.deprecates_on ? 'mudar a data de saída' : 'informar a data de saída'}</a>` : ''}</td>
       <td>${ME.is_admin ? `<select class="cc-kind" data-m="${esc(m.id)}" title="${esc(SRC_LABEL[m.kind_source] || '')}" style="width:auto;min-height:30px;padding:3px 8px">
           ${PV.kinds.map(k => `<option value="${k}" ${k === m.kind ? 'selected' : ''}>${esc(MODEL_KIND[k])}</option>`).join('')}</select>`
         : esc(MODEL_KIND[m.kind] || m.kind)}</td>
@@ -199,6 +202,16 @@ async function connWire(x, p) {
       const r = await api(`/catalog/llm/${encodeURIComponent(x.name)}/models/${encodeURIComponent(s.dataset.m)}`, { method: 'PATCH', body: { kind: s.value } });
       Object.assign(models.find(m => m.id === r.id), r);
     }, 'Tipo corrigido: a atualização da lista não desfaz'));
+    root.querySelectorAll('.cc-dep').forEach(a => a.onclick = e => {
+      e.preventDefault();
+      const v = prompt('Data em que o provedor descontinua o modelo (AAAA-MM-DD). Vazio volta à data da tabela pública.', a.dataset.d);
+      if (v === null) return;
+      act(a, async () => {
+        const r = await api(`/catalog/llm/${encodeURIComponent(x.name)}/models/${encodeURIComponent(a.dataset.m)}`, { method: 'PATCH', body: { deprecates_on: v.trim() } });
+        Object.assign(models.find(m => m.id === r.id), r);
+        draw();
+      }, 'Data de saída salva: quem usa o modelo recebe os avisos');
+    });
     root.querySelectorAll('.cc-mkdef').forEach(a => a.onclick = e => { e.preventDefault(); act(a, () => api(`/catalog/llm/${encodeURIComponent(x.name)}/models/${encodeURIComponent(a.dataset.m)}`,
       { method: 'PATCH', body: { default: true } }).then(() => providerDetail(p.id)), 'Modelo padrão trocado'); });
     root.querySelectorAll('.cc-rm').forEach(a => a.onclick = e => { e.preventDefault(); act(a, () => api(`/catalog/llm/${encodeURIComponent(x.name)}/models/${encodeURIComponent(a.dataset.m)}`,
@@ -383,6 +396,53 @@ async function modelRecCard(box, a, canEdit, role = '') {
   box.querySelectorAll('.mr-apply').forEach(b => b.onclick = e => confirm(`Trocar o modelo de "${a.name}" para ${b.dataset.m}? Vira uma versão nova; rode os testes antes de levar para produção.`)
     && act(e.target, () => api('/agents/' + a.slug, { method: 'PATCH', body: { llm: { connection: b.dataset.c, model: b.dataset.m } } }).then(route),
       'Modelo trocado: nova versão criada (rode os testes para levar à produção)'));
+}
+
+/* página do agente: um modelo dele vai ser descontinuado pelo provedor — o substituto e a troca testada em stage */
+const DEP_WHERE = { llm: 'modelo do agente', harness: 'harness', judge: 'juiz dos testes', light_model: 'modelo por resposta' };
+async function deprecationBanner(box, a, canEdit) {
+  if (!box) return;
+  let r;
+  try { r = await api(`/agents/${a.slug}/model-deprecation`); } catch (e) { return; }
+  const soon = (r.models || []).filter(x => x.soon);
+  if (!soon.length) { box.innerHTML = ''; return; }
+  box.innerHTML = soon.map((x, i) => `<div class="card ${x.days_left <= 7 ? 'bad-card' : 'warn-card'}">
+      <div class="row between" style="flex-wrap:wrap;gap:8px"><div>
+        <b>O modelo <code class="inline" data-noi18n>${esc(x.model)}</code> ${esc(x.when)}.</b>
+        <div class="small mt"><span class="mute">Usado em:</span> ${x.where.map(w => `<span class="chip">${esc(DEP_WHERE[w] || w)}</span>`).join(' ')}
+          <span class="mute">· conexão</span> <span class="chip" data-noi18n>${esc(x.connection)}</span></div>
+        ${x.replacement ? `<div class="small mt"><span class="mute">Recomendado:</span> <code class="inline" data-noi18n>${esc(x.replacement.model)}</code>
+            ${x.replacement.reasons.map(t => `<span class="chip">${esc(t)}</span>`).join(' ')}</div>`
+          : '<div class="small mt">Não há um substituto compatível nessa conexão: peça a um admin para cadastrar um modelo.</div>'}
+        <div class="mute small mt">Trocar cria uma versão nova e roda os testes em stage; a produção só muda quando você publicar.</div></div>
+      ${canEdit && x.replacement ? `<button class="dep-swap" data-i="${i}">Trocar e testar em stage</button>` : ''}</div></div>`).join('');
+  box.querySelectorAll('.dep-swap').forEach(b => b.onclick = e => {
+    const x = soon[+b.dataset.i];
+    if (!confirm(`Trocar ${x.model} por ${x.replacement.model} em "${a.name}"? Vira uma versão nova, testada em stage.`)) return;
+    act(e.target, async () => {
+      const out = await api(`/agents/${a.slug}/model-deprecation/swap`, { method: 'POST', body: { connection: x.connection, model: x.model } });
+      const t = out.tests || {};
+      toast(`Versão v${out.version} com ${out.to}: testes ${t.status === 'passed' ? 'aprovados' : (t.summary || t.status || 'não rodaram')}. Publique quando quiser.`, t.status && t.status !== 'passed');
+      route();
+    });
+  });
+}
+
+/* Provedores de LLM: os modelos em uso que vão sair (admin) */
+async function deprecationsCard(box) {
+  if (!box || !ME.is_admin) return;
+  let r;
+  try { r = await api('/catalog/models/deprecations'); } catch (e) { return; }
+  const rows = (r.models || []).filter(x => x.in_use);
+  if (!rows.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="card warn-card"><h2 style="margin:0">Modelos em uso que vão ser descontinuados</h2>
+    <div class="mute small">Avisos a partir de ${r.warn_days} dias da data. Quem edita cada agente vê a troca recomendada na página dele.</div>
+    <div class="scroll mt"><table class="small"><tr><th>Modelo</th><th>Quando</th><th>Quem usa</th><th>Recomendado</th></tr>
+    ${rows.map(x => `<tr><td><code class="inline" data-noi18n>${esc(x.model)}</code> <span class="mute" data-noi18n>${esc(x.connection)}</span></td>
+      <td>${esc(x.when)}${x.source === 'admin' ? ' <span class="pill">informada</span>' : ''}</td>
+      <td>${x.agents.map(u => `<a href="#/agents/${esc(u.agent)}" data-noi18n>${esc(u.name)}</a>`).join(', ')}${x.connection_default ? ' <span class="pill">padrão da conexão</span>' : ''}${x.desktop ? ' <span class="pill">Hangar desktop</span>' : ''}</td>
+      <td>${x.replacement ? `<code class="inline" data-noi18n>${esc(x.replacement.model)}</code>` : '<span class="mute">sem substituto na conexão</span>'}</td></tr>`).join('')}
+    </table></div></div>`;
 }
 
 /* página do agente: o perfil de execução — o que a spec pede e o que vai de fato ao modelo ou ao harness */

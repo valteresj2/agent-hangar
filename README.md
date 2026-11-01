@@ -57,7 +57,7 @@ https://github.com/user-attachments/assets/28cfa80f-33b1-49c5-be48-13cc33ada18d
 
 </details>
 
-> **Status: alpha (v0.55).** It works end to end and is covered by tests, but APIs may still change. Run it inside
+> **Status: alpha (v0.56).** It works end to end and is covered by tests, but APIs may still change. Run it inside
 > your network until you have read [docs/security.md](docs/security.md).
 
 ## Why Agent Hangar
@@ -121,7 +121,7 @@ it does not prove the feature is missing. Where each one is ahead, the model opt
 | Governance and cost | SSO, SCIM, roles, corporate e-mail rule, audit, DLP and retention, budgets per company, team, agent or project with a hard stop, cost per agent | RBAC and security controls | Custom auth; ABAC when self-hosted | SSO/SAML, RBAC and audit (Enterprise) | IAM/JWT and Cedar policies in the Gateway | Entra ID and Agent 365 controls |
 | Data residency and compliance | Data on your infrastructure, encrypted secrets, signed images with SBOM; no certifications cited | On-premises or cloud deployment; certifications not found | Self-hosted for data residency and isolated (air-gapped) environments | Self-hosted keeps data in-house; Enterprise with SOC 2 Type II and ISO 27001 | Not verified | Not verified |
 | Observability | Prometheus, JSON logs, OpenTelemetry, metrics per channel | Real-time observability | Strong point: traces and evaluation | Built-in observability | AgentCore Observability and CloudWatch | Application Insights and Agent 365 telemetry |
-| Maturity | Alpha (v0.55), Apache-2.0 | OSS with a commercial layer | Commercial, partly Enterprise | 157,000+ GitHub stars | Registry in public preview | Agent 365 generally available; A2A 1.0 GA |
+| Maturity | Alpha (v0.56), Apache-2.0 | OSS with a commercial layer | Commercial, partly Enterprise | 157,000+ GitHub stars | Registry in public preview | Agent 365 generally available; A2A 1.0 GA |
 
 ## From a request in Claude to a working agent
 
@@ -606,6 +606,7 @@ change. Recent releases:
 
 | Version | What it added |
 |---|---|
+| v0.56 | Warnings before a provider deprecates a model in use: the date, who uses it, a replacement and a swap tested in stage |
 | v0.55 | Desktop app M2: decide, mark the inbox and manage your own agents from the app; employees name only the tools they have |
 | v0.54 | Fixes from a hands-on desktop test: agents built without a model use the company's chat connection, "last used" in My agents, the status of stopped agents |
 | v0.53 | Hangar desktop app connected to the platform: OAuth sign-in and devices, token models synced through an LLM proxy, the member's workspace with live events |

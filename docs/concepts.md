@@ -92,6 +92,33 @@ provider that has one.
 `llm.stage` / `llm.prod` (and `harness.stage` / `harness.prod`) override the connection or model per
 environment, for example a cheaper model in stage.
 
+### Models the provider is deprecating
+
+Providers retire models on a set date. The platform warns before that date, so an agent doesn't stop working when its
+model goes away.
+
+- **The date:** each model gets the `deprecation_date` from LiteLLM's public model table when the connection's list
+  is refreshed. An admin can set or correct it in *Provedores de LLM* (the model's *informar a data de saída* link,
+  or `PATCH /api/catalog/llm/{connection}/models/{model}` with `deprecates_on`), and refreshes don't undo it. Not
+  every model has a date in the public table: for the others, set it by hand when the provider announces it.
+- **Who uses it:** the agent's model (`llm`), the harness, the test judge and the model per response
+  (`execution.light_model`), in stage and production. An empty model counts as the connection's default. Being the
+  connection's default or synced with the Hangar desktop also counts.
+- **Warnings:** from `MODEL_DEPRECATION_WARN_DAYS` (default 60) days before the date, at 60, 30, 14, 7 and 1 day(s),
+  and after it. Each tier is a new inbox item, so archiving the 30-day warning doesn't hide the 7-day one.
+  - Admins see each model with every agent that uses it, and a summary at the top of *Provedores de LLM*.
+  - Whoever can edit an agent sees a warning for that agent, and a banner on its page.
+  - From 7 days before the date, the warning is listed as blocked.
+- **The replacement:** a model on the same connection with the same output type and features (tools, reading
+  images), without a near deprecation date. It prefers the same family, a similar price and a newer version.
+  Recommendations by role leave out models with a near deprecation date.
+- **Swapping:** *Trocar e testar em stage* on the agent's page (or `POST /api/agents/{slug}/model-deprecation/swap`)
+  swaps the model everywhere the agent uses it, as a new version tested in stage. **Nothing changes by itself:**
+  production keeps the previous version until someone publishes the new one.
+- **MCP:** `list_model_deprecations` lists the agents you edit that use a model on its way out, each with the
+  `changes` ready for `edit_agent`. `design_agent` and `edit_agent` return `model_warnings` when the agent uses one,
+  and the builder avoids those models for new agents.
+
 
 ### Model profiles
 

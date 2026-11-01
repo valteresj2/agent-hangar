@@ -254,6 +254,27 @@ def agent_model_recommendation(slug: str, request: Request, role: str = "", db=D
     return guard(lambda: svc.model_selection.for_team(db, a) if not role else [svc.model_selection.for_agent(db, a, role)])
 
 
+@router.get("/agents/{slug}/model-deprecation")
+def agent_model_deprecation(slug: str, request: Request, db=Depends(db_dep)):
+    """Os modelos do agente que o provedor vai descontinuar, cada um com o substituto recomendado."""
+    a = _agent(request, db, slug)
+    return guard(lambda: {"agent": a.slug, "warn_days": svc.model_deprecation.horizon(),
+                          "models": svc.model_deprecation.for_agent(db, a)})
+
+
+class DeprecationSwap(BaseModel):
+    connection: str
+    model: str
+    to: str = ""
+    test: bool = True
+
+
+@router.post("/agents/{slug}/model-deprecation/swap")
+def agent_model_deprecation_swap(slug: str, b: DeprecationSwap, request: Request, db=Depends(db_dep)):
+    """Troca o modelo que vai sair (pelo recomendado ou por `to`) numa versão nova, testada em stage; produção não muda."""
+    return guard(lambda: svc.model_deprecation.swap(db, acc(request, db), slug, b.connection, b.model, b.to, b.test))
+
+
 @router.get("/agents/{slug}/execution")
 def agent_execution(slug: str, request: Request, env: str = "prod", db=Depends(db_dep)):
     """Perfil de execução: esforço de raciocínio, limite de saída, ferramentas em paralelo, cache e rodadas — o que a
@@ -526,6 +547,7 @@ class ModelEdit(BaseModel):
     price_in_per_mtok: float | None = None
     price_out_per_mtok: float | None = None
     default: bool = False
+    deprecates_on: str | None = None  # AAAA-MM-DD; "" volta à data da tabela pública
 
 
 @router.patch("/catalog/llm/{name}/models/{model_id:path}", dependencies=[Depends(require_admin)])
@@ -536,9 +558,19 @@ def llm_model_edit(name: str, model_id: str, b: ModelEdit, request: Request, db=
         if b.default:
             svc.llm_models.set_default(db, c, model_id, actor(request))
         m = svc.llm_models.edit_model(db, c, model_id, b.kind, b.price_in_per_mtok, b.price_out_per_mtok, b.set_price,
-                                      actor(request)) if (b.kind is not None or b.set_price) else svc.llm_models._model(db, c, model_id)
+                                      actor(request), b.deprecates_on) if (
+            b.kind is not None or b.set_price or b.deprecates_on is not None) else svc.llm_models._model(db, c, model_id)
+        if b.deprecates_on is not None:
+            svc.model_deprecation.forget()
         return svc.llm_models.model_dict(m, c)
     return guard(go)
+
+
+@router.get("/catalog/models/deprecations", dependencies=[Depends(require_admin)])
+def llm_models_deprecations(all: bool = False, db=Depends(db_dep)):
+    """Modelos com data de saída dentro da antecedência (all=true: todos os que têm data), quem usa e o substituto."""
+    return guard(lambda: {"warn_days": svc.model_deprecation.horizon(),
+                          "models": svc.model_deprecation.deprecations(db, all_dates=all)})
 
 
 @router.get("/catalog/models/recommend")

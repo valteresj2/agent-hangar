@@ -113,6 +113,9 @@ def items(db: Session, acc: Access, view: str = "all") -> dict:
             add(f"llm_model:{x['connection']}:{x['model']}", "llm_model",
                 f"O modelo {x['model']} saiu do provedor ({x['connection']}) e é usado por {', '.join(x['agents'])}",
                 x["at"], "#/providers", connection=x["connection"], model=x["model"], agents=x["agents"], blocked=True)
+    from .model_deprecation import inbox_items as deprecation_items
+    for x in deprecation_items(db, acc):  # modelo em uso que o provedor vai descontinuar (admin: todos; senão, os meus)
+        add(x["key"], "model_deprecation", x["title"], x["at"], x["link"], blocked=x["blocked"], **x["data"])
     if acc.p.is_admin:  # conector esperando um admin: ferramenta nova/alterada ou autenticação vencida
         from .connectors import attention
         for x in attention(db):

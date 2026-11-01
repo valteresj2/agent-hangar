@@ -1,9 +1,10 @@
 """Modelo de dados. Mudança de schema = nova migração em central/migrations/versions (Alembic)."""
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     JSON,
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -294,6 +295,9 @@ class LlmModel(OrgScoped, Base):
     price_source: Mapped[str] = mapped_column(String(10), default="")  # provider | catalog | admin
     available: Mapped[bool] = mapped_column(Boolean, default=True)  # sumiu da lista do provedor = False
     manual: Mapped[bool] = mapped_column(Boolean, default=False)  # incluído pelo admin (provedor sem lista)
+    # quando o provedor descontinua o modelo (services/model_deprecation.py): catalog = tabela pública; admin = informada
+    deprecates_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    deprecation_source: Mapped[str] = mapped_column(String(10), default="")
     first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

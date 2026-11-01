@@ -8,7 +8,7 @@ def _env(name: str, default: str = "") -> str:
 
 
 APP_NAME = "Agent Hangar"
-VERSION = "0.55.0"
+VERSION = "0.56.0"
 
 DATABASE_URL = _env("DATABASE_URL", "sqlite:///./hangar.db")
 
@@ -73,6 +73,8 @@ STAGE_IDLE_MIN = float(_env("STAGE_IDLE_MIN", "30"))
 CONNECTOR_CHECK_MIN = float(_env("CONNECTOR_CHECK_MIN", "30"))
 # Lista de modelos de cada provedor de LLM: atualizada a cada N minutos (0 desliga a atualização automática)
 LLM_MODELS_REFRESH_MIN = float(_env("LLM_MODELS_REFRESH_MIN", "60"))
+# com quantos dias de antecedência avisar que um modelo em uso vai ser descontinuado (avisos em 60, 30, 14, 7 e 1)
+MODEL_DEPRECATION_WARN_DAYS = int(_env("MODEL_DEPRECATION_WARN_DAYS", "60"))
 # Tabela pública de modelos (preço, contexto e tipo) do LiteLLM; vazio = não baixar (ambiente sem internet)
 # Fichas dos modelos: fontes públicas sem chave (descrição do OpenRouter, card do Hugging Face, páginas da busca na web).
 # 0 = ambiente sem internet: só o que a empresa cadastrar e o Artificial Analysis (se tiver chave e saída liberada)

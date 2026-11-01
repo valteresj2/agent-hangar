@@ -753,6 +753,20 @@
     'Nenhum app conectado ainda. Veja o passo a passo em': 'No app connected yet. See the steps in',
     'Revogar este dispositivo? O app sai na hora e este computador não volta a se registrar para esta pessoa.':
       'Revoke this device? The app signs out right away and this computer cannot register again for this person.',
+    // ---- modelos que o provedor vai descontinuar (página do agente, Provedores de LLM)
+    'O modelo': 'The model', 'Usado em:': 'Used in:', 'modelo do agente': "agent's model", 'juiz dos testes': 'test judge',
+    'modelo por resposta': 'model per response', '· conexão': '· connection',
+    'Não há um substituto compatível nessa conexão: peça a um admin para cadastrar um modelo.': 'There is no compatible replacement on this connection: ask an admin to add a model.',
+    'Trocar cria uma versão nova e roda os testes em stage; a produção só muda quando você publicar.': 'Swapping creates a new version and runs the tests in stage; production only changes when you publish.',
+    'Trocar e testar em stage': 'Swap and test in stage', 'mesma família': 'same family', 'versão mais nova': 'newer version',
+    'sem data de saída próxima': 'no deprecation date soon', 'com ferramentas': 'with tools',
+    'com leitura de imagens': 'with image reading', 'com ferramentas e leitura de imagens': 'with tools and image reading',
+    'Modelos em uso que vão ser descontinuados': 'Models in use that are being deprecated', 'Quem usa': 'Used by',
+    'Recomendado': 'Recommended', 'informada': 'set by an admin', 'sem substituto na conexão': 'no replacement on the connection',
+    'mudar a data de saída': 'change the deprecation date', 'informar a data de saída': 'set the deprecation date',
+    'data informada pelo admin': 'date set by an admin', 'data da tabela pública de modelos': 'date from the public model table',
+    'Quem edita cada agente vê a troca recomendada na página dele.': 'Whoever edits each agent sees the recommended swap on its page.',
+    'Data de saída salva: quem usa o modelo recebe os avisos': 'Deprecation date saved: whoever uses the model gets the warnings',
     // ---- modelos de token sincronizados com o Hangar desktop (Provedores de LLM e visão geral do App Hangar)
     'sincronizada': 'synced', 'não sincronizada': 'not synced', 'sincronizada, mas indisponível': 'synced, but unavailable',
     'Sincronizar modelos de token com o Hangar desktop': 'Sync token models with Hangar desktop',
@@ -2786,6 +2800,13 @@
     .map(([k, v]) => [k, new RegExp((W.test(k[0]) ? '(^|[^\\wÀ-ú])' : '()') + reEsc(k) + (W.test(k[k.length - 1]) ? '(?![\\wÀ-ú])' : ''), 'g'), v]);
   // números com unidade, montados no código ("8 erros", "2 d atrás", "3 agentes")
   const UNITS = [
+    [/\bsai do provedor em (\d{4}-\d\d-\d\d) \(em (\d+) dias\)/g, 'leaves the provider on $1 (in $2 days)'],
+    [/\bsai do provedor amanhã \((\d{4}-\d\d-\d\d)\)/g, 'leaves the provider tomorrow ($1)'],
+    [/\bsai do provedor hoje \((\d{4}-\d\d-\d\d)\)/g, 'leaves the provider today ($1)'],
+    [/\bsaiu do provedor em (\d{4}-\d\d-\d\d)/g, 'left the provider on $1'], [/^sai só em (\d{4}-\d\d-\d\d)$/, 'leaves only on $1'],
+    [/^sai em$/, 'leaves on'], [/^Avisos a partir de (\d+) dias da data\./, 'Warnings from $1 days before the date.'],
+    [/US\$ ([\d.]+) \/ ([\d.]+) por 1M tokens(?: \(hoje: ([\d.]+) \/ ([\d.]+)\))?/g,
+      (m, a, b, c, d) => `US$ ${a} / ${b} per 1M tokens` + (c !== undefined ? ` (today: ${c} / ${d})` : '')],
     [/\btodo dia útil às (\d\d:\d\d)/g, 'every business day at $1'], [/\btodo dia às (\d\d:\d\d)/g, 'every day at $1'],
     [/\bde segunda a sexta às (\d\d:\d\d)/g, 'Monday to Friday at $1'],
     [/\bsábados e domingos às (\d\d:\d\d)/g, 'Saturdays and Sundays at $1'],
