@@ -184,7 +184,7 @@ def probation(slug: str, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.employees.start_probation(db, acc(request, db), slug))
 
 
-@router.post("/employees/{slug}/status")
+@router.post("/employees/{slug}/status", dependencies=[member_route(allow_app=True)])
 def status(slug: str, body: StatusBody, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.employees.set_status(db, acc(request, db), slug, body.to, body.reason))
 
@@ -365,7 +365,7 @@ def decide_batch(body: BatchDecisionBody, request: Request, db=Depends(db_dep)):
     return guard(go)
 
 
-@router.post("/decisions/{request_id}")
+@router.post("/decisions/{request_id}", dependencies=[member_route(allow_app=True)])
 def decide(request_id: int, body: DecisionBody, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.employee_tasks.decide(db, acc(request, db), request_id, body.decision, body.edit,
                                                    body.reason))

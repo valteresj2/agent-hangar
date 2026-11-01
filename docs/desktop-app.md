@@ -6,7 +6,8 @@ platform, it:
 
 - signs in with the person's company account;
 - can use the token models the admins sync;
-- shows the member's workspace (home, their agents, decisions and inbox) with live updates.
+- shows the member's workspace (home, their agents, decisions and inbox) with live updates, and lets people decide,
+  work the inbox and stop, publish, delete, pause or offboard their own agents right there (M2).
 - gives every session the platform's tools: people create agents, multi-agents and Digital employees, talk to them
   and follow their work just by asking, without setting up an MCP client. *My agents* has a **Conversar** (talk) button that
   opens a session ready to talk to that agent.

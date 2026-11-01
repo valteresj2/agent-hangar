@@ -13,7 +13,7 @@ from .. import services as svc
 from .. import spec as specmod
 from ..models import Agent, ApiKey, AuditLog, Deployment, Job, LlmConnection, McpServer, Skill, TestRun, UsageEvent
 from ..services import avatars, org
-from .deps import acc, actor, db_dep, guard, principal, require_admin, require_auditor
+from .deps import acc, actor, db_dep, guard, member_route, principal, require_admin, require_auditor
 
 router = APIRouter(prefix="/api")
 
@@ -146,7 +146,7 @@ def create_agent(body: NewAgent, request: Request, db=Depends(db_dep)):
     return guard(go)
 
 
-@router.get("/agents/{slug}")
+@router.get("/agents/{slug}", dependencies=[member_route(allow_app=True)])
 def agent(slug: str, request: Request, db=Depends(db_dep)):
     a = _agent(request, db, slug)
     svc.refresh_deployments(db, [a])
@@ -365,14 +365,14 @@ def deploy_ep(slug: str, body: EnvBody, request: Request, db=Depends(db_dep)):
     return {"status": "approval_pending", "version": req["version"], "url": "", "request": req}
 
 
-@router.post("/agents/{slug}/ship")
+@router.post("/agents/{slug}/ship", dependencies=[member_route(allow_app=True)])
 def ship(slug: str, request: Request, body: ShipBody | None = None, db=Depends(db_dep)):
     """Testa (sub-agentes primeiro) e promove. Sem permissão de promover direto, o último passo vem como
     {"step": "prod", "status": "approval_pending", "request": <id>}."""
     return guard(lambda: org.ship(db, acc(request, db), slug, body.note if body else "")["steps"])
 
 
-@router.post("/agents/{slug}/stop")
+@router.post("/agents/{slug}/stop", dependencies=[member_route(allow_app=True)])
 def stop(slug: str, body: EnvBody, request: Request, db=Depends(db_dep)):
     _agent(request, db, slug, "manage" if body.env == "prod" else "edit")
     guard(lambda: svc.stop(db, slug, body.env, actor(request)))
@@ -385,7 +385,7 @@ def chat(slug: str, body: Msg, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.chat(db, slug, body.message, body.env, "admin-ui", actor(request)))
 
 
-@router.delete("/agents/{slug}")
+@router.delete("/agents/{slug}", dependencies=[member_route(allow_app=True)])
 def delete(slug: str, request: Request, db=Depends(db_dep)):
     _agent(request, db, slug, "manage")
     guard(lambda: svc.delete_agent(db, slug, actor(request)))

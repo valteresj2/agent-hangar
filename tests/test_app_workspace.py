@@ -20,6 +20,11 @@ from .test_app_hangar import _bearer, _connect, _many_registrations, _register  
 from .test_app_hangar_models import _app_client
 
 M1 = {("GET", "/api/me/workspace"), ("GET", "/api/decisions"), ("GET", "/api/org-chart"), ("GET", "/api/inbox")}
+# M2: decidir e marcar a caixa no app; ver, parar, publicar e excluir os próprios agentes; pausar/retomar/desligar
+# os próprios Digital employees (sempre com o acesso da própria pessoa).
+M2 = {("POST", "/api/decisions/{request_id}"), ("POST", "/api/inbox/mark"), ("GET", "/api/agents/{slug}"),
+      ("POST", "/api/agents/{slug}/stop"), ("POST", "/api/agents/{slug}/ship"), ("DELETE", "/api/agents/{slug}"),
+      ("POST", "/api/employees/{slug}/status")}
 PW = "-".join(["Senha", "Boa", "123"])
 
 
@@ -77,10 +82,10 @@ def ws(client, uniq, fake_docker, monkeypatch):
 
 
 # ------------------------------------------------------------------ token do app nas rotas do membro
-def test_only_the_m1_routes_are_marked():
+def test_only_the_m1_and_m2_routes_are_marked():
     """A lista é explícita: ampliar exige marcar a rota (e mudar este teste junto com o contrato)."""
     marked = {(m, r.path) for r in deps.api_routes(fastapi_app.router.routes) if deps.app_allowed(r) for m in r.methods}
-    assert marked == M1
+    assert marked == M1 | M2
 
 
 def test_m1_routes_accept_the_app_token_with_the_persons_access(client, ws):
@@ -127,8 +132,9 @@ FORBIDDEN = [
     ("DELETE", "/api/me/oauth/1"), ("GET", "/api/me/sessions"), ("POST", "/api/me/activation-code"), ("GET", "/api/secrets"),
     ("PUT", "/api/secrets"), ("POST", "/api/secrets/proposals"), ("GET", "/api/oauth/consent"),
     ("POST", "/api/oauth/consent"), ("GET", "/api/sso"), ("POST", "/api/sso/mappings"),
-    # do membro, mas fora da lista da M1 (as escritas da caixa e das decisões entram na M2)
-    ("POST", "/api/inbox/mark"), ("POST", "/api/decisions/batch"), ("POST", "/api/decisions/1"), ("GET", "/api/search?q=ab"),
+    # do membro, mas fora da lista (M1 e M2)
+    ("POST", "/api/decisions/batch"), ("GET", "/api/search?q=ab"), ("PUT", "/api/agents/x/spec"),
+    ("POST", "/api/agents/x/deploy"), ("POST", "/api/agents/x/chat"), ("POST", "/api/employees/x/tasks"),
     ("GET", "/api/me/push"), ("GET", "/api/onboarding"), ("GET", "/api/tasks/1"), ("GET", "/api/me"),
     # fora de /api
     ("GET", "/scim/v2/Users"), ("GET", "/gw/nao-existe/v1/models"),
@@ -150,6 +156,29 @@ def test_app_token_is_refused_everywhere_else_even_for_an_admin(client, ws):
             assert any(r.matches(scope)[0] == Match.FULL for r in routes), (method, path)
     finally:
         client.patch(f"/api/users/{ws['me'][2]['id']}", headers=ADMIN, json={"org_role": "member"})
+
+
+def test_m2_app_token_decides_marks_the_inbox_and_acts_on_the_persons_own_agents(client, ws):
+    h, ho, slug, rid = _bearer(ws["t"]), _bearer(ws["t_other"]), ws["slug"], ws["request_id"]
+    # o colega não decide nem vê o agente pessoal de outra pessoa
+    assert client.post(f"/api/decisions/{rid}", headers=ho, json={"decision": "answer", "reason": "x"}).status_code == 403
+    assert client.get(f"/api/agents/{slug}", headers=ho).status_code == 403
+    assert client.post(f"/api/agents/{slug}/stop", headers=ho, json={"env": "stage"}).status_code == 403
+    assert client.delete(f"/api/agents/{slug}", headers=ho).status_code == 403
+
+    r = client.post(f"/api/decisions/{rid}", headers=h, json={"decision": "answer", "reason": "Pode mandar."})
+    assert r.status_code == 200 and r.json()["status"] == "decided", r.text
+    assert client.get("/api/decisions", headers=h).json() == []
+    r = client.post("/api/inbox/mark", headers=h, json={"keys": [f"task:{rid}"], "read": True})
+    assert r.status_code == 200 and r.json()["ok"] is True, r.text
+
+    detail = client.get(f"/api/agents/{slug}", headers=h)
+    assert detail.status_code == 200 and detail.json()["slug"] == slug and "permissions" in detail.json()
+    assert client.post(f"/api/agents/{slug}/stop", headers=h, json={"env": "stage"}).status_code == 200
+    # o status do funcionário passa pelas regras do ciclo de vida (não pela recusa do token)
+    st = client.post(f"/api/employees/{slug}/status", headers=h, json={"to": "paused"})
+    assert st.status_code in (200, 400), st.text
+    assert client.post(f"/api/employees/{slug}/status", headers=ho, json={"to": "paused"}).status_code in (403, 404)
 
 
 def test_mcp_only_token_cannot_use_the_member_routes(client, ws):

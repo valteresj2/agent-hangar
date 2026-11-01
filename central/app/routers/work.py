@@ -449,7 +449,7 @@ def inbox(request: Request, view: str = "all", db=Depends(db_dep)):
     return guard(lambda: svc.inbox.items(db, acc(request, db), view))
 
 
-@router.post("/inbox/mark")
+@router.post("/inbox/mark", dependencies=[member_route(allow_app=True)])
 def inbox_mark(body: MarkBody, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.inbox.mark(db, acc(request, db), body.keys, body.read, body.archived))
 

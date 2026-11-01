@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.55.0] — 2026-11-01
+
+### Added
+- **Desktop app M2: decide, inbox and agent actions from the app.** The `app` token now also reaches, always with the person's own access: `POST /api/decisions/{id}`, `POST /api/inbox/mark`, `GET /api/agents/{slug}`, `POST /api/agents/{slug}/stop`, `POST /api/agents/{slug}/ship`, `DELETE /api/agents/{slug}` and `POST /api/employees/{slug}/status`. The desktop app uses them for native *Decisions* and *Inbox* screens and a *Manage* panel in *My agents* (stop, test and publish, delete; pause, resume and offboard Digital employees). The list stays explicit and a test pins it; `POST /api/decisions/batch` and everything else stay closed to the `app` token. Contract: `docs/app-hangar-workspace.md`, section 5.
+
+### Fixed
+- **A Digital employee offered a tool it did not have.** In a conversation started from the desktop app, an employee offered to call `record_minutes`, which does not exist. The runtime now gives every Digital employee the names of the tools it has in that conversation and tells it to offer and use only those, and Portuguese-speaking employees get the rule English ones already had: when a tool or specialist is missing, call `request_capability` instead of improvising, and never fake a result.
+
 ## [0.54.0] — 2026-10-31
 
 Found by a hands-on test from the Hangar desktop app against a running platform: a simple agent, a multi-agent team and a Digital employee created by asking for them, then a conversation with each one and their pause or stop.

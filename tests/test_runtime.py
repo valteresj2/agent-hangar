@@ -145,3 +145,16 @@ def test_mcp_tool_prefix_filters_gateway_tools(rt, monkeypatch):
     tools, complete = asyncio.run(rt.build_tools())
     assert complete and sorted(t.name for t in tools if t.name.startswith("docker")) == \
         ["docker_duckduckgo__fetch_content", "docker_duckduckgo__search"]
+
+
+def test_employee_prompt_names_only_its_tools_and_asks_for_missing_ones(rt, monkeypatch):
+    """Um Digital employee em português também recebe "peça o que falta com request_capability" e, a cada conversa, a
+    lista das ferramentas que tem de fato (sem ela, o modelo ofereceu uma ferramenta inexistente)."""
+    monkeypatch.setattr(rt, "EMPLOYEE", {"title": "Assistente de atas", "manager": "Ana", "authority": [], "lang": "pt"})
+    assert "request_capability" in rt.system_prompt() and "nunca finja um resultado" in rt.system_prompt()
+    note = rt.tools_note(["send_email", "ask_human"])
+    assert "Disponíveis nesta conversa: ask_human, send_email." in note and "nunca diga o nome" in note
+    assert "nenhuma" in rt.tools_note([])
+    monkeypatch.setattr(rt, "EMPLOYEE", {"title": "Minutes", "manager": "Ann", "authority": [], "lang": "en"})
+    assert "Available in this conversation: ask_human." in rt.tools_note(["ask_human"])
+    assert "never fake a result" in rt.system_prompt()
