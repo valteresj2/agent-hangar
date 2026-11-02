@@ -218,10 +218,10 @@ export interface ToolSpec { name: string; description: string; parameters: objec
 
 /** As ferramentas do posto. O tipo de cada uma na alçada vem da plataforma (vscode:<nome>). */
 export const WORKSTATION_TOOLS: ToolSpec[] = [
-  { name: 'list_files', description: 'Lista arquivos e pastas da pasta de trabalho (ignora .git, .venv, node_modules).',
+  { name: 'workspace_list_files', description: 'Lista arquivos e pastas da pasta de trabalho no computador da pessoa (ignora .git, .venv, node_modules).',
     parameters: { type: 'object', properties: { path: { type: 'string', description: 'pasta relativa (padrão: .)' },
       depth: { type: 'integer', description: 'níveis (padrão 2, máx. 5)' } } } },
-  { name: 'read_file', description: 'Lê um arquivo de texto da pasta de trabalho (até 20.000 caracteres; use start_line/end_line para trechos).',
+  { name: 'workspace_read_file', description: 'Lê um arquivo de texto da pasta de trabalho no computador da pessoa (até 20.000 caracteres; use start_line/end_line para trechos).',
     parameters: { type: 'object', required: ['path'], properties: { path: { type: 'string' },
       start_line: { type: 'integer' }, end_line: { type: 'integer' } } } },
   { name: 'search_files', description: 'Procura um texto (expressão regular) nos arquivos da pasta de trabalho.',
@@ -241,6 +241,10 @@ export const WORKSTATION_TOOLS: ToolSpec[] = [
       description: { type: 'string' }, public: { type: 'boolean', description: 'padrão true' },
       message: { type: 'string', description: 'mensagem do commit' } } } },
 ];
+
+/** Os nomes das ferramentas do posto: só estas o VS Code executa. As outras chamadas que passam no stream (repasse,
+ *  plano, pergunta ao gestor, arquivos da tarefa) são da plataforma, que já as executou. */
+export const WORKSTATION_NAMES = new Set(WORKSTATION_TOOLS.map(t => t.name));
 
 /** O que pergunta à alçada antes de executar (ler não pergunta). */
 export const GATED = new Set(['write_file', 'edit_file', 'run_command', 'publish_github']);
@@ -264,7 +268,7 @@ export type AguiEvent =
 
 /** Lê o stream AG-UI. Texto sai na hora; uma chamada de ferramenta sem TOOL_CALL_RESULT no stream é do app (o
  *  runtime executou as dele e devolveu as nossas para executarmos aqui), e sai no fim. */
-export async function* parseAgui(chunks: AsyncIterable<string>): AsyncGenerator<AguiEvent> {
+export async function* parseAgui(chunks: AsyncIterable<string>, clientNames: ReadonlySet<string> = WORKSTATION_NAMES): AsyncGenerator<AguiEvent> {
   let buf = '';
   const calls = new Map<string, { name: string; args: string }>();
   const answered = new Set<string>();
@@ -293,7 +297,7 @@ export async function* parseAgui(chunks: AsyncIterable<string>): AsyncGenerator<
     }
   }
   for (const [id, c] of calls) {
-    if (answered.has(id)) continue;
+    if (answered.has(id) || !clientNames.has(c.name)) continue;  // da plataforma: ela já executou
     let input: Record<string, unknown> = {};
     try { input = c.args ? JSON.parse(c.args) : {}; } catch { input = { _raw: c.args }; }
     yield { type: 'client_call', id, name: c.name, input, raw: c.args || '{}' };

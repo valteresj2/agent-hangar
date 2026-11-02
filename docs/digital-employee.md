@@ -586,7 +586,7 @@ to use and for a confirmation. From then on, the employee picks up its tasks in 
 
 | Tool | Action type | |
 |---|---|---|
-| `list_files`, `read_file`, `search_files` | `read` | Never asks |
+| `workspace_list_files`, `workspace_read_file`, `search_files` | `read` | Never asks. The `workspace_` prefix keeps them apart from the task-file tools of the same name |
 | `write_file`, `edit_file` | `write_internal` | Files open in the editor |
 | `run_command` | `run_code` | PowerShell on Windows, `sh` elsewhere. The person watches it live in a *Hangar · <employee>* terminal |
 | `publish_github` | `publish` | Creates the repository (if needed) in the GitHub account signed in to VS Code, then commits and pushes. The token stays with VS Code and goes only in the push header |
@@ -595,6 +595,11 @@ to use and for a confirmation. From then on, the employee picks up its tasks in 
   levels, a `senior` runs commands and notifies, and publishing waits for an approval in *Decisões*.
 - The conversation of each task is kept on the machine, so a task that waits for a decision picks up where it
   stopped. A rejected action comes back to the agent as rejected, so it isn't asked again.
+- The platform's own tools (`handoff_task`, `update_plan`, `ask_human`, the browser…) keep working: the platform runs
+  them, and the workstation only runs its own.
+- A long command that leaves a process in the background (`Start-Process`, `&`) ends when its shell exits.
+- Closing or reloading VS Code in the middle of a task hands it back to the queue when the window opens again, and the
+  workstation goes on from the saved conversation.
 - *Desligar o posto* stops the worker in that window. *Devolver à plataforma* revokes the token and the platform runs
   the employee's tasks again.
 

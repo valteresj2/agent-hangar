@@ -5,6 +5,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.58.1] — 2026-11-02
+
+Found by a second hands-on test: a Data Engineer and a Data Scientist Digital employees working as a team in two VS Code workstations on the Receita Federal CNPJ open data (ingestion of ~40 GB, a handoff between them and a monthly routine).
+
+### Fixed
+- **VS Code workstation (Agent Hangar extension):**
+  - **The platform's own tools no longer leak to the workstation.** `handoff_task`, `update_plan`, `ask_human`, the browser and the task-file tools also travel in the AG-UI stream; the workstation treated them as its own, answered "unknown tool", and the employee concluded a handoff had failed when the platform had already done it. The workstation now runs only its own tools.
+  - **No more name clash with the task-file tools:** the workstation's `list_files` and `read_file` are now `workspace_list_files` and `workspace_read_file` (both `read` in the action catalog).
+  - **A command that leaves a process in the background** (`Start-Process`, `&`) no longer holds the workstation until that process ends: the command finishes when its shell exits.
+  - **Reopening VS Code in the middle of a task** hands it back to the queue, and the workstation goes on from the saved conversation, instead of leaving it stuck until the time limit.
+  - Already in 0.58.0, without a changelog entry until now:
+    - **A decision that does not approve** (reject or instruct) comes back to the agent with the decider's text, so an instruction such as "clean this folder, then ask again" is followed instead of being read as a refusal. Comments written on the task while it waited come in too.
+    - **Heartbeats while a task runs**, so the employee page shows the workstation online.
+
 ## [0.58.0] — 2026-11-02
 
 ### Added

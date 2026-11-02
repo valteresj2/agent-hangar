@@ -45,7 +45,8 @@ _DELETE = re.compile(r"(^|_)(delete|remove|drop|destroy|purge|erase|archive)(_|$
 _MONEY = re.compile(r"(^|_)(pay|payment|charge|refund|transfer|invoice|payout|purchase|order)(_|$)")
 _PUBLISH = re.compile(r"(^|_)(publish|deploy|release|merge|push)(_|$)")
 # o posto de trabalho no VS Code (extensão Agent Hangar): ferramentas conhecidas, com o tipo certo de saída
-VSCODE = {"list_files": "read", "read_file": "read", "search_files": "read", "write_file": "write_internal",
+VSCODE = {"workspace_list_files": "read", "workspace_read_file": "read", "list_files": "read", "read_file": "read",
+          "search_files": "read", "write_file": "write_internal",
           "edit_file": "write_internal", "run_command": "run_code", "publish_github": "publish"}
 
 

@@ -98,6 +98,9 @@ test('AG-UI: texto na hora, ferramenta do servidor com resultado, as do app saem
     'data: {"type":"TOOL_CALL_ARGS","toolCallId":"c1","delta":"{\\"command\\": \\"python', ' --version\\"}"}\n\n',
     ev({ type: 'TOOL_CALL_END', toolCallId: 'c1' }),
     ev({ type: 'CUSTOM', name: 'hangar.usage', value: { total_tokens: 10, cost_usd: 0.01 } }),
+    // uma ferramenta da plataforma sem TOOL_CALL_RESULT no stream (repasse): ela já executou, o posto ignora
+    ev({ type: 'TOOL_CALL_START', toolCallId: 'p1', toolCallName: 'handoff_task' }),
+    ev({ type: 'TOOL_CALL_ARGS', toolCallId: 'p1', delta: '{"to":"cientista-de-dados","title":"x"}' }), ev({ type: 'TOOL_CALL_END', toolCallId: 'p1' }),
     ev({ type: 'RUN_FINISHED' }), ev({ type: 'CUSTOM', name: 'hangar.task', value: { status: 'in_progress' } }),
   ))) out.push(e);
   assert.deepEqual(out.filter(e => e.type === 'text').map(e => (e as { text: string }).text).join(''), 'Vou treinar.');

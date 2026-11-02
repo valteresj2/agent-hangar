@@ -154,8 +154,8 @@ def test_worker_agui_round_uses_the_employee_brain_and_bills_the_task(client, en
     from app.db import SessionLocal
     from app.services import employee_gate
     with SessionLocal() as db:
-        kinds = {n: employee_gate.classify(db, f"vscode:{n}").action_type for n in ("read_file", "run_command", "publish_github")}
-    assert kinds == {"read_file": "read", "run_command": "run_code", "publish_github": "publish"}
+        kinds = {n: employee_gate.classify(db, f"vscode:{n}").action_type for n in ("workspace_read_file", "run_command", "publish_github")}
+    assert kinds == {"workspace_read_file": "read", "run_command": "run_code", "publish_github": "publish"}
     g = _call(client, token, tid, "gate", {"tool": "vscode:publish_github", "args": {"repo": "bank-ml", "public": True}}).json()
     assert g["status"] == "waiting" and g["action_type"] == "publish"
     # a tarefa saiu do worker (espera a decisão): a rodada AG-UI não roda mais

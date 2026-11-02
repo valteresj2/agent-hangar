@@ -53,8 +53,24 @@ export class Workstation {
     return { name: `VS Code (${os.hostname()})`, version: this.o.version, folder: path.basename(this.o.root), os: `${os.platform()} ${os.release()}` };
   }
 
+  /** A janela fechou ou recarregou no meio de uma tarefa: ela ficou "com o posto" na plataforma. Devolve à fila
+   *  (result waiting) para o heartbeat entregar de novo; a conversa salva aqui continua de onde parou. */
+  private async resumeOrphans() {
+    let names: string[] = [];
+    try { names = fs.readdirSync(this.o.storage.fsPath); } catch { return; }
+    for (const n of names) {
+      const id = Number(/^task-(\d+)\.json$/.exec(n)?.[1]);
+      if (!id) continue;
+      try {
+        await this.client.result(id, 'waiting');
+        this.out.appendLine(`Tarefa #${id} retomada: estava em andamento quando o VS Code fechou.`);
+      } catch { /* não estava com este posto (já entregue, esperando decisão ou de volta à plataforma) */ }
+    }
+  }
+
   private async loop() {
     this.out.appendLine(`${this.o.name} trabalha nesta pasta: ${this.o.root}`);
+    await this.resumeOrphans();
     while (!this.stopped) {
       try {
         const hb = await this.client.heartbeat(this.info());
@@ -92,9 +108,10 @@ export class Workstation {
     const shell = WIN ? 'Windows PowerShell 5.1 (use ; entre comandos, não &&)' : 'sh';
     return [
       { description: 'Posto de trabalho', value: `Você está trabalhando no VS Code da pessoa (${os.platform()} ${os.release()}), na pasta ${this.o.root}. `
-        + `Terminal: ${shell}. Caminhos relativos partem dessa pasta. Use as ferramentas do posto (list_files, read_file, search_files, `
+        + `Terminal: ${shell}. Caminhos relativos partem dessa pasta. Use as ferramentas do posto (workspace_list_files, workspace_read_file, search_files, `
         + 'write_file, edit_file, run_command, publish_github) para fazer o trabalho de verdade e conferir cada resultado antes de seguir. '
-        + 'Comandos longos: rode e espere (timeout_s). Nunca leia nem exponha segredos (.env, chaves).' },
+        + 'Comandos longos: rode e espere (timeout_s). As ferramentas da plataforma (handoff_task, update_plan, ask_human…) '
+        + 'continuam valendo e são executadas por ela. Nunca leia nem exponha segredos (.env, chaves).' },
       { description: 'Tarefa', value: `#${task.id} ${task.title} — ${task.url}` },
     ];
   }
@@ -219,8 +236,8 @@ export class Workstation {
     try {
       const i = call.input;
       switch (call.name) {
-        case 'list_files': return this.listFiles(this.resolve(i.path), Math.min(Number(i.depth ?? 2) || 2, 5));
-        case 'read_file': return this.readFile(this.resolve(i.path), Number(i.start_line ?? 0), Number(i.end_line ?? 0));
+        case 'workspace_list_files': return this.listFiles(this.resolve(i.path), Math.min(Number(i.depth ?? 2) || 2, 5));
+        case 'workspace_read_file': return this.readFile(this.resolve(i.path), Number(i.start_line ?? 0), Number(i.end_line ?? 0));
         case 'search_files': return await this.search(String(i.pattern ?? ''), String(i.glob ?? '**/*'));
         case 'write_file': return await this.writeFile(this.resolve(i.path), String(i.content ?? ''));
         case 'edit_file': return this.editFile(this.resolve(i.path), String(i.old_string ?? ''), String(i.new_string ?? ''));
@@ -333,14 +350,21 @@ export class Workstation {
       }, timeoutS * 1000);
       const abort = () => { killed = true; if (WIN && child.pid) cp.exec(`taskkill /pid ${child.pid} /T /F`); else child.kill('SIGKILL'); };
       this.abort.signal.addEventListener('abort', abort, { once: true });
-      child.on('close', code => {
+      let finished = false;
+      const finish = (code: number | null) => {
+        if (finished) return;
+        finished = true;
         clearTimeout(timer);
         this.abort.signal.removeEventListener('abort', abort);
         const secs = Math.round((Date.now() - t0) / 1000);
         write.fire(`\x1b[90m[saída ${code}${killed ? ', interrompido' : ''} em ${secs}s]\x1b[0m\r\n`);
         resolve(`código de saída: ${code}${killed ? ` (interrompido: passou de ${timeoutS}s)` : ''} · ${secs}s\n${tail(output)}`);
-      });
-      child.on('error', e => { clearTimeout(timer); resolve(`erro ao rodar: ${e.message}`); });
+      };
+      child.on('close', finish);
+      // Um processo deixado rodando em segundo plano (Start-Process, nohup, &) herda a saída e não deixa o 'close'
+      // chegar: o comando termina quando o shell sai, com o que já foi escrito.
+      child.on('exit', code => setTimeout(() => finish(code), 1500));
+      child.on('error', e => { if (!finished) { finished = true; clearTimeout(timer); resolve(`erro ao rodar: ${e.message}`); } });
     });
   }
 
