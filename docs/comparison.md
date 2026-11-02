@@ -18,7 +18,7 @@ The other platforms fall into three groups:
 - **Clouds:** AWS Bedrock AgentCore and Microsoft Foundry with Agent 365. They have a registry and A2A, but inside
   their own cloud.
 
-Watch out for maturity: Agent Hangar is in alpha (v0.56), and the repository does not cite compliance certifications.
+Watch out for maturity: Agent Hangar is in alpha (v0.58), and the repository does not cite compliance certifications.
 
 ## Comparison table
 
@@ -38,11 +38,11 @@ Watch out for maturity: Agent Hangar is in alpha (v0.56), and the repository doe
 | Tool catalog | 230+ MCP servers from the Docker catalog; remote MCPs with OAuth | Tool Repository and its own MCP servers | Not found | Marketplace with tools and MCP integrations | The Gateway aggregates APIs, Lambdas and MCPs into a virtual MCP | Toolbox: a single MCP endpoint, with governance and versioning |
 | Coding agents and IDE | Harnesses (Claude Code, Codex, Hermes, DeepSeek Harness) as agents; VS Code extension; Cline, Roo Code and Continue | Partial: a skills plugin that teaches CrewAI to coding agents | Not found | Not found | Not found | Not found |
 | Promotion gated by tests | Yes: immutable versions, stage test gate, approval by a second maintainer, rollback | Not found | Evaluation in the same stack; promotion gate not found | Not found | Not found | Versions agents and creates stable endpoints; gate not found |
-| Long-term memory | Temporal graph per agent, team or org (Graphiti), or vector facts (Mem0, experimental) | Memory and knowledge in the framework | Per-thread state, durable execution | Knowledge base (RAG) | Not verified | Memory as a native tool |
+| Long-term memory | Temporal graph per agent, team or org (Graphiti, or Apache AGE on PostgreSQL), or vector facts (Mem0, experimental) | Memory and knowledge in the framework | Per-thread state, durable execution | Knowledge base (RAG) | Not verified | Memory as a native tool |
 | Governance and cost | SSO, SCIM, roles, corporate e-mail rule, audit, DLP and retention, budgets per company, team, agent or project with a hard stop, cost per agent | RBAC and security controls | Custom auth; ABAC when self-hosted | SSO/SAML, RBAC and audit (Enterprise) | IAM/JWT and Cedar policies in the Gateway | Entra ID and Agent 365 controls |
 | Data residency and compliance | Data on your infrastructure, encrypted secrets, signed images with SBOM; no certifications cited | On-premises or cloud deployment; certifications not found | Self-hosted for data residency and isolated (air-gapped) environments | Self-hosted keeps data in-house; Enterprise with SOC 2 Type II and ISO 27001 | Not verified | Not verified |
 | Observability | Prometheus, JSON logs, OpenTelemetry, metrics per channel | Real-time observability | Strong point: traces and evaluation | Built-in observability | AgentCore Observability and CloudWatch | Application Insights and Agent 365 telemetry |
-| Maturity | Alpha (v0.56), Apache-2.0 | OSS with a commercial layer | Commercial, partly Enterprise | 157,000+ GitHub stars | Registry in public preview | Agent 365 generally available; A2A 1.0 GA |
+| Maturity | Alpha (v0.58), Apache-2.0 | OSS with a commercial layer | Commercial, partly Enterprise | 157,000+ GitHub stars | Registry in public preview | Agent 365 generally available; A2A 1.0 GA |
 
 ## LLMs: what each platform allows
 

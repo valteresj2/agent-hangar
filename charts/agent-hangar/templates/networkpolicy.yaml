@@ -116,7 +116,7 @@ spec:
   podSelector:
     matchExpressions:
       - {key: app.kubernetes.io/instance, operator: In, values: [{{ .Release.Name | quote }}]}
-      - {key: app.kubernetes.io/component, operator: In, values: [neo4j, falkordb]}
+      - {key: app.kubernetes.io/component, operator: In, values: [neo4j, falkordb, age-postgres]}
   policyTypes: [Ingress]
   ingress:
     - from:

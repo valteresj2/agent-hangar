@@ -85,7 +85,7 @@ agents:
 # Memória de longo prazo dos agentes (Graphiti). Precisa de uma conexão de LLM (protocol openai) para extrair fatos.
 memory:
   enabled: false
-  backend: neo4j                    # neo4j | falkordb
+  backend: neo4j                    # neo4j | falkordb | age (Apache AGE + pgvector no Postgres)
   llmConnection: ""                 # nome da conexão no catálogo do Hangar
   outputMode: json_object           # json_schema se o provedor suportar
   resources:
@@ -100,6 +100,11 @@ memory:
     storageClass: ""
   falkordb:
     image: falkordb/falkordb:v4.20.7
+    password: ""
+    storage: 10Gi
+    storageClass: ""
+  age:                              # backend: age — imagem <registry>/memory-age-postgres (AGE e pgvector)
+    url: ""                         # Postgres da empresa com as extensões age e vector; vazio = o Postgres do chart
     password: ""
     storage: 10Gi
     storageClass: ""

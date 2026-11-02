@@ -9,3 +9,4 @@ POSTGRES_IMAGE            docker.io/library/postgres:16-alpine       postgres-16
 DOCKER_PROXY_IMAGE        docker.io/tecnativa/docker-socket-proxy:v0.4.1   docker-socket-proxy-v0.4.1
 TRIVY_IMAGE               docker.io/aquasec/trivy:0.58.1             trivy-0.58.1
 BUILDKIT_IMAGE            docker.io/moby/buildkit:buildx-stable-1    buildkit-buildx-stable-1
+AGE_IMAGE                 docker.io/apache/age:release_PG17_1.7.0    age-release_PG17_1.7.0

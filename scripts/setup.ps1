@@ -29,6 +29,7 @@ Set-IfEmpty 'MEMORY_TOKEN' (New-Hex)
 Set-IfEmpty 'NEO4J_PASSWORD' (New-Hex)
 Set-IfEmpty 'FALKORDB_PASSWORD' (New-Hex)
 Set-IfEmpty 'MEM0_PG_PASSWORD' (New-Hex)
+Set-IfEmpty 'AGE_PG_PASSWORD' (New-Hex)
 [IO.File]::WriteAllLines((Resolve-Path .env), $lines)
 Write-Host ''
 Write-Host 'Pronto. Suba com:  docker compose up -d --build'

@@ -5,6 +5,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.58.0] — 2026-11-02
+
+### Added
+- **Agent memory as a graph on PostgreSQL with Apache AGE** (`MEMORY_BACKEND=age`), with every piece open source: [Apache AGE](https://age.apache.org/) (Apache-2.0) for the graph and openCypher, and pgvector for semantic search, in the same database. Optional at install: `hangar setup` offers *Apache AGE no Postgres*, and `docker compose --profile memory-age` brings up a Postgres 17 with AGE 1.7 and pgvector (the new `memory-age-postgres` image). `AGE_PG_URL` points at your company's Postgres instead, and the Kubernetes chart supports `memory.backend: age` (bundled, or `memory.age.url`). See [docs/memory.md](docs/memory.md#apache-age-on-postgresql).
+  - **Its own engine:** neither Graphiti nor Mem0 has a driver for AGE, so the memory service has one (`mcp-servers/memory/app/age_store.py`) with the same contract as Graphiti: dated facts with history, entities with a summary and source excerpts, and the same tools, Memory tab and admin routes.
+  - **Writing:** the extraction LLM turns text into entities and dated facts. Existing facts that look alike (vector search) or are about the same entity (the graph) go to a second call that says whether the new fact repeats or replaces them; a replaced fact gets an end date and stays in the history.
+  - **Searching, with no LLM:** semantic (pgvector), keywords (PostgreSQL full-text) and the graph neighbourhood of the entities named in the question (Cypher), combined by reciprocal rank fusion.
+  - **Isolation and safety:** each memory group is its own AGE graph, and values reach Cypher only as parameters.
+  - **Measured** with the same LLM and script as the other backends: 25 s to write three facts (Graphiti: 149 s), 55–105 ms per search, "how many employees" found, and the Pro → Enterprise change kept as history with its date.
+- **CI** runs the AGE engine against a real database built from the new image.
+
 ## [0.57.0] — 2026-11-01
 
 ### Added

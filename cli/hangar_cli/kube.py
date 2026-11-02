@@ -60,7 +60,7 @@ def build_values(a: dict, version: str) -> tuple[dict, dict]:
         v["postgresql"] = {"enabled": False}
         s["postgresql"] = {"external": {"url": k["database_url"]}}
     mem = a.get("memory", "none")
-    if mem in ("neo4j", "falkordb"):
+    if mem in ("neo4j", "falkordb", "age"):
         v["memory"] = {"enabled": True, "backend": mem, "llmConnection": (a.get("llm") or {}).get("name", "")}
     sso = a.get("sso") or {"provider": "none"}
     prov = sso.get("provider", "none")

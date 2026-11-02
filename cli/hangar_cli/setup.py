@@ -50,7 +50,8 @@ EXPOSURES = {
     "tailscale": "Tailscale Funnel (HTTPS público via sua tailnet)",
 }
 MEMORIES = {"none": "Sem memória de longo prazo", "neo4j": "Neo4j Community (padrão)",
-            "falkordb": "FalkorDB (mais rápido, licença SSPL)"}
+            "falkordb": "FalkorDB (mais rápido, licença SSPL)",
+            "age": "Apache AGE no Postgres (grafo, tudo de licença aberta)"}
 SSO = {"none": "Só contas locais (usuário e senha)", "google": "Google", "microsoft": "Microsoft Entra ID",
        "github": "GitHub", "oauth2": "Outro provedor OAuth2/OIDC"}
 EXTRAS = {"data-studio": "Data Studio (análise de dados, PPTX, dashboards)",
@@ -61,7 +62,7 @@ CLIENTS = {"claude-code": "Claude Code", "claude-desktop": "Claude Desktop", "co
            "cursor": "Cursor", "vscode": "VS Code (extensão Agent Hangar)"}
 TUNNEL_PROFILE = {"cloudflare": "tunnel-cloudflare", "ngrok": "tunnel-ngrok", "tailscale": "tunnel-tailscale"}
 SECRET_KEYS = ("ADMIN_TOKEN", "HANGAR_SECRET_KEY", "INTERNAL_SECRET", "POSTGRES_PASSWORD", "MEMORY_TOKEN",
-               "NEO4J_PASSWORD", "FALKORDB_PASSWORD", "MEM0_PG_PASSWORD", "ACTIVEPIECES_ENCRYPTION_KEY",
+               "NEO4J_PASSWORD", "FALKORDB_PASSWORD", "MEM0_PG_PASSWORD", "AGE_PG_PASSWORD", "ACTIVEPIECES_ENCRYPTION_KEY",
                "ACTIVEPIECES_JWT_SECRET", "ACTIVEPIECES_POSTGRES_PASSWORD")
 
 
@@ -178,7 +179,7 @@ def generated_secrets(env: dict) -> dict:
     """Segredos que faltam (nunca troca um que já existe: trocar HANGAR_SECRET_KEY tornaria ilegíveis as chaves
     de API já criptografadas)."""
     gen = {"ADMIN_TOKEN": _rand, "INTERNAL_SECRET": _rand, "POSTGRES_PASSWORD": _rand, "MEMORY_TOKEN": _rand,
-           "NEO4J_PASSWORD": _rand, "FALKORDB_PASSWORD": _rand, "MEM0_PG_PASSWORD": _rand, "ACTIVEPIECES_JWT_SECRET": _rand,
+           "NEO4J_PASSWORD": _rand, "FALKORDB_PASSWORD": _rand, "MEM0_PG_PASSWORD": _rand, "AGE_PG_PASSWORD": _rand, "ACTIVEPIECES_JWT_SECRET": _rand,
            "ACTIVEPIECES_POSTGRES_PASSWORD": _rand,
            "ACTIVEPIECES_ENCRYPTION_KEY": lambda: secrets.token_hex(16),
            "HANGAR_SECRET_KEY": lambda: base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()}
@@ -204,6 +205,8 @@ def compose_profiles(a: dict) -> list[str]:
         p.append("memory")
     elif mem == "falkordb":
         p.append("memory-falkordb")
+    elif mem == "age":
+        p.append("memory-age")
     p += [x for x in a.get("extras", []) if x in EXTRAS]
     if a["exposure"]["mode"] in TUNNEL_PROFILE:
         p.append(TUNNEL_PROFILE[a["exposure"]["mode"]])
@@ -219,7 +222,7 @@ def env_updates(a: dict, env: dict, repo_version: str) -> dict[str, str]:
         u["HANGAR_VERSION"] = repo_version
     llm_name = (a.get("llm") or {}).get("name", "")
     mem = a.get("memory", "none")
-    if mem in ("neo4j", "falkordb"):
+    if mem in ("neo4j", "falkordb", "age"):
         u.update({"MEMORY_URL": "http://memory:8000", "MEMORY_BACKEND": mem})
         if llm_name:  # sem LLM escolhido agora, mantém a conexão que a memória já usa
             u["MEMORY_LLM_CONNECTION"] = llm_name

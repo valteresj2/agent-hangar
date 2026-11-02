@@ -2,6 +2,7 @@
 {{- $full := include "hangar.fullname" . -}}
 {{- $secret := include "hangar.secretName" . -}}
 {{- $neo := eq .Values.memory.backend "neo4j" -}}
+{{- $age := eq .Values.memory.backend "age" -}}
 apiVersion: v1
 kind: Service
 metadata:
@@ -48,6 +49,16 @@ spec:
               valueFrom: {secretKeyRef: {name: {{ $secret }}, key: NEO4J_PASSWORD}}
             - name: FALKORDB_PASSWORD
               valueFrom: {secretKeyRef: {name: {{ $secret }}, key: FALKORDB_PASSWORD}}
+            {{- if $age }}
+            {{- if .Values.memory.age.url }}
+            - name: AGE_PG_URL
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: AGE_PG_URL}}
+            {{- else }}
+            - name: AGE_PG_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: AGE_PG_PASSWORD}}
+            - {name: AGE_PG_URL, value: {{ printf "postgresql://age:$(AGE_PG_PASSWORD)@%s-age-postgres:5432/memory" $full | quote }}}
+            {{- end }}
+            {{- end }}
           ports: [{containerPort: 8000, name: http}]
           securityContext: {{- include "hangar.containerSecurity" . | nindent 12 }}
           readinessProbe:
@@ -59,9 +70,10 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {sizeLimit: 256Mi}
+{{- if not (and $age .Values.memory.age.url) }}
 ---
-{{- $db := ternary "neo4j" "falkordb" $neo }}
-{{- $cfg := ternary .Values.memory.neo4j .Values.memory.falkordb $neo }}
+{{- $db := ternary "age-postgres" (ternary "neo4j" "falkordb" $neo) $age }}
+{{- $cfg := ternary .Values.memory.age (ternary .Values.memory.neo4j .Values.memory.falkordb $neo) $age }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -71,7 +83,9 @@ spec:
   selector: {{- include "hangar.selector" . | nindent 4 }}
     app.kubernetes.io/component: {{ $db }}
   ports:
-    {{- if $neo }}
+    {{- if $age }}
+    - {name: postgres, port: 5432, targetPort: 5432}
+    {{- else if $neo }}
     - {name: bolt, port: 7687, targetPort: 7687}
     {{- else }}
     - {name: redis, port: 6379, targetPort: 6379}
@@ -97,8 +111,20 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: {{ $db }}
-          image: {{ $cfg.image }}
-          {{- if $neo }}
+          image: {{ if $age }}{{ include "hangar.image" (dict "ctx" . "name" "memory-age-postgres") }}{{ else }}{{ $cfg.image }}{{ end }}
+          {{- if $age }}
+          env:
+            - {name: POSTGRES_DB, value: memory}
+            - {name: POSTGRES_USER, value: age}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ $secret }}, key: AGE_PG_PASSWORD}}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          ports: [{containerPort: 5432, name: postgres}]
+          readinessProbe:
+            exec: {command: [pg_isready, -U, age, -d, memory]}
+            periodSeconds: 10
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+          {{- else if $neo }}
           env:
             # a imagem do Neo4j transforma toda variável NEO4J_* em configuração: a senha entra com outro nome
             - name: HANGAR_GRAPH_PASSWORD
@@ -132,4 +158,5 @@ spec:
         storageClassName: {{ . }}
         {{- end }}
         resources: {requests: {storage: {{ $cfg.storage }}}}
+{{- end }}
 {{- end }}

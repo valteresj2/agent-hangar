@@ -10,7 +10,7 @@ Nas fontes consultadas, o Agent Hangar é o único que junta, em um produto self
 - **Construtor visual:** Dify, forte em workflow e RAG, publica apps como API ou ferramenta MCP.
 - **Clouds:** AWS Bedrock AgentCore e Microsoft Foundry com Agent 365. Têm registry e A2A, mas dentro do respectivo cloud.
 
-O ponto de atenção é maturidade: o Agent Hangar está em alpha (v0.56) e o repositório não cita certificações de conformidade.
+O ponto de atenção é maturidade: o Agent Hangar está em alpha (v0.58) e o repositório não cita certificações de conformidade.
 
 ## Tabela comparativa
 
@@ -30,11 +30,11 @@ O ponto de atenção é maturidade: o Agent Hangar está em alpha (v0.56) e o re
 | Catálogo de ferramentas | 230+ MCP servers do catálogo Docker; MCPs remotos com OAuth | Tool Repository e MCP servers próprios | Não encontrado | Marketplace com tools e integrações MCP | Gateway agrega APIs, Lambdas e MCPs num MCP virtual | Toolbox: endpoint MCP único, com governança e versão |
 | Agentes de código e IDE | Harnesses (Claude Code, Codex, Hermes, DeepSeek Harness) como agentes; extensão de VS Code; Cline, Roo Code e Continue | Parcial: plugin de skills que ensina o CrewAI a agentes de código | Não encontrado | Não encontrado | Não encontrado | Não encontrado |
 | Promoção com testes | Sim: versão imutável, gate de testes em stage, aprovação de segundo mantenedor, rollback | Não encontrado | Avaliação na mesma stack; gate de promoção não encontrado | Não encontrado | Não encontrado | Versiona agentes e cria endpoints estáveis; gate não encontrado |
-| Memória de longo prazo | Grafo temporal por agente, time ou org (Graphiti), ou fatos vetoriais (Mem0, experimental) | Memória e knowledge no framework | Estado por thread, execução durável | Base de conhecimento (RAG) | Não verificado | Memory como ferramenta nativa |
+| Memória de longo prazo | Grafo temporal por agente, time ou org (Graphiti, ou Apache AGE no PostgreSQL), ou fatos vetoriais (Mem0, experimental) | Memória e knowledge no framework | Estado por thread, execução durável | Base de conhecimento (RAG) | Não verificado | Memory como ferramenta nativa |
 | Governança e custo | SSO, SCIM, papéis, regra de e-mail corporativo, auditoria, DLP e retenção, orçamento por empresa, time, agente ou projeto com corte, custo por agente | RBAC e controles de segurança | Auth customizada; ABAC no self-hosted | SSO/SAML, RBAC e auditoria (Enterprise) | IAM/JWT e políticas Cedar no Gateway | Entra ID e controles do Agent 365 |
 | Residência de dados e conformidade | Dados na sua infraestrutura, segredos criptografados, imagens assinadas com SBOM; sem certificações citadas | Implantação on-premise ou em nuvem; certificações não encontradas | Self-hosted para residência de dados e ambientes isolados (air-gapped) | Self-hosted mantém os dados em casa; Enterprise com SOC 2 Type II e ISO 27001 | Não verificado | Não verificado |
 | Observabilidade | Prometheus, logs JSON, OpenTelemetry, métricas por canal | Observabilidade em tempo real | Ponto forte: traces e avaliação | Observabilidade integrada | AgentCore Observability e CloudWatch | Application Insights e telemetria do Agent 365 |
-| Maturidade | Alpha (v0.56), Apache-2.0 | OSS com camada comercial | Comercial, parte Enterprise | Mais de 157 mil estrelas no GitHub | Registry em preview público | Agent 365 em disponibilidade geral; A2A 1.0 GA |
+| Maturidade | Alpha (v0.58), Apache-2.0 | OSS com camada comercial | Comercial, parte Enterprise | Mais de 157 mil estrelas no GitHub | Registry em preview público | Agent 365 em disponibilidade geral; A2A 1.0 GA |
 
 ## Modelos LLM: o que cada plataforma permite
 

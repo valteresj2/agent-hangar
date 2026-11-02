@@ -57,7 +57,7 @@ https://github.com/user-attachments/assets/28cfa80f-33b1-49c5-be48-13cc33ada18d
 
 </details>
 
-> **Status: alpha (v0.57).** It works end to end and is covered by tests, but APIs may still change. Run it inside
+> **Status: alpha (v0.58).** It works end to end and is covered by tests, but APIs may still change. Run it inside
 > your network until you have read [docs/security.md](docs/security.md).
 
 ## Why Agent Hangar
@@ -117,11 +117,11 @@ it does not prove the feature is missing. Where each one is ahead, the model opt
 | Tool catalog | 230+ MCP servers from the Docker catalog; remote MCPs with OAuth | Tool Repository and its own MCP servers | Not found | Marketplace with tools and MCP integrations | The Gateway aggregates APIs, Lambdas and MCPs into a virtual MCP | Toolbox: a single MCP endpoint, with governance and versioning |
 | Coding agents and IDE | Harnesses (Claude Code, Codex, Hermes, DeepSeek Harness) as agents; VS Code extension; Cline, Roo Code and Continue | Partial: a skills plugin that teaches CrewAI to coding agents | Not found | Not found | Not found | Not found |
 | Promotion gated by tests | Yes: immutable versions, stage test gate, approval by a second maintainer, rollback | Not found | Evaluation in the same stack; promotion gate not found | Not found | Not found | Versions agents and creates stable endpoints; gate not found |
-| Long-term memory | Temporal graph per agent, team or org (Graphiti), or vector facts (Mem0, experimental) | Memory and knowledge in the framework | Per-thread state, durable execution | Knowledge base (RAG) | Not verified | Memory as a native tool |
+| Long-term memory | Temporal graph per agent, team or org (Graphiti, or Apache AGE on PostgreSQL), or vector facts (Mem0, experimental) | Memory and knowledge in the framework | Per-thread state, durable execution | Knowledge base (RAG) | Not verified | Memory as a native tool |
 | Governance and cost | SSO, SCIM, roles, corporate e-mail rule, audit, DLP and retention, budgets per company, team, agent or project with a hard stop, cost per agent | RBAC and security controls | Custom auth; ABAC when self-hosted | SSO/SAML, RBAC and audit (Enterprise) | IAM/JWT and Cedar policies in the Gateway | Entra ID and Agent 365 controls |
 | Data residency and compliance | Data on your infrastructure, encrypted secrets, signed images with SBOM; no certifications cited | On-premises or cloud deployment; certifications not found | Self-hosted for data residency and isolated (air-gapped) environments | Self-hosted keeps data in-house; Enterprise with SOC 2 Type II and ISO 27001 | Not verified | Not verified |
 | Observability | Prometheus, JSON logs, OpenTelemetry, metrics per channel | Real-time observability | Strong point: traces and evaluation | Built-in observability | AgentCore Observability and CloudWatch | Application Insights and Agent 365 telemetry |
-| Maturity | Alpha (v0.57), Apache-2.0 | OSS with a commercial layer | Commercial, partly Enterprise | 157,000+ GitHub stars | Registry in public preview | Agent 365 generally available; A2A 1.0 GA |
+| Maturity | Alpha (v0.58), Apache-2.0 | OSS with a commercial layer | Commercial, partly Enterprise | 157,000+ GitHub stars | Registry in public preview | Agent 365 generally available; A2A 1.0 GA |
 
 ## From a request in Claude to a working agent
 
@@ -452,6 +452,8 @@ See [docs/digital-employee.md](docs/digital-employee.md).
 preferences across conversations ([docs/memory.md](docs/memory.md)).
 - By default the memory is a **temporal knowledge graph** (Graphiti on Neo4j Community or FalkorDB). A fact that
   changes is kept as history, not overwritten.
+- **A graph on PostgreSQL with Apache AGE and pgvector** keeps the same dated history with every piece open source,
+  and writes several times faster than Graphiti.
 - **Mem0 on PostgreSQL with pgvector** is a lighter, experimental option with no graph database: much faster and
   cheaper to write, without the dated history of a changed fact.
 - The hangar decides which memory each agent reads and writes, and stage never pollutes production.
@@ -489,7 +491,7 @@ flowchart LR
   subgraph Hangar[Agent Hangar]
     H[API · gateway · registry<br/>versions · tests · approvals · audit · usage/cost · schedules]
     DB[(Postgres)]
-    M[memory service<br/>Graphiti or Mem0]
+    M[memory service<br/>Graphiti, Apache AGE or Mem0]
     G[(Neo4j / FalkorDB / pgvector)]
     H --- DB
     H -- "groups chosen by the hangar" --> M --- G
@@ -584,7 +586,7 @@ built from [`docs/`](docs/) on every change.
 | [Access, teams, SSO and the portal](docs/access.md) | Roles, approvals, budgets, OAuth2/SCIM, where each person lands |
 | [Issues (kanban board)](docs/issues.md) | The board for people and Digital employees: assign an issue and the agent works on it, with authority, budget and review |
 | [Member workspace](docs/workspace.md) | The member's portal: personal agents, visual org chart, connect my AI, sign-ins and activation codes, installable app with notifications |
-| [Memory](docs/memory.md) · [Connectors](docs/connectors.md) · [MCP catalog](docs/mcp-catalog.md) · [Remote MCPs + Activepieces](docs/remote-mcp.md) | What agents can know and use: Graphiti or Mem0 memory; official, Docker and GitHub MCP Registry connectors |
+| [Memory](docs/memory.md) · [Connectors](docs/connectors.md) · [MCP catalog](docs/mcp-catalog.md) · [Remote MCPs + Activepieces](docs/remote-mcp.md) | What agents can know and use: Graphiti, Apache AGE or Mem0 memory; official, Docker and GitHub MCP Registry connectors |
 | [Harnesses](docs/harnesses.md) | Claude Code, Codex, Hermes and DeepSeek Harness as agents |
 | [Execution profile](docs/execution.md) | Reasoning effort, output limit, parallel tools, prompt cache, long-context compaction and the model per response |
 | [Reuse before you build](docs/composer.md) | New agents from existing ones: plan, pieces, skills, read-only rules |
@@ -606,6 +608,7 @@ change. Recent releases:
 
 | Version | What it added |
 |---|---|
+| v0.58 | Agent memory as a graph on PostgreSQL with Apache AGE and pgvector, with every piece open source (optional at install) |
 | v0.57 | A Digital employee works in VS Code: the extension takes its tasks and thinks with it over AG-UI, with files, terminal and GitHub publishing under its authority |
 | v0.56 | Warnings before a provider deprecates a model in use: the date, who uses it, a replacement and a swap tested in stage |
 | v0.55 | Desktop app M2: decide, mark the inbox and manage your own agents from the app; employees name only the tools they have |

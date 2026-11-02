@@ -94,7 +94,7 @@ Everything Agent Hangar does, grouped by who uses it, with where to find it. **P
 | Plugins (HTTP / server), per-action policy, personal OAuth identity, triggers, egress proxy | Portal → Plugins | [plugins.md](plugins.md) |
 | Code work through harnesses (Claude Code, Codex, OpenCode…) | Agent → Jobs | [harnesses.md](harnesses.md) |
 | Reasoning effort, output limit, parallel tools, prompt cache, long-context compaction and a cheaper model per response | Agent → Visão geral → Execução | [execution.md](execution.md) |
-| Memory (agent, team, company) with review and deletion: Graphiti on Neo4j or FalkorDB, or Mem0 on pgvector (experimental) | Agent → Memory | [memory.md](memory.md) |
+| Memory (agent, team, company) with review and deletion: Graphiti on Neo4j or FalkorDB, a graph on PostgreSQL with Apache AGE, or Mem0 on pgvector (experimental) | Agent → Memory | [memory.md](memory.md) |
 | Stage tests, promotion to production (four eyes optional), rollback, schedules | Agent page | [concepts.md](concepts.md) |
 | Team packages: export, preview, install; ready-made teams | Portal → Team packages | [work.md](work.md#team-packages) |
 | Remote MCP gateway | Agent → Connect | [remote-mcp.md](remote-mcp.md) |

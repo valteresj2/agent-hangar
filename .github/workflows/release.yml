@@ -28,6 +28,7 @@ jobs:
           - {name: harness-hermes, context: harness, file: harness/Dockerfile, target: hermes}
           - {name: mcp-data-studio, context: mcp-servers/data-studio, file: mcp-servers/data-studio/Dockerfile, target: ""}
           - {name: mcp-memory, context: mcp-servers/memory, file: mcp-servers/memory/Dockerfile, target: ""}
+          - {name: memory-age-postgres, context: mcp-servers/memory/age-postgres, file: mcp-servers/memory/age-postgres/Dockerfile, target: ""}
           - {name: mcp-browser, context: mcp-servers/browser, file: mcp-servers/browser/Dockerfile, target: ""}
           - {name: desktop, context: mcp-servers/desktop, file: mcp-servers/desktop/Dockerfile, target: ""}
           - {name: mcp-stdio-runner, context: mcp-servers/stdio-runner, file: mcp-servers/stdio-runner/Dockerfile, target: ""}
@@ -61,6 +62,7 @@ jobs:
             PYTHON_IMAGE=${{ env.PYTHON_IMAGE }}
             NODE_IMAGE=${{ env.NODE_IMAGE }}
             NODE_ALPINE_IMAGE=${{ env.NODE_ALPINE_IMAGE }}
+            AGE_IMAGE=${{ env.AGE_IMAGE }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/${{ matrix.image.name }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.arch.tag }}
@@ -86,7 +88,7 @@ jobs:
       fail-fast: false
       matrix:
         name: [central, agent-runtime, harness-base, harness-claude-code, harness-codex, harness-deepseek-harness,
-               harness-hermes, mcp-data-studio, mcp-memory, mcp-browser, desktop, mcp-stdio-runner]
+               harness-hermes, mcp-data-studio, mcp-memory, memory-age-postgres, mcp-browser, desktop, mcp-stdio-runner]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8

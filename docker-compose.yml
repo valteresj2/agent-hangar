@@ -413,9 +413,11 @@ services:
   #   docker compose --profile memory-falkordb up -d --build
   # Mem0 (fatos com busca vetorial, sem banco de grafo) sobre Postgres com pgvector: MEMORY_BACKEND=mem0 e
   #   docker compose --profile memory-mem0 up -d --build
+  # Grafo sobre Postgres com Apache AGE e pgvector (tudo de licença aberta): MEMORY_BACKEND=age e
+  #   docker compose --profile memory-age up -d --build
   # Só a central fala com o serviço (MEMORY_TOKEN); os agentes passam por /internal/memory/mcp na central.
   memory:
-    profiles: [memory, memory-falkordb, memory-mem0]
+    profiles: [memory, memory-falkordb, memory-mem0, memory-age]
     image: ${HANGAR_REGISTRY:-agent-hangar}/mcp-memory:${HANGAR_VERSION:-latest}
     build: { context: mcp-servers/memory, args: { PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim}" } }
     environment:
@@ -431,6 +433,8 @@ services:
       EMBEDDING_DIM: ${MEMORY_EMBEDDING_DIM:-384}  # 384 = modelo local; ajuste ao modelo remoto
       # Mem0: o Postgres do perfil memory-mem0, ou um Postgres da empresa com pgvector (RDS, Cloud SQL, Azure)
       MEM0_PG_URL: ${MEM0_PG_URL:-postgresql://mem0:${MEM0_PG_PASSWORD:-}@mem0-postgres:5432/mem0}
+      # AGE: o Postgres do perfil memory-age, ou um Postgres da empresa com as extensões age e vector instaladas
+      AGE_PG_URL: ${AGE_PG_URL:-postgresql://age:${AGE_PG_PASSWORD:-}@age-postgres:5432/memory}
     volumes:
       - memory_data:/data   # Mem0: o histórico de mudanças de cada fato (SQLite)
     read_only: true
@@ -452,6 +456,25 @@ services:
       - mem0_pg:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mem0 -d mem0"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks: [memory_db]   # sem internet; só o serviço de memória o alcança
+    restart: unless-stopped
+
+  # Apache AGE (grafo, openCypher) e pgvector no mesmo Postgres: mcp-servers/memory/age-postgres
+  age-postgres:
+    profiles: [memory-age]
+    image: ${HANGAR_REGISTRY:-agent-hangar}/memory-age-postgres:${HANGAR_VERSION:-latest}
+    build: { context: mcp-servers/memory/age-postgres }
+    environment:
+      POSTGRES_DB: memory
+      POSTGRES_USER: age
+      POSTGRES_PASSWORD: ${AGE_PG_PASSWORD:-}
+    volumes:
+      - age_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U age -d memory"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -532,6 +555,7 @@ volumes:
   falkordb_data:
   memory_data:
   mem0_pg:
+  age_pg:
   activepieces_pg:
   activepieces_redis:
   mcp_gateway:

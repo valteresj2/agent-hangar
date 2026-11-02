@@ -1,5 +1,6 @@
-"""Memória dos agentes do Agent Hangar: grafo de conhecimento temporal (Graphiti) sobre Neo4j ou FalkorDB, ou
-fatos com busca vetorial (Mem0) sobre Postgres com pgvector (MEMORY_BACKEND=mem0, mais leve: sem banco de grafo).
+"""Memória dos agentes do Agent Hangar: grafo de conhecimento temporal (Graphiti) sobre Neo4j ou FalkorDB, grafo
+sobre Postgres com Apache AGE e pgvector (MEMORY_BACKEND=age, tudo de licença aberta; motor em age_store.py), ou fatos
+com busca vetorial (Mem0) sobre Postgres com pgvector (MEMORY_BACKEND=mem0, mais leve: sem banco de grafo).
 
 Só a central fala com este serviço (rede interna hangar_memory + MEMORY_TOKEN). Os agentes chamam
 /internal/memory/mcp na central, que confere quem é o agente e impõe os grupos de memória pelos headers:
@@ -237,8 +238,71 @@ async def _mem0_search(m, query: str, groups: list[str], limit: int, history: bo
     return out
 
 
+# ------------------------------------------------------------------ Apache AGE + pgvector (MEMORY_BACKEND=age)
+AGE_PG_URL = os.environ.get("AGE_PG_URL", "")
+
+
+def _llm_call(llm: dict):
+    """Chamada de chat no formato OpenAI (a conexão de LLM da memória, configurada na central)."""
+    url = llm["base_url"].rstrip("/") + "/chat/completions"
+    headers = {"Authorization": f"Bearer {llm.get('api_key') or 'none'}"}
+    json_mode = (llm.get("output_mode") or "json_object") == "json_object"
+
+    async def call(system: str, user: str) -> str:
+        body = {"model": llm["model"], "temperature": 0,
+                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+        async with httpx.AsyncClient(timeout=120) as c:
+            r = await c.post(url, headers=headers, json={**body, **({"response_format": {"type": "json_object"}}
+                                                                    if json_mode else {})})
+            if r.status_code == 400 and json_mode:  # provedor sem response_format: o prompt já pede só JSON
+                r = await c.post(url, headers=headers, json=body)
+            r.raise_for_status()
+            return r.json()["choices"][0]["message"]["content"] or ""
+    return call
+
+
+def _embed_call(conf: dict):
+    if EMBEDDER == "openai":
+        e = conf.get("embedding") or {}
+        if not e.get("base_url"):
+            raise RuntimeError("MEMORY_EMBEDDER=openai exige MEMORY_EMBEDDING_CONNECTION na central")
+
+        async def remote(texts: list[str]):
+            async with httpx.AsyncClient(timeout=60) as c:
+                r = await c.post(e["base_url"].rstrip("/") + "/embeddings", json={"model": e["model"], "input": texts},
+                                 headers={"Authorization": f"Bearer {e.get('api_key') or 'none'}"})
+                r.raise_for_status()
+                return [x["embedding"] for x in sorted(r.json()["data"], key=lambda x: x["index"])]
+        return remote
+    local = LocalEmbedder(LOCAL_MODEL)  # o mesmo modelo local do Graphiti: nada sai da rede para virar vetor
+    return local.create_batch
+
+
+async def age():
+    if S.graphiti is not None:
+        return S.graphiti
+    async with S.lock:
+        if S.graphiti is not None:
+            return S.graphiti
+        from app.age_store import AgeStore
+
+        if not AGE_PG_URL:
+            raise RuntimeError("MEMORY_BACKEND=age exige AGE_PG_URL (Postgres com Apache AGE e pgvector)")
+        conf = await asyncio.to_thread(_central_config)
+        llm = conf.get("llm") or {}
+        if not llm.get("base_url"):
+            raise RuntimeError("memória sem LLM: defina MEMORY_LLM_CONNECTION na central")
+        dim = int(os.environ.get("EMBEDDING_DIM", 384))
+        s = await asyncio.to_thread(AgeStore, AGE_PG_URL, _llm_call(llm), _embed_call(conf), dim, EXTRACTION)
+        S.config = {"backend": "age", "llm_model": llm["model"], "embedder": EMBEDDER,
+                    "embedding_model": LOCAL_MODEL if EMBEDDER == "local" else (conf.get("embedding") or {}).get("model")}
+        S.graphiti = s
+        log.info("memória pronta: backend=age (Apache AGE + pgvector) llm=%s embedder=%s", llm["model"], EMBEDDER)
+        return s
+
+
 async def store():
-    return await (mem0() if BACKEND == "mem0" else graphiti())
+    return await (mem0() if BACKEND == "mem0" else age() if BACKEND == "age" else graphiti())
 
 
 def _driver_for(g, group: str):
@@ -249,7 +313,7 @@ def _driver_for(g, group: str):
 # ------------------------------------------------------------------ fila de gravação
 async def _worker():
     EpisodeType = None  # noqa: N806
-    if BACKEND != "mem0":
+    if BACKEND not in ("mem0", "age"):
         from graphiti_core.nodes import EpisodeType  # noqa: N811
 
     while True:
@@ -258,7 +322,9 @@ async def _worker():
             g = await store()
             for attempt in range(1, RETRIES + 1):  # a extração é por LLM: JSON inválido de vez em quando é normal
                 try:
-                    if BACKEND == "mem0":
+                    if BACKEND == "age":
+                        await g.add(item["content"], item["group"], item["source"], item["at"])
+                    elif BACKEND == "mem0":
                         # o Mem0 aberto não aceita timestamp (só a plataforma paga): a data vai nos metadados
                         await asyncio.to_thread(g.add, item["content"], user_id=item["group"],
                                                 metadata={"source": item["source"], "at": item["at"].isoformat()})
@@ -351,7 +417,10 @@ async def recall(query: str, ctx: Context, limit: int = 10, include_history: boo
     g = await store()
     lim = max(1, min(limit, 30))
     found = (await _mem0_search(g, query, read, lim, include_history) if BACKEND == "mem0"
+             else await g.search(query, read, lim, include_history) if BACKEND == "age"
              else await _search(g, query, read, lim))
+    if BACKEND == "age":
+        found["facts"] = _unique(found["facts"])
     if not include_history:
         found["facts"] = [f for f in found["facts"] if f["current"]]
     # a data de hoje vai junto: sem ela o LLM lê "válido até 15/10" e não sabe se isso já passou
@@ -415,7 +484,9 @@ async def admin_embed(request: Request):
     if not texts:
         return JSONResponse({"vectors": [], "model": S.config.get("embedding_model", "")})
     g = await store()
-    if BACKEND == "mem0":
+    if BACKEND == "age":
+        vectors = await g.embed(texts)
+    elif BACKEND == "mem0":
         vectors = [await asyncio.to_thread(g.embedding_model.embed, t, "search") for t in texts]
     else:
         vectors = await g.embedder.create_batch(texts)
@@ -432,6 +503,10 @@ async def admin_facts(request: Request):
     if not GROUP.match(group):
         return JSONResponse({"error": "grupo inválido"}, 400)
     g = await store()
+    if BACKEND == "age":
+        facts = (_unique((await g.search(q, [group], limit, True))["facts"]) if q
+                 else _unique(await asyncio.to_thread(g.recent, group, limit)))
+        return JSONResponse({"group": group, "facts": facts})
     if BACKEND == "mem0":
         res = (await _mem0_search(g, q, [group], limit, True))["facts"] if q else _unique(
             [_mem0_fact(r, group) for r in _rows(await asyncio.to_thread(
@@ -459,6 +534,9 @@ async def admin_clear(request: Request):
     if not GROUP.match(group):
         return JSONResponse({"error": "grupo inválido"}, 400)
     g = await store()
+    if BACKEND == "age":
+        await asyncio.to_thread(g.clear, group)
+        return JSONResponse({"cleared": group})
     if BACKEND == "mem0":
         await asyncio.to_thread(g.delete_all, user_id=group)
         return JSONResponse({"cleared": group})

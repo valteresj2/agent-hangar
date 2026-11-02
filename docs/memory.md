@@ -1,4 +1,4 @@
-# Agent memory (Graphiti on Neo4j or FalkorDB, or Mem0 on pgvector)
+# Agent memory (Graphiti on Neo4j or FalkorDB, a graph on PostgreSQL with Apache AGE, or Mem0 on pgvector)
 
 Agents can keep **long-term memory** across conversations: customers, decisions, preferences, status. The memory
 is a **temporal knowledge graph** built by [Graphiti](https://github.com/getzep/graphiti) (Apache-2.0):
@@ -12,6 +12,10 @@ So the agent can answer both "what is ACME's plan today?" and "since when were t
 agent ── /internal/memory/mcp ──► central ── MEMORY_TOKEN + groups ──► memory (Graphiti) ──► Neo4j | FalkorDB
           (agent token)            decides the groups                   extraction LLM, local embeddings
 ```
+
+The same service can instead keep the graph in PostgreSQL with [Apache AGE](https://age.apache.org/) (everything
+open source, see [below](#apache-age-on-postgresql)) or keep plain facts with Mem0 on pgvector. Agents and tools
+don't change with the backend.
 
 ## Turning it on
 
@@ -107,6 +111,35 @@ Deleting an agent also deletes its `agent`-scope memory. Team and org memory sta
 Both were tested end to end with the same agent: record, recall in a new conversation, and invalidation of a
 changed fact.
 
+### Apache AGE on PostgreSQL
+
+A graph backend where every piece has an open-source license: [Apache AGE](https://age.apache.org/) (Apache-2.0)
+adds the graph and openCypher to PostgreSQL, and [pgvector](https://github.com/pgvector/pgvector) the semantic
+search, in the same database. Neither Graphiti nor Mem0 has a driver for AGE, so the memory service has its own
+engine for it (`mcp-servers/memory/app/age_store.py`), with the same contract: dated facts with history, entities with
+a summary, and source excerpts.
+
+```bash
+MEMORY_BACKEND=age                           # in .env (scripts/setup.* generate AGE_PG_PASSWORD)
+docker compose --profile memory-age up -d --build
+```
+
+`hangar setup` offers it as *Apache AGE no Postgres*. The `memory-age` profile brings up a Postgres 17 with AGE 1.7
+and pgvector (`mcp-servers/memory/age-postgres`, published as `memory-age-postgres`) on the internal `memory_db`
+network. To use your company's Postgres instead, install the `age` and `vector` extensions there and set
+`AGE_PG_URL=postgresql://user:password@host:5432/db`. In Kubernetes, `memory.backend: age` brings up the same image, or
+`memory.age.url` points at your Postgres.
+
+- **The graph:** `(:Entity)-[:FACT]->(:Entity)` in AGE. Each memory group is its own AGE graph (physical isolation,
+  as in FalkorDB). Values reach Cypher only as parameters, never concatenated into the query: entity names come from
+  text the agent read.
+- **Writing:** the extraction LLM turns the text into entities and dated facts (one call). The existing facts that
+  look alike (vector search) or are about the same entity (the graph) go to a second call, which says whether the new
+  fact repeats one or replaces it. A replaced fact gets an end date and stays in the history.
+- **Searching, with no LLM:** semantic (pgvector), keywords (PostgreSQL full-text) and the graph neighbourhood of the
+  entities named in the question (Cypher), combined by reciprocal rank fusion.
+- **Embeddings:** the same local model (fastembed), or `MEMORY_EMBEDDER=openai`.
+
 ### Mem0 on pgvector (experimental)
 
 A lighter backend: [Mem0](https://github.com/mem0ai/mem0) (Apache-2.0) keeps each fact as a vector in PostgreSQL
@@ -129,27 +162,33 @@ set `MEM0_PG_URL=postgresql://user:password@host:5432/db`. The central's own Pos
 - **History:** each fact's change log is a SQLite file in the `memory_data` volume.
 - **Telemetry:** Mem0's telemetry is off in the image (`MEM0_TELEMETRY=False`), as Graphiti's is.
 
-Measured on the same install, with the same extraction LLM (DeepSeek V4.1 Flash through OpenRouter) and the same
-three facts, then a plan change:
+### Comparing the backends
 
-| | Graphiti + Neo4j | Mem0 + pgvector |
-|---|---|---|
-| Write 3 facts | 149 s | 10 s |
-| Write one change | 18 s | 2 s |
-| Search | 40–70 ms | 25–30 ms |
-| Found "how many employees" | No | Yes |
-| Plan changed from Pro to Enterprise | The old fact is marked as replaced, with the date | Both facts stay current |
+Measured on the same install, with the same extraction LLM (DeepSeek through OpenRouter, the `openrouter-deepseek`
+connection) and the same three facts, then a plan change:
 
-Choose by what the agents need. Mem0 is much faster and cheaper to write and runs with no graph database. Graphiti
-keeps the history of each fact with validity dates, which matters when an agent must answer "since when" or "what
-was it before". `include_history` returns only facts with an expiration date that has passed in Mem0; there are no
-entities or source excerpts in its results.
+| | Graphiti + Neo4j | Apache AGE + pgvector | Mem0 + pgvector |
+|---|---|---|---|
+| Write 3 facts | 149 s | 25 s | 10 s |
+| Write one change | 18 s | 10 s | 2 s |
+| Search | 40–70 ms | 55–105 ms | 25–30 ms |
+| Found "how many employees" | No | Yes | Yes |
+| Plan changed from Pro to Enterprise | The old fact is marked as replaced, with the date | The old fact is marked as replaced, with the date | Both facts stay current |
+| License of every piece | GPLv3 (Neo4j Community) | Apache-2.0 and PostgreSQL | Apache-2.0 and PostgreSQL |
+
+Choose by what the agents need:
+- **Graphiti** is the default and the most mature engine; Neo4j Enterprise or Aura can take over without code changes.
+- **Apache AGE** keeps the history of each fact like Graphiti, writes several times faster, and runs in a PostgreSQL
+  you may already operate.
+- **Mem0** is the fastest and cheapest to write, with no graph at all; `include_history` returns only facts with an
+  expiration date that has passed, and there are no entities or source excerpts in its results.
 
 ## Tuning
 
 | Variable | Default | |
 |---|---|---|
-| `MEMORY_BACKEND` | `neo4j` | `falkordb` or `mem0` |
+| `MEMORY_BACKEND` | `neo4j` | `falkordb`, `age` or `mem0` |
+| `AGE_PG_URL` | the `memory-age` Postgres | AGE: any PostgreSQL with the `age` and `vector` extensions |
 | `MEM0_PG_URL` | the `memory-mem0` Postgres | Mem0: any PostgreSQL with pgvector |
 | `MEMORY_LLM_MODEL` | model of the connection | Extraction model (use one that is good at JSON) |
 | `MEMORY_LLM_OUTPUT_MODE` | `json_object` | `json_schema` (constrained decoding) is more reliable where the provider supports it. It worked with DeepSeek through OpenRouter; `json_object` sometimes echoed the schema back |
@@ -168,3 +207,6 @@ entities or source excerpts in its results.
 - **Memory is per agent, team or org, not per end user.** A `user` scope is a natural next step.
 - **Mem0 is experimental:** it is not in the Kubernetes chart or in `hangar setup` yet, and its results have no
   entities or source excerpts.
+- **The AGE engine is new:** it doesn't build communities (groups of related entities) as Graphiti can, and an
+  entity whose name changes a lot between texts may be kept twice; the facts about it still reach the decision on
+  what is replaced.
