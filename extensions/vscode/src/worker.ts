@@ -164,7 +164,12 @@ export class Workstation {
           return;
         }
         if (!calls.length) {
-          await this.client.result(task.id, 'done', text.trim() || '(sem texto final)');
+          const r = await this.client.result(task.id, 'done', text.trim() || '(sem texto final)');
+          if (r.status === 'new') {  // só anunciou o próximo passo: a plataforma devolveu com um lembrete; segue daqui
+            this.save(task.id, s);  // serverSeen fica como está: o lembrete chega como mensagem nova quando ela voltar
+            this.out.appendLine('\n[plataforma] a entrega só anunciava o próximo passo; a tarefa volta com um lembrete');
+            return;
+          }
           fs.rmSync(this.stateFile(task.id), { force: true });
           this.out.appendLine(`=== Tarefa #${task.id} entregue ===`);
           void vscode.window.showInformationMessage(`${this.o.name} entregou a tarefa #${task.id}: ${task.title}`);

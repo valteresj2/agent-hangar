@@ -32,7 +32,10 @@ WAIT_MARK = re.compile(r"^\[\[HANGAR_WAITING:(\d+)\]\]\s*", re.S)
 CONTINUE_MARK = re.compile(r"^\[\[HANGAR_CONTINUE\]\]\s*", re.S)
 # a "resposta final" que só anuncia o próximo passo ("vou trocar o filtro…", "let me check…"): o modelo parou no meio
 ANNOUNCED = re.compile(r"(?:\b(?:vou|irei|vamos|deixa eu|deixe-me|agora vou|em seguida vou|a seguir vou|vou tentar)\b"
-                       r"|\b(?:i will|i'll|let me|next,? i(?:'ll| will))\b)[^.!?\n]{0,160}[.:…!]?\s*$", re.I)
+                       r"|\b(?:i will|i'll|let me|next,? i(?:'ll| will))\b"
+                       # a frase final no presente, em primeira pessoa, anunciando a próxima ação ("Tento a página da Receita.")
+                       r"|(?:^|[.!?:]\s+)(?:tento|testo|abro|leio|busco|baixo|rodo|verifico|confiro|procuro|consulto|reviso)\b)"
+                       r"[^.!?\n]{0,160}[.:…!]?\s*$", re.I)
 MAX_NUDGES = 2
 
 

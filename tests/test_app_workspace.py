@@ -25,6 +25,8 @@ M1 = {("GET", "/api/me/workspace"), ("GET", "/api/decisions"), ("GET", "/api/org
 M2 = {("POST", "/api/decisions/{request_id}"), ("POST", "/api/inbox/mark"), ("GET", "/api/agents/{slug}"),
       ("POST", "/api/agents/{slug}/stop"), ("POST", "/api/agents/{slug}/ship"), ("DELETE", "/api/agents/{slug}"),
       ("POST", "/api/employees/{slug}/status")}
+# M3: acompanhar uma tarefa até o fim na sessão do app (a tarefa, a linha do tempo e o resultado)
+M3 = {("GET", "/api/tasks/{task_id}")}
 PW = "-".join(["Senha", "Boa", "123"])
 
 
@@ -82,10 +84,10 @@ def ws(client, uniq, fake_docker, monkeypatch):
 
 
 # ------------------------------------------------------------------ token do app nas rotas do membro
-def test_only_the_m1_and_m2_routes_are_marked():
+def test_only_the_m1_m2_and_m3_routes_are_marked():
     """A lista é explícita: ampliar exige marcar a rota (e mudar este teste junto com o contrato)."""
     marked = {(m, r.path) for r in deps.api_routes(fastapi_app.router.routes) if deps.app_allowed(r) for m in r.methods}
-    assert marked == M1 | M2
+    assert marked == M1 | M2 | M3
 
 
 def test_m1_routes_accept_the_app_token_with_the_persons_access(client, ws):
@@ -135,7 +137,7 @@ FORBIDDEN = [
     # do membro, mas fora da lista (M1 e M2)
     ("POST", "/api/decisions/batch"), ("GET", "/api/search?q=ab"), ("PUT", "/api/agents/x/spec"),
     ("POST", "/api/agents/x/deploy"), ("POST", "/api/agents/x/chat"), ("POST", "/api/employees/x/tasks"),
-    ("GET", "/api/me/push"), ("GET", "/api/onboarding"), ("GET", "/api/tasks/1"), ("GET", "/api/me"),
+    ("GET", "/api/me/push"), ("GET", "/api/onboarding"), ("GET", "/api/me"),
     # fora de /api
     ("GET", "/scim/v2/Users"), ("GET", "/gw/nao-existe/v1/models"),
 ]
@@ -364,3 +366,31 @@ def test_purge_keeps_only_the_retention_window(ws):
         s.commit()
         assert app_events.purge(s, force=True) >= 1
         assert s.scalar(select(func.count()).select_from(AppEvent).where(AppEvent.user_id == -1)) == 0
+
+
+def test_m3_task_follow_reads_the_task_and_streams_its_updates(client, ws, fast):
+    """O app acompanha a tarefa que a pessoa pediu: lê a tarefa (linha do tempo, plano, resultado; a leitura segue a
+    regra do portal) e recebe task.updated a cada evento novo; o aviso vai só para quem pediu ou gerencia."""
+    from app.models import EmployeeTask, TaskEvent
+    with SessionLocal() as s:
+        t = EmployeeTask(employee_id=ws["employee_id"], title="Relatório da semana", body="faça o relatório",
+                         status="in_progress", requester_user_id=ws["me"][2]["id"])
+        s.add(t)
+        s.commit()
+        tid = t.id
+    cur = _events(client, ws["t"])[1]["id"]
+    r = client.get(f"/api/tasks/{tid}", headers=_bearer(ws["t"]))
+    assert r.status_code == 200 and r.json()["title"] == "Relatório da semana" and "events" in r.json()
+    with SessionLocal() as s:
+        s.add(TaskEvent(task_id=tid, kind="note", payload={"worker": "baixando os dados"}))
+        s.add(TaskEvent(task_id=tid, kind="tool", payload={"tool": "run_command"}))
+        s.commit()
+    evs = _typed(_events(client, ws["t"], cur), "task.updated")
+    assert [e["data"] for e in evs] == [{"id": tid, "status": "in_progress"}]  # duas no lote viram uma
+    assert _typed(_events(client, ws["t_other"], cur), "task.updated") == []
+    with SessionLocal() as s:
+        t = s.get(EmployeeTask, tid)
+        t.status, t.result = "done", "Relatório pronto."
+        s.commit()
+    last = _typed(_events(client, ws["t"], cur), "task.updated")[-1]["data"]
+    assert last == {"id": tid, "status": "done"}

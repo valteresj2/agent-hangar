@@ -219,6 +219,26 @@ def agui_done(db, task_id: int, agent_id: int, env: str, usage: dict | None, ok:
     return {"id": t.id, "status": t.status, "cost_usd": t.cost_usd, "request": waiting}
 
 
+def _nudge(db, t: EmployeeTask, text: str) -> bool:
+    """A "entrega" que só anuncia uma ação ("vou tentar a página da Receita") volta para a fila com o lembrete na
+    conversa, no máximo MAX_NUDGES vezes por tarefa (o mesmo da rodada interna)."""
+    from sqlalchemy import func
+
+    from ..models import TaskEvent
+    nudges = db.scalar(select(func.count()).select_from(TaskEvent).where(TaskEvent.task_id == t.id,
+                                                                        TaskEvent.kind == "nudge")) or 0
+    if nudges >= tasksmod.MAX_NUDGES or not tasksmod.announced_only(text, True):
+        return False
+    cp = tasksmod.last_checkpoint(db, t)
+    tasksmod.checkpoint(db, t, [*(cp.messages if cp else []), {"role": "user", "content": (
+        "Você anunciou o próximo passo mas encerrou sem executá-lo. Continue agora: chame a ferramenta necessária "
+        "ou, se o trabalho já terminou, responda com o resultado final completo.")}])
+    tasksmod.event(db, t, "nudge", {"why": "anunciou o próximo passo sem executar", "said": text[-200:]})
+    t.status = "new"
+    db.commit()
+    return True
+
+
 def _spend(t: EmployeeTask, cost_usd, tokens):
     t.cost_usd = round(t.cost_usd + max(0.0, float(cost_usd or 0)), 6)
     t.tokens += max(0, int(tokens or 0))
@@ -253,6 +273,8 @@ def result(db, token: str, task_id: int, status: str, text: str = "", error: str
         t.status = "new"
         tasksmod.event(db, t, "note", {"continue": "mensagem nova na conversa"})
         db.commit()
+    elif status == "done" and _nudge(db, t, text):  # anunciou o próximo passo e parou: mais uma rodada, como nas internas
+        pass
     else:
         from . import task_flow
         if task_flow.needs_review(t, e):

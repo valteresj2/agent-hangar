@@ -33,13 +33,14 @@ from ..models import (
     LlmConnection,
     LlmModel,
     Organization,
+    TaskEvent,
     TeamMember,
     now,
 )
 from .access import Access
 from .access import of as access_of
 
-KINDS = ("inbox.changed", "decision.created", "decision.decided", "agent.status", "models.changed")
+KINDS = ("inbox.changed", "decision.created", "decision.decided", "agent.status", "models.changed", "task.updated")
 POLL = 2.0  # segundos entre leituras da fila
 KEEPALIVE = 25.0  # comentário ": keepalive" quando nada foi enviado nesse tempo
 LIFETIME = 1800.0  # a conexão fecha depois disso; o cliente volta com Last-Event-ID
@@ -79,6 +80,8 @@ def _rows(session: Session) -> list[dict]:
             add(obj.org_id, "inbox.changed", f"decision:{obj.id}")
         elif isinstance(obj, EmployeeTask):
             add(obj.org_id, "inbox.changed", f"task:{obj.id}")
+        elif isinstance(obj, TaskEvent) and obj.task_id:  # a linha do tempo andou: quem acompanha a tarefa relê
+            add(obj.org_id, "task.updated", f"task:{obj.task_id}")
         elif isinstance(obj, InboxState):
             add(obj.org_id, "inbox.changed", user_id=obj.user_id)
         elif isinstance(obj, Agent):
@@ -94,8 +97,10 @@ def _rows(session: Session) -> list[dict]:
                 add(obj.org_id, "inbox.changed", f"decision:{obj.id}")
             elif _changed(obj, "assigned_user_id", "fallback_user_id"):  # escalado: outras pessoas passam a ver
                 add(obj.org_id, "inbox.changed", f"decision:{obj.id}")
-        elif isinstance(obj, EmployeeTask) and _changed(obj, "status", "due_state"):
-            add(obj.org_id, "inbox.changed", f"task:{obj.id}")
+        elif isinstance(obj, EmployeeTask) and _changed(obj, "status", "due_state", "plan", "plan_state", "result"):
+            if _changed(obj, "status", "due_state"):
+                add(obj.org_id, "inbox.changed", f"task:{obj.id}")
+            add(obj.org_id, "task.updated", f"task:{obj.id}")
         elif isinstance(obj, InboxState) and _changed(obj, "read_at", "archived"):
             add(obj.org_id, "inbox.changed", user_id=obj.user_id)
         elif isinstance(obj, Agent) and _changed(obj, "status"):
@@ -229,6 +234,8 @@ def poll(db: Session, p: auth.Principal, reader: Reader) -> list[str]:
     visible_inbox = [r.id for r in rows if r.kind == "inbox.changed" and (
         r.user_id == uid or (r.ref.startswith("decision:") and _decision(db, acc, r.ref))
         or (r.ref.startswith("task:") and _task_visible(db, uid, r.ref)))]
+    # task.updated: várias no mesmo lote viram uma por tarefa (na última), só das tarefas que a pessoa pode ver
+    last_task = {r.ref: r.id for r in rows if r.kind == "task.updated"}
     for r in rows:
         reader.seen.add(r.id)
         eid = r.id if r.id > reader.cursor else None  # atrasada: sem id, o cursor do cliente não volta
@@ -249,6 +256,9 @@ def poll(db: Session, p: auth.Principal, reader: Reader) -> list[str]:
                        "agent": agent.slug if agent else ""}
         elif r.kind == "agent.status":
             msg = _agent_status(db, uid, r.ref)
+        elif r.kind == "task.updated" and last_task.get(r.ref) == r.id and _task_visible(db, uid, r.ref):
+            t = db.get(EmployeeTask, int(r.ref.split(":", 1)[1]))
+            msg = {"id": t.id, "status": t.status}
         elif r.kind == "models.changed":
             from .app_llm import models_for_app
             try:

@@ -160,3 +160,22 @@ def test_worker_agui_round_uses_the_employee_brain_and_bills_the_task(client, en
     assert g["status"] == "waiting" and g["action_type"] == "publish"
     # a tarefa saiu do worker (espera a decisão): a rodada AG-UI não roda mais
     assert _call(client, token, tid, "agui", body).status_code == 409
+
+
+def test_worker_result_that_only_announces_the_next_step_goes_back_to_the_queue(client, env, rt):
+    """A "entrega" que só anuncia o próximo passo ("Tento a página da Receita.") não fecha a tarefa: volta para a fila
+    com o lembrete na conversa, no máximo MAX_NUDGES vezes (o mesmo das rodadas internas)."""
+    slug = hire(client, env)
+    make_active(client, env, slug, rt)
+    token = client.put(f"/api/employees/{slug}/runtime", headers=env["h"]["own"], json={"runtime": "external"}).json()["token"]
+    tid = assign(client, env, slug, "pesquise as referências")
+    for _ in range(tasksmod.MAX_NUDGES):
+        assert _hb(client, token).json()["task"]["id"] == tid
+        r = _call(client, token, tid, "result", {"status": "done", "result": "Página dinâmica, sem conteúdo. Tento a página da Receita."}).json()
+        assert r["status"] == "new"
+        msgs = _hb(client, token).json()["task"]["messages"]
+        assert "anunciou o próximo passo" in msgs[-1]["content"]
+        _call(client, token, tid, "result", {"status": "waiting"})
+    assert _hb(client, token).json()["task"]["id"] == tid
+    done = _call(client, token, tid, "result", {"status": "done", "result": "Vou parar por aqui."}).json()
+    assert done["status"] == "done"  # passou do limite de lembretes: a entrega vale

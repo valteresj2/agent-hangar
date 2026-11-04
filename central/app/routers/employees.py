@@ -315,7 +315,7 @@ def lesson_del(slug: str, lesson_id: str, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.employee_work.remove_lesson(db, acc(request, db), slug, lesson_id))
 
 
-@router.get("/tasks/{task_id}")
+@router.get("/tasks/{task_id}", dependencies=[member_route(allow_app=True)])
 def task(task_id: int, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.employees.task_detail(db, acc(request, db), task_id))
 

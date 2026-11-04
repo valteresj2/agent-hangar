@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.58.2] — 2026-11-03
+
+### Added
+- **Follow a task to the end from the desktop session that started it** (contract: `docs/app-hangar-workspace.md`, section 6):
+  - `GET /api/tasks/{task_id}` is open to the `app` token, with the person's own access (the portal's reading rule): the task with its timeline, plan, progress, result, cost, open requests and handoffs. The pinned list of app routes now has an M3 set.
+  - `task.updated` in `GET /api/app/events`: `{id, status}` on every new timeline event and every change of status, plan or result (one per task per batch), only to whoever asked for the task, manages the employee or maintains its team.
+
+### Fixed
+- **An external worker's "delivery" that only announced the next step closed the task.** In the second round of the CNPJ test the employee wrote "Tento a página da Receita." and stopped; the task was marked done with nothing done. The worker's result now gets the same reminder as platform rounds (back to the queue with "continue now", at most twice), and the check also catches a closing sentence in the present tense ("Tento…", "Abro…", "Verifico…").
+
 ## [0.58.1] — 2026-11-02
 
 Found by a second hands-on test: a Data Engineer and a Data Scientist Digital employees working as a team in two VS Code workstations on the Receita Federal CNPJ open data (ingestion of ~40 GB, a handoff between them and a monthly routine).
