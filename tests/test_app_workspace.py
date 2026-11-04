@@ -25,8 +25,8 @@ M1 = {("GET", "/api/me/workspace"), ("GET", "/api/decisions"), ("GET", "/api/org
 M2 = {("POST", "/api/decisions/{request_id}"), ("POST", "/api/inbox/mark"), ("GET", "/api/agents/{slug}"),
       ("POST", "/api/agents/{slug}/stop"), ("POST", "/api/agents/{slug}/ship"), ("DELETE", "/api/agents/{slug}"),
       ("POST", "/api/employees/{slug}/status")}
-# M3: acompanhar uma tarefa até o fim na sessão do app (a tarefa, a linha do tempo e o resultado)
-M3 = {("GET", "/api/tasks/{task_id}")}
+# M3: acompanhar uma tarefa até o fim na sessão do app (a tarefa, a linha do tempo, o resultado e os entregáveis)
+M3 = {("GET", "/api/tasks/{task_id}"), ("GET", "/api/files/{file_id}")}
 PW = "-".join(["Senha", "Boa", "123"])
 
 
@@ -394,3 +394,26 @@ def test_m3_task_follow_reads_the_task_and_streams_its_updates(client, ws, fast)
         s.commit()
     last = _typed(_events(client, ws["t"], cur), "task.updated")[-1]["data"]
     assert last == {"id": tid, "status": "done"}
+
+
+def test_m3_app_token_downloads_the_deliverables_of_a_task_the_person_reads(client, ws, uniq):
+    """Os entregáveis da tarefa abrem no app: o arquivo vem com o token do app, com a mesma regra de leitura do portal."""
+    from app.models import EmployeeTask
+    from app.services import task_files
+    with SessionLocal() as s:
+        t = EmployeeTask(employee_id=ws["employee_id"], title="Relatório com anexo", body="faça o relatório",
+                         status="done", requester_user_id=ws["me"][2]["id"])
+        s.add(t)
+        s.commit()
+        fid = task_files.store(s, t, "relatorio.md", b"# Resultado", "output", "Analista").id
+        s.commit()
+        tid = t.id
+    files = client.get(f"/api/tasks/{tid}", headers=_bearer(ws["t"])).json()["files"]
+    assert [f["id"] for f in files] == [fid]
+    r = client.get(f"/api/files/{fid}", headers=_bearer(ws["t"]))
+    assert r.status_code == 200 and r.content == b"# Resultado"
+    assert "attachment" in r.headers["content-disposition"]
+    # o colega do time lê a tarefa no portal, então lê o arquivo; quem é de fora, não
+    assert client.get(f"/api/files/{fid}", headers=_bearer(ws["t_other"])).status_code == 200
+    outsider = _token(client, _user(client, uniq))
+    assert client.get(f"/api/files/{fid}", headers=_bearer(outsider)).status_code == 403

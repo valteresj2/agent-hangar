@@ -166,15 +166,54 @@ def gate(db, token: str, task_id: int, tool: str, args: dict, rationale: str = "
     return out
 
 
-def progress(db, token: str, task_id: int, note: str = "", cost_usd: float = 0, tokens: int = 0) -> dict:
+def progress(db, token: str, task_id: int, note: str = "", cost_usd: float = 0, tokens: int = 0,
+             tool: dict | None = None, job: dict | None = None) -> dict:
+    """Notícia do posto: uma nota, o custo, a ferramenta que acabou de rodar (um passo na linha do tempo) e o progresso
+    de um trabalho longo (um evento `job` por trabalho, atualizado no lugar, com o tempo que falta)."""
     e, a = _employee(db, token)
     t = _task(db, e, task_id)
     _spend(t, cost_usd, tokens)
     if note:
         tasksmod.event(db, t, "note", {"worker": note[:1000]})
+    if tool and str(tool.get("name") or "").strip():
+        tasksmod.event(db, t, "tool", {"tool": str(tool["name"])[:80], "summary": str(tool.get("summary") or "")[:300],
+                                       "ok": bool(tool.get("ok", True)), "ms": max(0, int(tool.get("ms") or 0)),
+                                       "worker": True})
+    if job and str(job.get("id") or "").strip():
+        _job(db, t, job)
     t.started_at = now()  # quem dá notícia não está preso: o prazo da rodada recomeça
     db.commit()
     return {"id": t.id, "status": t.status, "cost_usd": t.cost_usd, "stop": t.cost_usd > e.task_budget_usd}
+
+
+JOB_STATES = ("running", "done", "failed")
+
+
+def _job(db, t: EmployeeTask, job: dict) -> None:
+    """O progresso de um trabalho longo: o evento `job` desse trabalho é atualizado no lugar (a linha do tempo não
+    enche de porcentagens) e quem acompanha a tarefa recebe task.updated a cada atualização."""
+    from ..models import TaskEvent
+
+    def num(v):
+        try:
+            return max(0.0, float(v)) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+    jid = str(job["id"]).strip()[:60]
+    total = num(job.get("total"))
+    eta = num(job.get("eta_s"))
+    payload = {"id": jid, "label": str(job.get("label") or "")[:120], "done": num(job.get("done")) or 0.0,
+               "total": total or None, "unit": str(job.get("unit") or "")[:20],
+               "eta_s": int(eta) if eta is not None else None,
+               "state": job.get("state") if job.get("state") in JOB_STATES else "running", "at": iso(now())}
+    recent = db.scalars(select(TaskEvent).where(TaskEvent.task_id == t.id, TaskEvent.kind == "job")
+                        .order_by(TaskEvent.id.desc()).limit(50))
+    ev = next((x for x in recent if (x.payload or {}).get("id") == jid), None)
+    if ev is None:
+        tasksmod.event(db, t, "job", {**payload, "started": payload["at"]})
+        return
+    ev.payload = {**payload, "started": (ev.payload or {}).get("started") or payload["at"]}
+    t.updated_at = now()
 
 
 def agui_round(db, token: str, task_id: int, body: dict) -> dict:

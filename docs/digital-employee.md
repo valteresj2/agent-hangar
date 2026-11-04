@@ -548,7 +548,7 @@ longer runs that employee's tasks: your worker asks for them.
 |---|---|
 | `POST /hooks/worker/heartbeat` `{worker: {name, version}}` | "I'm alive"; returns the next task, already reserved for the worker: `id, title, body, messages` (the conversation so far, with what people wrote on the task), `decisions` taken on it, `budget_usd`, `time_limit_min`, `run` |
 | `POST /hooks/worker/tasks/{id}/gate` `{tool, args, rationale, kind}` | Before an action that changes something outside: the same authority as platform agents. `allowed` → do it; `waiting` → stop (the task leaves the worker and comes back through the heartbeat once someone decides; ask for the same action again and it comes back allowed, once); `denied` → don't; `simulated` → shadow mode, carry on as if done. `kind: ask_human` (`args.question`) asks the manager; `capability` (`args.need`) asks for a missing tool |
-| `POST /hooks/worker/tasks/{id}/progress` `{note, cost_usd, tokens}` | A note on the timeline and partial cost; resets the round's time limit; `stop: true` when the task budget is gone |
+| `POST /hooks/worker/tasks/{id}/progress` `{note, cost_usd, tokens, tool?, job?}` | A note on the timeline and partial cost; resets the round's time limit; `stop: true` when the task budget is gone. `tool: {name, summary, ok, ms}` adds a step (`tool` event) to the timeline. `job: {id, label, done, total, unit, eta_s, state}` reports a long job (`running`, `done`, `failed`): one `job` event per `id`, updated in place, and each update sends `task.updated` to whoever follows the task |
 | `POST /hooks/worker/tasks/{id}/result` `{status, result, error, cost_usd, tokens, findings, summary}` | `done` (review, if configured, still applies), `failed`, or `waiting`. For a loop, `findings: false` closes quietly and `findings: true` needs a `summary` ([Loops](#loops-only-what-matters-reaches-a-person)) |
 
 - Every call uses `Authorization: Bearer ewk_…`. The token only reaches that employee's tasks.
@@ -598,6 +598,10 @@ to use and for a confirmation. From then on, the employee picks up its tasks in 
 - The platform's own tools (`handoff_task`, `update_plan`, `ask_human`, the browser…) keep working: the platform runs
   them, and the workstation only runs its own.
 - A long command that leaves a process in the background (`Start-Process`, `&`) ends when its shell exits.
+- Each tool the workstation runs is a step on the task's timeline, with its summary, whether it worked and how long it
+  took. A long command that shows its progress (a tqdm bar, pip's download bar, or lines like
+  `PROGRESS 12/40 downloading the files`) reports it at most every 10 seconds, with the time left; the desktop's task
+  card shows it as a bar with the expected end.
 - Closing or reloading VS Code in the middle of a task hands it back to the queue when the window opens again, and the
   workstation goes on from the saved conversation.
 - *Desligar o posto* stops the worker in that window. *Devolver à plataforma* revokes the token and the platform runs

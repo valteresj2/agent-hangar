@@ -254,7 +254,7 @@ def file_library(request: Request, q: str = "", kind: str = "output", project: s
     return guard(lambda: svc.task_files.library(db, acc(request, db), q, kind, project, employee))
 
 
-@router.get("/files/{file_id}")
+@router.get("/files/{file_id}", dependencies=[member_route(allow_app=True)])
 def file_get(file_id: int, request: Request, inline: bool = False, db=Depends(db_dep)):
     f = guard(lambda: svc.task_files.get(db, acc(request, db), file_id))
     show = inline and f.content_type in svc.task_files.INLINE

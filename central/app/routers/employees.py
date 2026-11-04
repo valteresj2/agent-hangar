@@ -449,10 +449,31 @@ class WorkerGateBody(BaseModel):
     kind: str = "tool"  # tool | ask_human (args.question) | capability (args.need)
 
 
+class WorkerToolBody(BaseModel):
+    """Uma ferramenta que o posto acabou de rodar: vira um passo na linha do tempo da tarefa."""
+    name: str
+    summary: str = ""
+    ok: bool = True
+    ms: int = 0
+
+
+class WorkerJobBody(BaseModel):
+    """Um trabalho longo do posto (download, treino, escoragem): o progresso e o tempo que falta."""
+    id: str
+    label: str = ""
+    done: float = 0
+    total: float | None = None
+    unit: str = ""
+    eta_s: int | None = None
+    state: str = "running"  # running | done | failed
+
+
 class ProgressBody(BaseModel):
     note: str = ""
     cost_usd: float = 0
     tokens: int = 0
+    tool: WorkerToolBody | None = None
+    job: WorkerJobBody | None = None
 
 
 class ResultBody(BaseModel):
@@ -490,7 +511,9 @@ def worker_gate(task_id: int, body: WorkerGateBody, request: Request, db=Depends
 
 @hooks.post("/worker/tasks/{task_id}/progress")
 def worker_progress(task_id: int, body: ProgressBody, request: Request, db=Depends(db_dep)):
-    return _worker(request, lambda t: svc.employee_external.progress(db, t, task_id, body.note, body.cost_usd, body.tokens))
+    return _worker(request, lambda t: svc.employee_external.progress(
+        db, t, task_id, body.note, body.cost_usd, body.tokens,
+        tool=body.tool.model_dump() if body.tool else None, job=body.job.model_dump() if body.job else None))
 
 
 @hooks.post("/worker/tasks/{task_id}/result")

@@ -97,6 +97,8 @@ def _rows(session: Session) -> list[dict]:
                 add(obj.org_id, "inbox.changed", f"decision:{obj.id}")
             elif _changed(obj, "assigned_user_id", "fallback_user_id"):  # escalado: outras pessoas passam a ver
                 add(obj.org_id, "inbox.changed", f"decision:{obj.id}")
+        elif isinstance(obj, TaskEvent) and obj.task_id and _changed(obj, "payload"):  # o progresso de um trabalho longo
+            add(obj.org_id, "task.updated", f"task:{obj.task_id}")
         elif isinstance(obj, EmployeeTask) and _changed(obj, "status", "due_state", "plan", "plan_state", "result"):
             if _changed(obj, "status", "due_state"):
                 add(obj.org_id, "inbox.changed", f"task:{obj.id}")

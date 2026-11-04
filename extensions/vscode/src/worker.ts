@@ -7,12 +7,14 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import {
-  AguiMessage, compact, decisionResult, GATED, gateArgs, HangarError, tail, toAguiMessages, WorkerClient, WorkerTask, WORKSTATION_TOOLS,
+  AguiMessage, compact, decisionResult, etaFrom, GATED, gateArgs, HangarError, ProgressReading, readProgress, tail, toAguiMessages, toolOk,
+  WorkerClient, WorkerJob, WorkerTask, WORKSTATION_TOOLS,
 } from './core';
 
 const MAX_ROUNDS = 400;  // por vez que a tarefa vem do heartbeat; depois ela volta à fila e segue (a plataforma confere o orçamento)
 const IGNORE = new Set(['.git', '.venv', 'venv', 'node_modules', '__pycache__', '.ipynb_checkpoints', '.mypy_cache', '.pytest_cache']);
 const WIN = process.platform === 'win32';
+const JOB_EVERY_MS = 10_000;  // o progresso de um comando longo vai à plataforma no máximo a cada 10 s
 
 interface Call { id: string; name: string; input: Record<string, unknown>; raw: string }
 /** serverSeen: quantas mensagens da conversa da plataforma já entraram aqui (as novas — a decisão com o texto de
@@ -33,6 +35,8 @@ export class Workstation {
   private readonly out: vscode.OutputChannel;
   private pty?: { term: vscode.Terminal; write: vscode.EventEmitter<string> };
   private readonly client: WorkerClient;
+  /** A tarefa em andamento (o progresso dos comandos longos vai para ela). */
+  private taskId?: number;
 
   constructor(private readonly o: WorkstationOptions) {
     this.out = vscode.window.createOutputChannel(`Agent Hangar — ${o.name}`);
@@ -110,7 +114,8 @@ export class Workstation {
       { description: 'Posto de trabalho', value: `Você está trabalhando no VS Code da pessoa (${os.platform()} ${os.release()}), na pasta ${this.o.root}. `
         + `Terminal: ${shell}. Caminhos relativos partem dessa pasta. Use as ferramentas do posto (workspace_list_files, workspace_read_file, search_files, `
         + 'write_file, edit_file, run_command, publish_github) para fazer o trabalho de verdade e conferir cada resultado antes de seguir. '
-        + 'Comandos longos: rode e espere (timeout_s). As ferramentas da plataforma (handoff_task, update_plan, ask_human…) '
+        + 'Comandos longos: rode e espere (timeout_s), e mostre o progresso (barra do tqdm ou linhas "PROGRESS feito/total rótulo", '
+        + 'ex.: "PROGRESS 12/40 baixando os arquivos"): quem acompanha a tarefa vê a barra e o tempo que falta. As ferramentas da plataforma (handoff_task, update_plan, ask_human…) '
         + 'continuam valendo e são executadas por ela. Nunca leia nem exponha segredos (.env, chaves).' },
       { description: 'Tarefa', value: `#${task.id} ${task.title} — ${task.url}` },
     ];
@@ -124,6 +129,7 @@ export class Workstation {
     s.serverSeen = task.messages.length;
     this.out.show(true);
     this.out.appendLine(`\n=== Tarefa #${task.id}: ${task.title} (vez ${task.run}) ===`);
+    this.taskId = task.id;
     // quem dá notícia não está preso: o prazo da rodada recomeça mesmo durante um comando longo, e o posto continua
     // "online" na tela do funcionário (heartbeat sem pedir outra tarefa)
     const keepalive = setInterval(() => {
@@ -176,7 +182,6 @@ export class Workstation {
           return;
         }
         if ((await this.runCalls(task, s)) === 'waiting') return;
-        await this.client.progress(task.id, calls.map(c => `${c.name} ${summary(c)}`).join(' · ').slice(0, 900)).catch(() => undefined);
       }
       if (!this.stopped) await this.client.result(task.id, 'waiting');  // volta para a fila e segue na próxima vez
     } catch (e) {
@@ -192,6 +197,7 @@ export class Workstation {
       }
     } finally {
       clearInterval(keepalive);
+      this.taskId = undefined;
     }
   }
 
@@ -200,6 +206,7 @@ export class Workstation {
     for (const call of s.pending) {
       if (s.messages.some(m => m.role === 'tool' && m.toolCallId === call.id)) continue;
       let content: string;
+      const t0 = Date.now();
       const decided = s.waiting?.callId === call.id ? task.decisions.find(d => d.id === s.waiting?.request) : undefined;
       const refused = decisionResult(decided, arrived);  // recusa ou instrução: o texto de quem decidiu
       if (refused !== undefined) {
@@ -220,6 +227,9 @@ export class Workstation {
         content = await this.exec(call);
       }
       s.waiting = undefined;
+      // cada ferramenta é um passo na linha do tempo da tarefa (quem acompanha vê o que o posto fez e se deu certo)
+      void this.client.progress(task.id, '', { tool: { name: call.name, summary: summary(call), ok: toolOk(content), ms: Date.now() - t0 } })
+        .catch(() => undefined);
       s.messages.push({ id: `t-${call.id}`, role: 'tool', toolCallId: call.id, content });
       this.save(task.id, s);
     }
@@ -339,11 +349,29 @@ export class Workstation {
     return new Promise(resolve => {
       const t0 = Date.now();
       let output = '';
+      // o progresso que o comando mostra (tqdm, pip, "PROGRESS 12/40") vai à plataforma: a barra e o tempo que falta
+      const taskId = this.taskId;
+      let reading: ProgressReading | undefined;
+      let sentAt = 0;
+      const report = (state: WorkerJob['state']) => {
+        if (!reading || taskId === undefined) return;
+        sentAt = Date.now();
+        const done = state === 'done' && reading.total ? reading.total : reading.done;
+        const eta = state === 'running' ? reading.etaS ?? etaFrom(reading.done, reading.total, Date.now() - t0) : 0;
+        const job: WorkerJob = { id: `cmd-${t0}`, label: reading.label || command.split('\n')[0].slice(0, 100), done,
+          total: reading.total, unit: reading.unit, eta_s: eta, state };
+        void this.client.progress(taskId, '', { job }).catch(() => undefined);
+      };
       const child = cp.spawn(exe, args, { cwd, env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' }, windowsHide: true });
       const onData = (b: Buffer) => {
         const s = b.toString('utf8');
         output = (output + s).slice(-200_000);
         write.fire(s.replace(/\r?\n/g, '\r\n'));
+        const p = readProgress(s);
+        if (p) {
+          reading = p;
+          if (Date.now() - sentAt >= JOB_EVERY_MS) report('running');
+        }
       };
       child.stdout.on('data', onData);
       child.stderr.on('data', onData);
@@ -362,6 +390,7 @@ export class Workstation {
         clearTimeout(timer);
         this.abort.signal.removeEventListener('abort', abort);
         const secs = Math.round((Date.now() - t0) / 1000);
+        report(code === 0 && !killed ? 'done' : 'failed');
         write.fire(`\x1b[90m[saída ${code}${killed ? ', interrompido' : ''} em ${secs}s]\x1b[0m\r\n`);
         resolve(`código de saída: ${code}${killed ? ` (interrompido: passou de ${timeoutS}s)` : ''} · ${secs}s\n${tail(output)}`);
       };

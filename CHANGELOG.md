@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.58.3] — 2026-11-04
+
+### Added
+- **Open a task's deliverables from the desktop session that follows it** (contract: `docs/app-hangar-workspace.md`, section 6): `GET /api/files/{file_id}` is open to the `app` token, with the reading rule of the file's task (whoever can read the task on the portal can read its files). The desktop's task card lists the task's `files` and downloads one with a click. The M3 set of app routes now has two routes.
+- **The VS Code workstation reports each tool and the progress of long jobs.**
+  - `POST /hooks/worker/tasks/{id}/progress` takes `tool: {name, summary, ok, ms}`, a step on the task's timeline (`tool` event), and `job: {id, label, done, total, unit, eta_s, state}`, a long job kept as one `job` event per `id` and updated in place. Updating it also sends `task.updated`, so the desktop's task card shows a live bar with the expected end.
+  - The extension sends one `tool` event per call instead of a note per round. It reads the progress that a command prints (a tqdm bar, pip's download bar, or `PROGRESS 12/40 label` lines) and reports it at most every 10 seconds, with the time left. The employee is told to show progress that way in long commands.
+
 ## [0.58.2] — 2026-11-03
 
 ### Added

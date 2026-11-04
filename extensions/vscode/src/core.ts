@@ -339,6 +339,69 @@ export function tail(text: string, max = 12_000): string {
   return text.length <= max ? text : `…[${text.length - max} caracteres antes]…\n${text.slice(-max)}`;
 }
 
+/** Uma ferramenta que o posto acabou de rodar (vira um passo na linha do tempo da tarefa). */
+export interface WorkerTool { name: string; summary: string; ok: boolean; ms: number }
+/** O progresso de um trabalho longo do posto (download, treino, escoragem). */
+export interface WorkerJob {
+  id: string; label: string; done: number; total?: number; unit: string; eta_s?: number; state: 'running' | 'done' | 'failed';
+}
+/** O que uma linha de progresso diz: feito, total, unidade, rótulo e, quando ela diz, o tempo que falta. */
+export interface ProgressReading { done: number; total?: number; unit: string; label: string; etaS?: number }
+
+/** "01:23" ou "1:02:03" → segundos. */
+function clock(s: string): number | undefined {
+  const parts = s.split(':').map(Number);
+  if (parts.some(n => !Number.isFinite(n))) return undefined;
+  return parts.reduce((acc, n) => acc * 60 + n, 0);
+}
+
+/** "12.5k" → 12500. */
+function amount(s: string): number {
+  const m = /^([\d.]+)([kMG]?)$/.exec(s.trim());
+  return m ? Number(m[1]) * ({ '': 1, k: 1e3, M: 1e6, G: 1e9 }[m[2] as '' | 'k' | 'M' | 'G']) : Number.NaN;
+}
+
+/**
+ * O progresso na saída de um comando, da última linha que diz algum: `PROGRESS 12/40 rótulo` (ou `PROGRESS 45%`), a
+ * barra do tqdm (`rótulo: 45%|███ | 9/20 [00:10<00:12, …]`) e a do pip (`5.2/10.0 MB … eta 0:00:02`).
+ */
+export function readProgress(chunk: string): ProgressReading | undefined {
+  const lines = chunk.split(/[\r\n]+/).filter(l => l.trim());
+  for (let i = lines.length - 1; i >= 0; i--) {
+    // eslint-disable-next-line no-control-regex
+    const line = lines[i].replace(/\x1b\[[0-9;]*m/g, '');
+    let m = /^\s*PROGRESS[:\s]+(\d+(?:\.\d+)?)\s*(?:\/\s*(\d+(?:\.\d+)?)|(%))\s*(.*)$/i.exec(line);
+    if (m) {
+      return m[3] ? { done: Number(m[1]), total: 100, unit: '%', label: m[4].trim() }
+        : { done: Number(m[1]), total: Number(m[2]), unit: '', label: m[4].trim() };
+    }
+    m = /^(.*?)\s*\d{1,3}%\|[^|]*\|\s*([\d.]+[kMG]?)\/([\d.]+[kMG]?)\s*\[[\d:]+<([\d:]+|\?)(?:,\s*[\d.?]+\s*([^/\s,\]]+)\/s)?/.exec(line);
+    if (m) {
+      const done = amount(m[2]);
+      const total = amount(m[3]);
+      if (Number.isFinite(done) && Number.isFinite(total)) {
+        return { done, total, unit: m[5] && m[5] !== 'it' ? m[5] : '', label: m[1].replace(/:\s*$/, '').trim(),
+          etaS: m[4] === '?' ? undefined : clock(m[4]) };
+      }
+    }
+    m = /([\d.]+)\/([\d.]+)\s*(kB|MB|GB)\b.*?\beta\s+(\d+:\d{2}(?::\d{2})?)/i.exec(line);
+    if (m) return { done: Number(m[1]), total: Number(m[2]), unit: m[3], label: '', etaS: clock(m[4]) };
+  }
+  return undefined;
+}
+
+/** O tempo que falta pelo ritmo até aqui (sem total ou sem andamento ainda: não dá para saber). */
+export function etaFrom(done: number, total: number | undefined, elapsedMs: number): number | undefined {
+  if (total !== undefined && done >= total) return 0;
+  if (!total || done <= 0 || elapsedMs <= 0) return undefined;
+  return Math.round(((total - done) * elapsedMs) / done / 1000);
+}
+
+/** A ferramenta deu certo? (pelo texto que ela devolveu ao agente: erro, recusa, saída diferente de zero) */
+export function toolOk(content: string): boolean {
+  return !/^(erro|NEGADO|DECISÃO #\d+: (?:INSTRUÇÃO|RECUSADO))/.test(content) && !/^código de saída: (?!0\b)/.test(content);
+}
+
 /** Cliente do worker: o token do funcionário (ewk_…) só fala com as tarefas dele. */
 export class WorkerClient {
   constructor(readonly base: string, private readonly token: string, private readonly fetchImpl: FetchLike = fetch) {}
@@ -364,8 +427,9 @@ export class WorkerClient {
     return (await this.req(`/hooks/worker/tasks/${taskId}/gate`, { tool, args, rationale })).json() as Promise<GateResult>;
   }
 
-  async progress(taskId: number, note = ''): Promise<{ status: string; cost_usd: number; stop: boolean }> {
-    return (await this.req(`/hooks/worker/tasks/${taskId}/progress`, { note })).json() as Promise<{ status: string; cost_usd: number; stop: boolean }>;
+  /** Notícia da tarefa: uma nota, a ferramenta que acabou de rodar ou o progresso de um trabalho longo. */
+  async progress(taskId: number, note = '', extra: { tool?: WorkerTool; job?: WorkerJob } = {}): Promise<{ status: string; cost_usd: number; stop: boolean }> {
+    return (await this.req(`/hooks/worker/tasks/${taskId}/progress`, { note, ...extra })).json() as Promise<{ status: string; cost_usd: number; stop: boolean }>;
   }
 
   async result(taskId: number, status: 'done' | 'failed' | 'waiting', result = '', error = ''): Promise<{ status: string }> {

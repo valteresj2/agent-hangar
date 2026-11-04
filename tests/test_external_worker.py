@@ -179,3 +179,40 @@ def test_worker_result_that_only_announces_the_next_step_goes_back_to_the_queue(
     assert _hb(client, token).json()["task"]["id"] == tid
     done = _call(client, token, tid, "result", {"status": "done", "result": "Vou parar por aqui."}).json()
     assert done["status"] == "done"  # passou do limite de lembretes: a entrega vale
+
+
+def test_worker_reports_each_tool_and_the_progress_of_a_long_job(client, env, rt):
+    """O posto conta cada ferramenta (um passo na linha do tempo) e o progresso de um trabalho longo: um evento `job`
+    por trabalho, atualizado no lugar, e cada atualização avisa quem acompanha a tarefa (task.updated)."""
+    from sqlalchemy import func, select
+
+    from app.db import SessionLocal
+    from app.models import AppEvent
+    slug = hire(client, env)
+    make_active(client, env, slug, rt)
+    token = client.put(f"/api/employees/{slug}/runtime", headers=env["h"]["own"], json={"runtime": "external"}).json()["token"]
+    tid = assign(client, env, slug, "baixe os dados e treine o modelo")
+    assert _hb(client, token).json()["task"]["id"] == tid
+    tool = {"name": "run_command", "summary": "python baixar.py", "ok": True, "ms": 4200}
+    assert _call(client, token, tid, "progress", {"tool": tool}).status_code == 200
+    job = {"id": "cmd-1", "label": "baixando os arquivos", "done": 3, "total": 10, "unit": "arquivos", "eta_s": 120}
+    assert _call(client, token, tid, "progress", {"job": job}).status_code == 200
+
+    def updates():
+        with SessionLocal() as s:
+            return s.scalar(select(func.count()).select_from(AppEvent).where(
+                AppEvent.kind == "task.updated", AppEvent.ref == f"task:{tid}"))
+    before = updates()
+    _call(client, token, tid, "progress", {"job": {**job, "done": 7, "eta_s": 40}})
+    assert updates() == before + 1
+    _call(client, token, tid, "progress", {"job": {**job, "done": 10, "eta_s": 0, "state": "done"}})
+    events = task(client, env, tid)["events"]
+    tools = [e["payload"] for e in events if e["kind"] == "tool"]
+    assert tools == [{"tool": "run_command", "summary": "python baixar.py", "ok": True, "ms": 4200, "worker": True}]
+    jobs = [e["payload"] for e in events if e["kind"] == "job"]
+    assert len(jobs) == 1 and jobs[0]["done"] == 10 and jobs[0]["total"] == 10 and jobs[0]["state"] == "done"
+    assert jobs[0]["label"] == "baixando os arquivos" and jobs[0]["started"] <= jobs[0]["at"]
+    # um trabalho com nome novo é outro evento; um estado desconhecido vira running
+    _call(client, token, tid, "progress", {"job": {"id": "cmd-2", "done": 1, "state": "???"}})
+    jobs = [e["payload"] for e in task(client, env, tid)["events"] if e["kind"] == "job"]
+    assert [j["id"] for j in jobs] == ["cmd-1", "cmd-2"] and jobs[1]["state"] == "running" and jobs[1]["total"] is None

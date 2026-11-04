@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 
 import {
-  compact, decisionResult, gateArgs, HangarClient, parseAgui, parseSSE, pkce, ROLE, toAguiMessages, toOpenAIMessages, toOpenAITools, WorkerClient,
+  compact, decisionResult, etaFrom, gateArgs, HangarClient, parseAgui, parseSSE, pkce, readProgress, ROLE, toAguiMessages, toolOk, toOpenAIMessages,
+  toOpenAITools, WorkerClient,
 } from '../src/core';
 
 // partes no formato das classes do VS Code (LanguageModelTextPart, ToolCallPart, ToolResultPart)
@@ -148,4 +149,47 @@ test('decisão que não libera: o texto de quem decidiu volta como resultado da 
   assert.match(decisionResult({ id: 9, decision: 'reject' }, [])!, /^DECISÃO #9: RECUSADO/);
   assert.equal(decisionResult({ id: 575, decision: 'approve' }, arrived), undefined);
   assert.equal(decisionResult(undefined, arrived), undefined);
+});
+
+test('progresso de um comando longo: PROGRESS, tqdm e pip, com o tempo que falta', () => {
+  assert.deepEqual(readProgress('baixando\nPROGRESS 12/40 baixando os arquivos\n'),
+    { done: 12, total: 40, unit: '', label: 'baixando os arquivos' });
+  assert.deepEqual(readProgress('PROGRESS: 45% escorando'), { done: 45, total: 100, unit: '%', label: 'escorando' });
+  // tqdm reescreve a linha com \r: vale a última
+  const tq = 'Escorando:  10%|█         | 2/20 [00:01<00:09, 2.00file/s]\rEscorando:  45%|████▌     | 9/20 [00:10<00:12, 1.10file/s]';
+  assert.deepEqual(readProgress(tq), { done: 9, total: 20, unit: 'file', label: 'Escorando', etaS: 12 });
+  assert.deepEqual(readProgress(' 50%|█████     | 5.0k/10.0k [01:00<1:02:03, 83.3it/s]'),
+    { done: 5000, total: 10000, unit: '', label: '', etaS: 3723 });
+  assert.equal(readProgress('  3%|▎ | 1/30 [00:00<?, ?it/s]')?.etaS, undefined);
+  assert.deepEqual(readProgress('   \x1b[32m5.2/10.0 MB\x1b[0m 3.1 MB/s eta 0:00:02'),
+    { done: 5.2, total: 10, unit: 'MB', label: '', etaS: 2 });
+  assert.equal(readProgress('Collecting pandas\nInstalled 3 packages in 50%  of the time'), undefined);
+  assert.equal(etaFrom(10, 40, 20_000), 60);
+  assert.equal(etaFrom(40, 40, 20_000), 0);
+  assert.equal(etaFrom(0, 40, 20_000), undefined);
+  assert.equal(etaFrom(5, undefined, 20_000), undefined);
+});
+
+test('a ferramenta deu certo? pelo texto que ela devolveu ao agente', () => {
+  assert.equal(toolOk('código de saída: 0 · 3s\nok'), true);
+  assert.equal(toolOk('código de saída: 1 · 3s\nTraceback'), false);
+  assert.equal(toolOk('código de saída: null (interrompido: passou de 900s) · 900s'), false);
+  assert.equal(toolOk('código de saída: 10 · 1s'), false);
+  assert.equal(toolOk('erro: fora da pasta de trabalho: ../x'), false);
+  assert.equal(toolOk('NEGADO pela alçada: …'), false);
+  assert.equal(toolOk('DECISÃO #9: RECUSADO. Não execute'), false);
+  assert.equal(toolOk('ok: relatorio.md (120 caracteres)'), true);
+});
+
+test('WorkerClient: a ferramenta e o trabalho longo vão no progress', async () => {
+  const bodies: unknown[] = [];
+  const fake = (async (_url: string, init: RequestInit) => {
+    bodies.push(JSON.parse(String(init.body)));
+    return new Response(JSON.stringify({ status: 'in_progress', cost_usd: 0, stop: false }), { status: 200 });
+  }) as typeof fetch;
+  const c = new WorkerClient('http://h', 'ewk_x', fake);
+  await c.progress(3, '', { tool: { name: 'run_command', summary: 'python a.py', ok: true, ms: 10 } });
+  await c.progress(3, '', { job: { id: 'cmd-1', label: 'a', done: 1, total: 2, unit: '', eta_s: 5, state: 'running' } });
+  assert.deepEqual(bodies[0], { note: '', tool: { name: 'run_command', summary: 'python a.py', ok: true, ms: 10 } });
+  assert.equal((bodies[1] as { job: { eta_s: number } }).job.eta_s, 5);
 });
