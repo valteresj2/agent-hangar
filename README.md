@@ -14,7 +14,7 @@ them, and combine them into new agents.
 [![Release](https://img.shields.io/github/v/release/valteresj2/agent-hangar)](https://github.com/valteresj2/agent-hangar/releases)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
-[Interactive demo](https://valteresj2.github.io/agent-hangar/demo/) · [Desktop app](#the-hangar-desktop-app) · [Example](#from-a-request-in-claude-to-a-working-agent) · [Install](#installation) · [Features](#features) ·
+[Interactive demo](https://valteresj2.github.io/agent-hangar/demo/) · [Desktop app](#the-hangar-desktop-app) · [Computer use](#computer-use-the-governed-desktop) · [Example](#from-a-request-in-claude-to-a-working-agent) · [Install](#installation) · [Features](#features) ·
 [How it works](#how-it-works) · [Website](https://valteresj2.github.io/agent-hangar/) · [Docs](https://valteresj2.github.io/agent-hangar/docs/) · [Roadmap](ROADMAP.md) · [Português](README.pt-BR.md)
 
 </div>
@@ -36,6 +36,12 @@ https://github.com/user-attachments/assets/62836990-f66c-4c94-950b-4632cf9fc160
 https://github.com/user-attachments/assets/7643a837-c450-41e7-98a4-665d93907db8
 
 <sub>1 min 39 s, with captions: what the Hangar desktop app adds, how to install and connect it, the member's workspace, a session on a company token model and the admin's view. Recorded on a development instance; people and companies are fictional. [MP4 version](docs/assets/hangar-desktop.mp4) · [Read more](#the-hangar-desktop-app)</sub>
+
+### Computer use: a Digital employee on a desktop app
+
+https://github.com/user-attachments/assets/da1fa71f-c228-43f4-a8c3-bc185e8823b8
+
+<sub>1 min 21 s, with captions: a Digital employee logs into a legacy ERP with no API, by looking at the screen, posts a payment and waits for the manager's approval before confirming. Recorded on a real install with a real model (DeepSeek through OpenRouter); the ERP is a sample app. [MP4 version](docs/assets/computer-use.mp4) · [Read more](#computer-use-the-governed-desktop)</sub>
 
 <details><summary><b>Step-by-step tutorial: from zero to an agent at work, in 9 steps</b> (8 min 34 s, with captions)</summary>
 
@@ -332,6 +338,40 @@ alt="The hangar's consent screen when a person connects the Hangar desktop app">
 
 Full guide: [docs/desktop-app.md](docs/desktop-app.md). A reverse proxy in front of the hangar needs buffering off on
 `/api/app/events`.
+
+## Computer use: the governed desktop
+
+Some of the work still lives in desktop applications with no API and no web page: a legacy ERP, a spreadsheet, an
+installed system. A Digital employee can operate them the way a person does, **by looking at the screen**, in an
+isolated Linux desktop, and every click that changes something waits for a person.
+
+<p align="center"><img src="docs/assets/computer-use/live-confirm.png" width="49%" alt="The Digital employee clicked
+Confirmar baixa in a legacy ERP and the system asks for confirmation; the click had a manager's approval">
+<img src="docs/assets/computer-use/live-done.png" width="49%" alt="The ERP's status bar shows the payment was
+recorded: fatura 102, pago R$ 12000,00 em 05/10/2026"></p>
+
+- **It sees the window.** Each action returns the window's screenshot and its accessible elements, numbered. An app
+  with no accessibility (a Tk or painted screen) is operated by position on the screenshot, so the model needs vision.
+- **Confirming waits for a person.** Clicks and shortcuts that save, post, send or pay go through the employee's
+  authority, with the screenshot in the request. The click happens where the person approved, and repeating a
+  confirmation with the same fields isn't sent to anyone.
+- **Passwords stay in the vault.** `secret://name` types the vault's value; the model and the timeline never see it.
+- **Only the allowed apps,** per employee, on a desktop with no internet access. The central talks to a small gateway;
+  the desktop's token never leaves its container.
+- **Everything on the task's timeline,** with the screenshots kept as evidence.
+
+**Turn it on:** `docker compose --profile desktop up -d desktop` (built on [Cua](https://github.com/trycua/cua), MIT),
+then list the apps in the employee's *Configurações*. Two sample apps come with it, Gnumeric and a Tk "legacy ERP";
+add your own in `mcp-servers/desktop/Dockerfile`.
+
+**Tested with a real model:** 8 of 8 cases with DeepSeek through OpenRouter, including:
+- a login with a vault password;
+- a date typed in another format, and a nonexistent invoice;
+- a confirmation dialog, and a menu with a second window and scrolling;
+- a spreadsheet saved with "Save as", and reading a CSV;
+- two payments in one task without duplicates.
+
+Full guide: [docs/analyst.md](docs/analyst.md#governed-desktop).
 
 ## Features
 

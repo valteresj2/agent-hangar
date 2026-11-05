@@ -9,7 +9,7 @@ reúne todos num só lugar, roda cada um no seu container e deixa que sejam usad
 **OpenAI-compatible, MCP, A2A e ACP**, e dentro do seu próprio app via **AG-UI**. Todos podem encontrar os agentes,
 conversar com eles e combiná-los em agentes novos.
 
-[Site](https://valteresj2.github.io/agent-hangar/) · [Demo interativa (inglês)](https://valteresj2.github.io/agent-hangar/demo/) · [App desktop](#o-app-hangar-desktop) · [English](README.md) · [Documentação (inglês)](https://valteresj2.github.io/agent-hangar/docs/) · [Roadmap](ROADMAP.md)
+[Site](https://valteresj2.github.io/agent-hangar/) · [Demo interativa (inglês)](https://valteresj2.github.io/agent-hangar/demo/) · [App desktop](#o-app-hangar-desktop) · [Computer use](#computer-use-o-desktop-governado) · [English](README.md) · [Documentação (inglês)](https://valteresj2.github.io/agent-hangar/docs/) · [Roadmap](ROADMAP.md)
 
 </div>
 
@@ -29,6 +29,12 @@ https://github.com/user-attachments/assets/62836990-f66c-4c94-950b-4632cf9fc160
 https://github.com/user-attachments/assets/7643a837-c450-41e7-98a4-665d93907db8
 
 <sub>1 min 39 s, em inglês e com legendas: o que o app Hangar desktop traz, como instalar e conectar, o espaço do membro, uma sessão num modelo de token da empresa e a visão do admin. Gravado numa instância de desenvolvimento; pessoas e empresas são fictícias. [Versão MP4](docs/assets/hangar-desktop.mp4) · [Saiba mais](#o-app-hangar-desktop)</sub>
+
+### Computer use: um Digital employee num app de desktop
+
+https://github.com/user-attachments/assets/da1fa71f-c228-43f4-a8c3-bc185e8823b8
+
+<sub>1 min 21 s, em inglês e com legendas: um Digital employee entra num ERP legado sem API olhando a tela, lança uma baixa e espera a aprovação do gestor antes de confirmar. Gravado numa instalação de verdade com um modelo de verdade (DeepSeek pelo OpenRouter); o ERP é um app de exemplo. [Versão MP4](docs/assets/computer-use.mp4) · [Saiba mais](#computer-use-o-desktop-governado)</sub>
 
 <details><summary><b>Tutorial passo a passo: do zero a um agente trabalhando, em 9 passos</b> (8 min 41 s, com legendas)</summary>
 
@@ -270,6 +276,40 @@ compartilhado no banco. Para criar tudo (cluster, Postgres gerenciado, identidad
 Para instalar sem perguntas, use `./scripts/install.sh --answers setup.yaml`, com o
 [`setup.example.yaml`](setup.example.yaml) como modelo. Para mudar alguma escolha ou atualizar, faça `git pull` e rode
 `hangar setup` de novo: as respostas anteriores viram o padrão e os segredos são mantidos.
+
+## Computer use: o desktop governado
+
+Parte do trabalho ainda vive em aplicativos de desktop sem API e sem página web: um ERP legado, uma planilha, um
+sistema instalado. Um Digital employee pode operá-los como uma pessoa faz, **olhando a tela**, num desktop Linux
+isolado, e todo clique que muda algo espera uma pessoa.
+
+<p align="center"><img src="docs/assets/computer-use/live-confirm.png" width="49%" alt="O Digital employee clicou em
+Confirmar baixa num ERP legado e o sistema pede confirmação; o clique teve a aprovação do gestor">
+<img src="docs/assets/computer-use/live-done.png" width="49%" alt="A barra de status do ERP mostra a baixa
+registrada: fatura 102, pago R$ 12000,00 em 05/10/2026"></p>
+
+- **Ele vê a janela.** Cada ação devolve a captura da janela e os elementos acessíveis, numerados. Um app sem
+  acessibilidade (Tk ou tela desenhada) é operado pela posição na captura, então o modelo precisa de visão.
+- **Confirmar espera uma pessoa.** Cliques e atalhos que salvam, lançam, enviam ou pagam passam pela alçada do
+  funcionário, com a captura no pedido. O clique acontece onde a pessoa aprovou, e repetir uma confirmação com os
+  mesmos campos não vira pedido.
+- **Senhas ficam no cofre.** `secret://nome` digita o valor do cofre; nem o modelo nem a linha do tempo veem.
+- **Só os apps liberados,** por funcionário, num desktop sem acesso à internet. A central fala com um gateway pequeno;
+  o token do desktop não sai do container dele.
+- **Tudo na linha do tempo da tarefa,** com as capturas guardadas como evidência.
+
+**Para ligar:** `docker compose --profile desktop up -d desktop` (feito sobre o [Cua](https://github.com/trycua/cua),
+MIT) e liste os apps nas *Configurações* do funcionário. Vêm dois apps de exemplo, o Gnumeric e um "ERP legado" em Tk;
+adicione os seus em `mcp-servers/desktop/Dockerfile`.
+
+**Testado com um modelo de verdade:** 8 de 8 casos com o DeepSeek pelo OpenRouter, entre eles:
+- login com a senha do cofre;
+- data digitada em outro formato e fatura inexistente;
+- diálogo de confirmação, e menu com segunda janela e rolagem;
+- planilha salva pelo "Salvar como" e leitura de um CSV;
+- duas baixas na mesma tarefa, sem duplicar.
+
+Guia completo (em inglês): [docs/analyst.md](docs/analyst.md#governed-desktop).
 
 ## O que faz
 
