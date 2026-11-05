@@ -5,6 +5,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.58.4] — 2026-11-04
+
+### Fixed
+- **Each platform tool showed twice on a task's timeline.** Found by a real end-to-end test of computer use (the governed desktop, with `openrouter-deepseek`): a step was recorded when it ran and again in the runtime's trace at the end of the round, so a task looked as if it had opened the app and logged in twice, and any count of the steps doubled. Platform tools are now recorded once, when they run, with their arguments; the trace adds only the agent's own tools (HTTP, MCP).
+- **A test of model deprecation dates failed when the suite crossed midnight UTC:** its dates were taken when the module was imported, not when each test ran.
+
+### Tested
+- **Computer use, end to end, with a real model.** The 8 desktop cases of `tests/e2e/pilot_llm.py` (a Tk "legacy ERP" operated by vision only, and Gnumeric) passed 8 of 8 on an install with this code: login with a vault password that never shows on the timeline, a date typed in another format, a nonexistent invoice (nothing written), a confirmation dialog that goes through the authority, a menu with a second window and scrolling, a spreadsheet with a formula saved through "Save as", opening a CSV and reading it, and two payments in one task without duplicates.
+
 ## [0.58.3] — 2026-11-04
 
 ### Added

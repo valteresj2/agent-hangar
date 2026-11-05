@@ -234,3 +234,30 @@ def test_save_dialog_retries_and_dialog_shortcuts_dont_ask_again(client, env, rt
     # na tela do sistema (não é diálogo), confirmar de novo sem digitar nada não é coberto
     fake.window = "ERP Legado 7.2"
     assert desktop._retry_of.__doc__ and _gate(slug, tid, "desktop_click", {"label": "Confirmar baixa", "x": 1, "y": 1})["status"] == "waiting"
+
+
+def test_platform_tools_show_once_on_the_timeline_with_their_arguments(client, env, rt, monkeypatch):
+    """Achado do teste real de computer use: cada ferramenta da plataforma aparecia duas vezes na linha do tempo (quando
+    rodava e de novo no rastro do fim da rodada), e a tarefa parecia ter feito tudo duas vezes."""
+    fake = FakeDesktop()
+    monkeypatch.setattr(desktop, "HTTP", lambda timeout=120: fake)
+    monkeypatch.setattr(desktop, "_UP", (0.0, False))
+    slug = hire(client, env)
+    make_active(client, env, slug, rt)
+    client.put(f"/api/employees/{slug}/desktop-apps", headers=env["h"]["own"], json={"apps": ["ERP Legado"]})
+    orig = rt.post
+
+    def post(url, headers=None, json=None, timeout=None):
+        r = orig(url, headers, json, timeout)
+        body = r.json()
+        body["x_trace"] = [{"tool": "desktop_type", "args": {"label": "Usuário", "text": "ana"}, "result": "ok"},
+                           {"tool": "send_email", "args": {"to": "a@b.com"}, "result": "enviado"}]
+        return httpx.Response(200, json=body, request=r.request)
+    monkeypatch.setattr(rt, "post", post)
+    tid = assign(client, env, slug, "entre no ERP")
+    assert _gate(slug, tid, "desktop_type", {"label": "Usuário", "text": "ana", "x": 410, "y": 131})["status"] == "allowed"
+    work()
+    tools = [e["payload"] for e in task(client, env, tid)["events"] if e["kind"] == "tool"]
+    typed = [t for t in tools if t["tool"] == "desktop_type"]
+    assert len(typed) == 1 and typed[0]["platform"] is True and typed[0]["args"]["label"] == "Usuário"
+    assert [t["tool"] for t in tools].count("send_email") == 1  # a ferramenta do próprio agente vem do rastro

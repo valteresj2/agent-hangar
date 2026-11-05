@@ -31,6 +31,16 @@ CATALOG = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _dates():
+    """As datas são as do momento do teste, não as da importação: a suíte pode cruzar a meia-noite (UTC)."""
+    global TODAY, SOON, LATER
+    TODAY = now().date()
+    SOON, LATER = TODAY + timedelta(days=20), TODAY + timedelta(days=400)
+    CATALOG["gpt-4o-2024-05-13"]["deprecation_date"] = SOON.isoformat()
+    CATALOG["gpt-4o-2024-11-20"]["deprecation_date"] = LATER.isoformat()
+
+
 @pytest.fixture()
 def provider(client, uniq, monkeypatch):
     """Uma conexão OpenAI com a lista falsa e a tabela pública falsa; devolve o nome."""

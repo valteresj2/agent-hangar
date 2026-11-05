@@ -274,7 +274,8 @@ login, menus, a confirmation dialog and a long report); add your own application
 **Battery with deepseek-v4.1-flash** (`tests/e2e/pilot_llm.py desk_*`, 8 of 8 cases on the Tk ERP — vision only — and on
 Gnumeric): login with a vault password, a date in another format, a nonexistent invoice (nothing written), a
 confirmation dialog, menu + second window + scrolling, a spreadsheet with a formula saved through the "Save as"
-dialog, opening a CSV and reading it, and two payments in one task without duplicates.
+dialog, opening a CSV and reading it, and two payments in one task without duplicates. Run again on 0.58.4 on a regular
+install (`docker compose --profile desktop up -d desktop`): 8 of 8.
 
 ## Data governance
 

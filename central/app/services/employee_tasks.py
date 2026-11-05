@@ -923,8 +923,10 @@ def _run_task(task_id: int) -> EmployeeTask | None:
         usage = data.get("usage") or {}
         task.cost_usd = round(task.cost_usd + float(usage.get("cost_usd") or 0), 6)
         task.tokens += int(usage.get("total_tokens") or 0)
+        from .platform_tools import is_platform
         for step in data.get("x_trace") or []:
-            if step.get("tool"):
+            # as da plataforma já estão na linha do tempo desde que rodaram (com os argumentos): só as do próprio agente
+            if step.get("tool") and not is_platform(step["tool"]):
                 event(db, task, "tool", {"tool": step["tool"], "args": step.get("args"), "result": str(step.get("result"))[:300]})
         content = (data["choices"][0]["message"].get("content") or "").strip()
         # jobs de código (agente com harness) ficam na linha do tempo, venham do rastro ou só da resposta

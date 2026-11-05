@@ -100,6 +100,18 @@ def groups_view(db, e: Employee) -> list[dict]:
             for g, title in GROUPS.items() if any(t.group == g for t in REGISTRY.values())]
 
 
+def is_platform(name: str) -> bool:
+    """A ferramenta é da plataforma (registrada na linha do tempo quando roda, com os argumentos)."""
+    _load()
+    return name in REGISTRY
+
+
+def _args(args: dict) -> dict:
+    """Os argumentos para a linha do tempo: cada valor encurtado (um texto longo não enche o evento)."""
+    return {str(k)[:60]: (v if isinstance(v, (int, float, bool)) or v is None else str(v)[:200])
+            for k, v in list((args or {}).items())[:12]}
+
+
 def side_effect(ctx: Ctx, tool_name: str, ref: str, args: dict) -> dict | None:
     """Uma ação que muda algo fora: passa pela alçada. None = pode executar; senão, a resposta do gate (waiting,
     denied, simulated) que volta ao runtime como está."""
@@ -125,13 +137,13 @@ def run(db, agent: Agent, task_id: int | None, name: str, args: dict, rationale:
     try:
         out = t.handler(Ctx(db, e, agent, task, rationale), args or {})
     except PlatformError as ex:
-        tasksmod.event(db, task, "tool", {"tool": name, "platform": True, "error": str(ex)[:300]})
+        tasksmod.event(db, task, "tool", {"tool": name, "platform": True, "args": _args(args), "error": str(ex)[:300]})
         db.commit()
         return {"status": "allowed", "result": f"erro: {ex}"}
     if isinstance(out, dict) and out.get("status") in ("waiting", "denied", "simulated"):
         return out  # a alçada segurou um efeito
     images = out.pop("_images", None) if isinstance(out, dict) else None  # capturas: vão ao modelo, não à linha do tempo
     text = out if isinstance(out, str) else json.dumps(out, ensure_ascii=False, default=str)
-    tasksmod.event(db, task, "tool", {"tool": name, "platform": True, "result": text[:300]})
+    tasksmod.event(db, task, "tool", {"tool": name, "platform": True, "args": _args(args), "result": text[:300]})
     db.commit()
     return {"status": "allowed", "result": text, **({"images": images} if images else {})}
