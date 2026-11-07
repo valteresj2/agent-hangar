@@ -150,15 +150,22 @@ def heartbeat(db, token: str, worker: dict | None = None, want_task: bool = True
             "next_heartbeat_s": 5 if task is None and working else 30}
 
 
-def gate(db, token: str, task_id: int, tool: str, args: dict, rationale: str = "", kind: str = "tool") -> dict:
+def gate(db, token: str, task_id: int, tool: str, args: dict, rationale: str = "", kind: str = "tool",
+         screenshot: str = "") -> dict:
+    """desktop:<ação>: o computador da pessoa (o app Agent Hangar Desktop como posto) — as regras do desktop
+    governado, com a captura que o posto manda (services/desktop_local.py)."""
     e, a = _employee(db, token)
     t = _task(db, e, task_id)
     if kind not in ("tool", "ask_human", "capability"):
         raise PlatformError("kind: tool | ask_human | capability")
     if kind == "tool" and not (tool or "").strip():
         raise PlatformError("diga a ação (tool), ex.: crm.update_deal")
-    ref = tool if ":" in (tool or "") else f"external:{tool}"
-    out = tasksmod.gate(db, a, t.id, tool, ref, args or {}, rationale, kind)
+    if kind == "tool" and tool.startswith("desktop:"):
+        from . import desktop_local
+        out = desktop_local.gate(db, e, a, t, tool.split(":", 1)[1], args or {}, rationale, screenshot)
+    else:
+        ref = tool if ":" in (tool or "") else f"external:{tool}"
+        out = tasksmod.gate(db, a, t.id, tool, ref, args or {}, rationale, kind)
     if out.get("status") == "waiting":  # a tarefa sai do worker até alguém decidir; volta pelo heartbeat
         db.refresh(t)
         t.worker = ""
@@ -167,12 +174,16 @@ def gate(db, token: str, task_id: int, tool: str, args: dict, rationale: str = "
 
 
 def progress(db, token: str, task_id: int, note: str = "", cost_usd: float = 0, tokens: int = 0,
-             tool: dict | None = None, job: dict | None = None) -> dict:
-    """Notícia do posto: uma nota, o custo, a ferramenta que acabou de rodar (um passo na linha do tempo) e o progresso
-    de um trabalho longo (um evento `job` por trabalho, atualizado no lugar, com o tempo que falta)."""
+             tool: dict | None = None, job: dict | None = None, desktop: dict | None = None) -> dict:
+    """Notícia do posto: uma nota, o custo, a ferramenta que acabou de rodar (um passo na linha do tempo), o progresso
+    de um trabalho longo (um evento `job` por trabalho, atualizado no lugar, com o tempo que falta) e, no computador da
+    pessoa, a janela depois de uma ação (desktop: {event, after})."""
     e, a = _employee(db, token)
     t = _task(db, e, task_id)
     _spend(t, cost_usd, tokens)
+    if desktop:
+        from . import desktop_local
+        desktop_local.after(db, t, desktop)
     if note:
         tasksmod.event(db, t, "note", {"worker": note[:1000]})
     if tool and str(tool.get("name") or "").strip():

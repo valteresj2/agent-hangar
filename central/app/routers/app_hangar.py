@@ -67,6 +67,44 @@ def models(request: Request, db=Depends(db_dep)):
     return guard(lambda: app_llm.models_for_app(db, principal(request)))
 
 
+# ------------------------------------------------------------------ computadores compartilhados (services/workstations.py)
+class WorkstationBody(BaseModel):
+    name: str | None = None
+    os: str | None = None
+    apps: list[dict] | None = None
+    allow_managed: bool | None = None
+    allow_team_ids: list[int] | None = None
+    auth_mode: str | None = None  # ask | preauthorized
+
+    def fields(self) -> dict:
+        return {k: v for k, v in self.model_dump().items() if v is not None}
+
+
+@router.get("/workstations")
+def my_workstations(request: Request, db=Depends(db_dep)):
+    from ..services import workstations
+    return guard(lambda: workstations.mine(db, principal(request)))
+
+
+@router.post("/workstations")
+def register_workstation(body: WorkstationBody, request: Request, db=Depends(db_dep)):
+    """Liga este computador para os funcionários pegarem emprestado; o token wst_… aparece só nesta resposta."""
+    from ..services import workstations
+    return guard(lambda: workstations.register(db, principal(request), body.fields()))
+
+
+@router.patch("/workstations/{ws_id}")
+def update_workstation(ws_id: int, body: WorkstationBody, request: Request, db=Depends(db_dep)):
+    from ..services import workstations
+    return guard(lambda: workstations.update(db, principal(request), ws_id, body.fields()))
+
+
+@router.delete("/workstations/{ws_id}")
+def remove_workstation(ws_id: int, request: Request, db=Depends(db_dep)):
+    from ..services import workstations
+    return guard(lambda: workstations.remove(db, principal(request), ws_id))
+
+
 @router.get("/events")
 async def events(request: Request):
     """Eventos da pessoa em SSE (docs/app-hangar-workspace.md, seção 2): retoma com Last-Event-ID, keepalive a cada

@@ -27,6 +27,8 @@ M2 = {("POST", "/api/decisions/{request_id}"), ("POST", "/api/inbox/mark"), ("GE
       ("POST", "/api/employees/{slug}/status")}
 # M3: acompanhar uma tarefa até o fim na sessão do app (a tarefa, a linha do tempo, o resultado e os entregáveis)
 M3 = {("GET", "/api/tasks/{task_id}"), ("GET", "/api/files/{file_id}")}
+# M4: o computador da pessoa como posto de um Digital employee que ela gerencia (a lista e ligar o posto)
+M4 = {("GET", "/api/employees"), ("PUT", "/api/employees/{slug}/runtime")}
 PW = "-".join(["Senha", "Boa", "123"])
 
 
@@ -87,7 +89,7 @@ def ws(client, uniq, fake_docker, monkeypatch):
 def test_only_the_m1_m2_and_m3_routes_are_marked():
     """A lista é explícita: ampliar exige marcar a rota (e mudar este teste junto com o contrato)."""
     marked = {(m, r.path) for r in deps.api_routes(fastapi_app.router.routes) if deps.app_allowed(r) for m in r.methods}
-    assert marked == M1 | M2 | M3
+    assert marked == M1 | M2 | M3 | M4
 
 
 def test_m1_routes_accept_the_app_token_with_the_persons_access(client, ws):
@@ -417,3 +419,19 @@ def test_m3_app_token_downloads_the_deliverables_of_a_task_the_person_reads(clie
     assert client.get(f"/api/files/{fid}", headers=_bearer(ws["t_other"])).status_code == 200
     outsider = _token(client, _user(client, uniq))
     assert client.get(f"/api/files/{fid}", headers=_bearer(outsider)).status_code == 403
+
+
+def test_m4_app_token_lists_the_employees_the_person_manages_and_turns_on_the_computer_workstation(client, ws):
+    """O app escolhe um funcionário que a pessoa gerencia e liga o computador dela como posto (o token do worker vem
+    uma vez); o colega não vê nem liga o funcionário dela; a lista inteira continua só no portal."""
+    h, ho = _bearer(ws["t"]), _bearer(ws["t_other"])
+    assert client.get("/api/employees", headers=h).status_code == 403
+    mine = client.get("/api/employees?mine=1", headers=h).json()
+    assert [e["slug"] for e in mine] == [ws["slug"]] and mine[0]["can_manage"]
+    assert client.get("/api/employees?mine=1", headers=ho).json() == []
+    assert client.put(f"/api/employees/{ws['slug']}/runtime", headers=ho, json={"runtime": "external"}).status_code in (403, 404)
+    r = client.put(f"/api/employees/{ws['slug']}/runtime", headers=h, json={"runtime": "external", "rotate": True})
+    assert r.status_code == 200 and r.json()["token"].startswith("ewk_") and r.json()["runtime"] == "external"
+    assert client.post("/hooks/worker/heartbeat", headers={"Authorization": f"Bearer {r.json()['token']}"},
+                       json={"worker": {"name": "Computador (PC)"}, "want_task": False}).status_code == 200
+    assert client.put(f"/api/employees/{ws['slug']}/runtime", headers=h, json={"runtime": "hangar"}).json()["runtime"] == "hangar"

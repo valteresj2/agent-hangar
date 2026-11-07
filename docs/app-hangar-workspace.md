@@ -365,3 +365,17 @@ essa tarefa até o fim, e as tarefas que ela repassa a colegas também.
 - No cartão (Desktop 0.7.0, plataforma 0.58.3):
   - Cada ferramenta que o posto do VS Code roda é um passo da linha do tempo (evento `tool` com `summary`, `ok` e `ms`).
   - Um trabalho longo do posto (download, treino, escoragem) aparece como uma barra, com quanto já foi, o total e a hora prevista do fim. Vem do evento `job` da tarefa (um por trabalho, atualizado no lugar; cada atualização manda `task.updated`).
+
+## 7. M4 — o computador da pessoa como posto de um Digital employee
+
+O app Agent Hangar Desktop trabalha como o worker externo de um Digital employee que a pessoa gerencia e opera a tela
+da máquina onde está instalado (só nos apps que ela liberou ali). Desenho: `docs/platform/computer-workstation-plan.md`
+no repositório do Desktop; regras na plataforma: `central/app/services/desktop_local.py`.
+
+| Rota | O que é |
+|---|---|
+| `GET /api/employees?mine=1` | Aberta ao token `app` só com `mine=1`: os funcionários que a pessoa gerencia (`can_manage`). Sem `mine=1`, `403` (a lista inteira é do portal). |
+| `PUT /api/employees/{slug}/runtime` | Aberta ao token `app` (só quem gerencia o funcionário): `{runtime: external, rotate: true}` liga o posto e devolve o token `ewk_…` uma vez; `{runtime: hangar}` devolve o funcionário à plataforma. |
+| `POST /hooks/worker/tasks/{id}/gate` com `tool: "desktop:<open\|click\|type\|key\|screenshot>"` | A alçada das ações na tela, com `args.window` (a janela onde vai agir) e `screenshot` (PNG base64 da janela) quando a ação pode confirmar algo. Responde `allowed` (com `where` aprovado, `event`, e `text` só para um `secret://`), `waiting`, `denied` ou `simulated`. |
+| `POST /hooks/worker/tasks/{id}/progress` com `desktop: {event, after}` | A janela depois da ação (a regra da nova tentativa usa). |
+

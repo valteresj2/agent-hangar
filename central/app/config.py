@@ -8,7 +8,7 @@ def _env(name: str, default: str = "") -> str:
 
 
 APP_NAME = "Agent Hangar"
-VERSION = "0.58.4"
+VERSION = "0.59.0"
 
 DATABASE_URL = _env("DATABASE_URL", "sqlite:///./hangar.db")
 
@@ -106,6 +106,8 @@ GUIDE_AUTOGEN = _env("GUIDE_AUTOGEN", "1") == "1"
 EMPLOYEE_WORKERS = int(_env("EMPLOYEE_WORKERS", "3"))
 EMPLOYEE_MAX_RUNS = int(_env("EMPLOYEE_MAX_RUNS", "12"))
 DECISION_EXPIRES_MIN = int(_env("DECISION_EXPIRES_MIN", "240"))
+# computadores compartilhados: 0 = a dona sempre autoriza cada empréstimo (sem a opção "pré-autorizado")
+WORKSTATION_PREAUTHORIZED = _env("WORKSTATION_PREAUTHORIZED", "1") != "0"
 # plugins: hosts da rede interna (ERP, CRM corporativo) só com PLUGIN_ALLOW_PRIVATE=1 — sem isso, um plugin não alcança
 # a rede da própria plataforma (banco, central, proxy do Docker)
 PLUGIN_ALLOW_PRIVATE = _env("PLUGIN_ALLOW_PRIVATE", "0") == "1"

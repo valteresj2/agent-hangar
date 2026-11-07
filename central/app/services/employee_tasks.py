@@ -45,7 +45,8 @@ def announced_only(content: str, used_tools: bool) -> bool:
     return used_tools and 0 < len(text) <= 600 and bool(ANNOUNCED.search(text[-260:]))  # passos da rodada esgotados: segue numa nova
 JOB_MARK = re.compile(r"\[job #(\d+)")  # resultado de um job de código (runtime: _a2a_call)
 TERMINAL = ("done", "failed", "cancelled", "expired")
-BLOCKING = ("approval", "question", "capability", "plan", "review_fields", "doc_change", "message", "cross_review")  # pausam a tarefa até alguém decidir
+BLOCKING = ("approval", "question", "capability", "plan", "review_fields", "doc_change", "message", "cross_review",
+            "workstation", "workstation_queue")  # pausam a tarefa até alguém decidir
 SHADOW_REAL = ("read", "delegate")  # no modo sombra estas rodam de verdade; o resto é simulado
 QUIET = ("notice", "shadow")  # registros que não esperam decisão na caixa de Decisões
 WORKER = f"{os.environ.get('REPLICA_ID') or os.environ.get('HOSTNAME') or 'central'}-{os.getpid()}"
@@ -1004,6 +1005,8 @@ def _finish(db: Session, task: EmployeeTask, status: str, result: str = "", erro
         task.finding_summary = governance.unmask(db, task.id, task.finding_summary or "")
     result, error = governance.unmask(db, task.id, result), governance.unmask(db, task.id, error)  # as pessoas veem o real
     task.status, task.finished_at = status, now()
+    from . import workstations
+    workstations.on_task_end(db, task)  # o computador emprestado volta para a dona (e o próximo da fila anda)
     if status == "done" and task.due_at and _aware(task.finished_at) > _aware(task.due_at):
         event(db, task, "due", {"stage": "late", "due_at": iso(_aware(task.due_at))})
     if result:

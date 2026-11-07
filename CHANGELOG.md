@@ -5,6 +5,36 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.59.0] — 2026-11-07
+
+### Added
+- **A Digital employee can work on the screen of a person's computer** (Agent Hangar Desktop as its worker; contract M4
+  in `docs/app-hangar-workspace.md`, docs in `docs/digital-employee.md`):
+  - `POST /hooks/worker/tasks/{id}/gate` takes `tool: "desktop:<open|click|type|key|screenshot>"` and a `screenshot`.
+    `services/desktop_local.py` applies the governed desktop's rules to it — commit detection, the approval with the
+    screenshot as evidence, the click where the person approved, the covered "Yes", retries and repeated
+    confirmations — and writes each action on the timeline; `secret://` values go only to the worker.
+  - `POST /hooks/worker/tasks/{id}/progress` takes `desktop: {event, after}` (the window after an action).
+  - `GET /api/employees?mine=1` (the employees the person manages) and `PUT /api/employees/{slug}/runtime` are open to
+    the app token.
+- **Shared workstations: an employee borrows a person's computer when a task needs it** (`services/workstations.py`,
+  migration `0056_workstations`, docs in `docs/digital-employee.md`). The person shares the computer from the desktop
+  app (`/api/app/workstations`); employees get `computer_list`, `computer_use` and `computer_release`; the owner
+  allows each loan by default (`workstation` decision; `WORKSTATION_PREAUTHORIZED=0` forbids pre-authorizing); one
+  employee at a time, the others queue; with a loan, `desktop_*` run on that computer through `/hooks/workstation/*`.
+
+### Changed
+- The governed desktop's decisions moved into `decide_click`, `decide_type` and `decide_key` (`services/desktop.py`),
+  shared by the platform's desktop and the person's computer. No change in behavior.
+- The platform's desktop tools are off for an external employee: its worker's own `desktop_*` tools have the same
+  names and would be hidden by them.
+
+### Tested
+- **Live, on a local install with a real model:** a Digital employee worked on the screen of a Windows computer as its
+  worker (invoice 88 posted in a test WinForms app, every step on the timeline), and a platform employee borrowed a shared
+  computer: the owner allowed the loan in the desktop app's dialog, the employee posted invoice 89 and gave the computer
+  back (task #1523). Needs Agent Hangar Desktop 0.8.0.
+
 ## [0.58.4] — 2026-11-04
 
 ### Fixed

@@ -48,10 +48,22 @@ def ready() -> bool:
 
 
 def _avail(db, e) -> bool:
-    return ready() and bool(e.desktop_apps)
+    # um funcionário externo trabalha no desktop do worker dele (o app Agent Hangar Desktop, com as mesmas ferramentas
+    # desktop_* como ferramentas do app): as da plataforma, com os mesmos nomes, esconderiam as dele
+    if (e.runtime or "hangar") == "external":
+        return False
+    from . import workstations
+    # o desktop da plataforma (contêiner) ou o computador de uma pessoa que ele pode pegar emprestado
+    return (ready() and bool(e.desktop_apps)) or workstations.any_usable(db, e)
 
 
-def call(task, name: str, args: dict) -> dict:
+def call(task, name: str, args: dict, secret: bool = False) -> dict:
+    """Executa um passo de tela: no computador emprestado à tarefa, se houver (services/workstations.py), senão no
+    desktop da plataforma. secret: o texto é o valor de um segredo (o computador só digita num campo de senha)."""
+    from . import workstations
+    routed = workstations.route(task.id, name, args, secret)
+    if routed is not None:
+        return routed
     body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args}}
     try:
         with HTTP() as h:
@@ -152,42 +164,98 @@ def desktop_click(ctx: Ctx, args: dict):
     allowed = ctx.e.desktop_apps or []
     label = str(args.get("label") or "")
     where = {k: args[k] for k in ("element", "x", "y") if args.get(k) not in (None, "")}
-    ref = _commit_ref(label, bool(args.get("commit")))
-    approved, covered, where_win = None, None, ""
-    if ref:
-        before = call(ctx.task, "look", {"allowed": allowed})
-        where_win = before.get("window", "")
-        covered = _covered_dialog(ctx, label, where_win) or _retry_of(ctx, where_win)
-        if covered is None:
-            done, fields = _confirmations(ctx)
-            same = [d for d in done if d["label"].lower() == label.lower() and fields and d["fields"] == fields]
-            if same and not args.get("repeat"):  # parece repetir uma confirmação desta tarefa: confira antes
-                return ("NÃO CONFIRMEI: os campos preenchidos agora (" + _fmt(fields) + f") são os mesmos de '{label}' "
-                        f"que já foi confirmado nesta tarefa (aprovação #{same[-1]['approved']}). Olhe a tela e o "
-                        "registro do que você já fez: se já está feito, siga para o próximo item. Se for mesmo para "
-                        "confirmar de novo, chame desktop_click com repeat=true e diga por quê.")
-            shot = _evidence(ctx, before, f"antes de clicar em '{label}'")
-            why = (f"{ctx.rationale}\nTela: {shot}\nJanela: {where_win}\nOnde: {json.dumps(where)}"
-                   + (f"\nVai confirmar: {_fmt(fields)}" if fields else "")
-                   + ("\nJá confirmado nesta tarefa: " + "; ".join(f"#{d['approved']} {d['label']} ({_fmt(d['fields'])})"
-                                                               for d in done) if done else "")
-                   + ("\nATENÇÃO: o funcionário diz que é uma REPETIÇÃO de propósito." if same else "")).strip()
-            # a alçada libera a AÇÃO (rótulo e janela); o clique acontece onde a pessoa aprovou, na tela que ela viu —
-            # o modelo errar uns pixels ao repetir a chamada não vira outro pedido
-            g = tasksmod._gate(ctx.db, ctx.agent, ctx.task.id, "desktop_click", ref, {"label": label, "window": where_win},
-                               why, "tool")
-            if g.get("status") != "allowed":
-                if g.get("request_id"):
-                    _log(ctx, "pending", label, json.dumps(where), where_win, request=g["request_id"], where=where)
-                    ctx.db.commit()
-                return g
-            approved = g.get("request_id")
-            where = _approved_where(ctx, approved) or where
-    st = call(ctx.task, "click", {"allowed": allowed, "double": bool(args.get("double")), **where})
-    _log(ctx, "click", label, json.dumps(where), where_win or st.get("window", ""), after=st.get("window", ""),
-         **({"approved": approved} if approved else {}), **({"covered_by": covered} if covered else {}))
+    d = decide_click(ctx, label, where, bool(args.get("commit")), bool(args.get("repeat")),
+                     lambda: call(ctx.task, "look", {"allowed": allowed}))
+    if "held" in d:
+        return d["held"]
+    st = call(ctx.task, "click", {"allowed": allowed, "double": bool(args.get("double")), **d["where"]})
+    _log(ctx, "click", label, json.dumps(d["where"]), d["window"] or st.get("window", ""), after=st.get("window", ""),
+         **marks(d))
     ctx.db.commit()
     return _out(st)
+
+
+def marks(d: dict) -> dict:
+    """approved / covered_by de uma decisão, para o evento `desktop` da linha do tempo."""
+    return {**({"approved": d["approved"]} if d.get("approved") else {}),
+            **({"covered_by": d["covered"]} if d.get("covered") else {})}
+
+
+# ------------------------------------------------------------------ as decisões (os dois desktops)
+# As regras abaixo valem para o desktop da plataforma (o contêiner, nas ferramentas deste arquivo) e para o computador
+# da pessoa, onde o app Agent Hangar Desktop trabalha como posto do funcionário (services/desktop_local.py). look()
+# devolve a tela antes da ação ({window, screenshot}) e só é chamado quando a ação pode confirmar algo. A resposta é
+# {"held": o que volta ao modelo} (não execute) ou {"where", "window", "approved", "covered"} (execute ali).
+def decide_click(ctx: Ctx, label: str, where: dict, commit: bool, repeat: bool, look) -> dict:
+    ref = _commit_ref(label, commit)
+    if not ref:
+        return {"where": where, "window": "", "approved": None, "covered": None}
+    before = look()
+    where_win = before.get("window", "")
+    covered = _covered_dialog(ctx, label, where_win) or _retry_of(ctx, where_win)
+    if covered is not None:
+        return {"where": where, "window": where_win, "approved": None, "covered": covered}
+    done, fields = _confirmations(ctx)
+    same = [d for d in done if d["label"].lower() == label.lower() and fields and d["fields"] == fields]
+    if same and not repeat:  # parece repetir uma confirmação desta tarefa: confira antes
+        return {"held": "NÃO CONFIRMEI: os campos preenchidos agora (" + _fmt(fields) + f") são os mesmos de '{label}' "
+                        f"que já foi confirmado nesta tarefa (aprovação #{same[-1]['approved']}). Olhe a tela e o "
+                        "registro do que você já fez: se já está feito, siga para o próximo item. Se for mesmo para "
+                        "confirmar de novo, chame desktop_click com repeat=true e diga por quê."}
+    shot = _evidence(ctx, before, f"antes de clicar em '{label}'")
+    why = (f"{ctx.rationale}\nTela: {shot}\nJanela: {where_win}\nOnde: {json.dumps(where)}"
+           + (f"\nVai confirmar: {_fmt(fields)}" if fields else "")
+           + ("\nJá confirmado nesta tarefa: " + "; ".join(f"#{d['approved']} {d['label']} ({_fmt(d['fields'])})"
+                                                       for d in done) if done else "")
+           + ("\nATENÇÃO: o funcionário diz que é uma REPETIÇÃO de propósito." if same else "")).strip()
+    # a alçada libera a AÇÃO (rótulo e janela); o clique acontece onde a pessoa aprovou, na tela que ela viu —
+    # o modelo errar uns pixels ao repetir a chamada não vira outro pedido
+    g = tasksmod._gate(ctx.db, ctx.agent, ctx.task.id, "desktop_click", ref, {"label": label, "window": where_win},
+                       why, "tool")
+    if g.get("status") != "allowed":
+        if g.get("request_id"):
+            _log(ctx, "pending", label, json.dumps(where), where_win, request=g["request_id"], where=where)
+            ctx.db.commit()
+        return {"held": g}
+    approved = g.get("request_id")
+    return {"where": _approved_where(ctx, approved) or where, "window": where_win, "approved": approved, "covered": None}
+
+
+def decide_type(ctx: Ctx, text: str, shown: str, look) -> dict:
+    """Um Enter digitado num diálogo de salvar/confirmar é a confirmação."""
+    covered, approved, win = None, None, ""
+    if "\n" in text or "\r" in text:
+        before = look()
+        win = before.get("window", "")
+        if COMMIT.search(win) or PAY.search(win) or SEND.search(win) or DIALOG.search(win):
+            covered = _covered_dialog(ctx, "ok", win)
+            if covered is None:
+                held, approved = _commit_gate(ctx, before, "desktop_type", {"text": shown[:200], "window": win},
+                                              f"Texto: {shown[:200]}")
+                if held:
+                    return {"held": held}
+    return {"window": win, "approved": approved, "covered": covered}
+
+
+def decide_key(ctx: Ctx, key: str, mods: list[str], commit_flag: bool, look) -> dict:
+    combo = "+".join([*mods, key])
+    enter = not mods and key.lower() in ("return", "enter", "kp_enter")
+    opens = combo.lower() in OPEN_KEYS or bool(re.fullmatch(r"alt\+\w", combo.lower()))  # só abrem diálogo ou menu
+    covered, approved, win = None, None, ""
+    if not opens and (commit_flag or combo.lower() in ("ctrl+s", "ctrl+enter") or enter):
+        before = look()
+        win = before.get("window", "")
+        # Return só confirma num diálogo de salvar/confirmar ("Save the current workbook as", "Confirmação"); numa
+        # planilha ou num formulário ele só passa de linha
+        commit = commit_flag or not enter or bool(COMMIT.search(win) or PAY.search(win) or SEND.search(win)
+                                                  or DIALOG.search(win))
+        if commit:
+            covered = (_covered_dialog(ctx, "ok", win) if enter else None) or _retry_of(ctx, win)
+        if commit and covered is None:
+            held, approved = _commit_gate(ctx, before, "desktop_key", {"key": combo, "window": win}, "")
+            if held:
+                return {"held": held}
+    return {"combo": combo, "window": win, "approved": approved, "covered": covered}
 
 
 def _fmt(fields: dict) -> str:
@@ -304,21 +372,12 @@ def desktop_type(ctx: Ctx, args: dict):
         text = secrets_vault.resolve(text, ctx.agent.team_id, f"desktop:{ctx.agent.slug}", ctx.db)
         shown = "[segredo]"
     where = {k: args[k] for k in ("element", "x", "y") if args.get(k) not in (None, "")}
-    covered, approved, win = None, None, ""
-    if "\n" in text or "\r" in text:  # um Enter digitado num diálogo de salvar/confirmar é a confirmação
-        before = call(ctx.task, "look", {"allowed": allowed})
-        win = before.get("window", "")
-        if COMMIT.search(win) or PAY.search(win) or SEND.search(win) or DIALOG.search(win):
-            covered = _covered_dialog(ctx, "ok", win)
-            if covered is None:
-                held, approved = _commit_gate(ctx, before, "desktop_type", {"text": shown[:200], "window": win},
-                                              f"Texto: {shown[:200]}")
-                if held:
-                    return held
-    st = call(ctx.task, "type_text", {"allowed": allowed, "text": text, **where})
-    _log(ctx, "type", str(args.get("label") or ""), shown if shown == "[segredo]" else shown[:60], win or st.get("window", ""),
-         after=st.get("window", ""), **({"approved": approved} if approved else {}),
-         **({"covered_by": covered} if covered else {}))
+    d = decide_type(ctx, text, shown, lambda: call(ctx.task, "look", {"allowed": allowed}))
+    if "held" in d:
+        return d["held"]
+    st = call(ctx.task, "type_text", {"allowed": allowed, "text": text, **where}, secret=shown == "[segredo]")
+    _log(ctx, "type", str(args.get("label") or ""), shown if shown == "[segredo]" else shown[:60],
+         d["window"] or st.get("window", ""), after=st.get("window", ""), **marks(d))
     ctx.db.commit()
     return _out(st)
 
@@ -330,26 +389,11 @@ def desktop_type(ctx: Ctx, args: dict):
 def desktop_key(ctx: Ctx, args: dict):
     allowed = ctx.e.desktop_apps or []
     key, mods = str(args.get("key") or ""), [str(m) for m in args.get("modifiers") or []]
-    combo = "+".join([*mods, key])
-    enter = not mods and key.lower() in ("return", "enter", "kp_enter")
-    opens = combo.lower() in OPEN_KEYS or bool(re.fullmatch(r"alt\+\w", combo.lower()))  # só abrem diálogo ou menu
-    covered, approved, win = None, None, ""
-    if not opens and (args.get("commit") or combo.lower() in ("ctrl+s", "ctrl+enter") or enter):
-        before = call(ctx.task, "look", {"allowed": allowed})
-        win = before.get("window", "")
-        # Return só confirma num diálogo de salvar/confirmar ("Save the current workbook as", "Confirmação"); numa
-        # planilha ou num formulário ele só passa de linha
-        commit = bool(args.get("commit")) or not enter or bool(COMMIT.search(win) or PAY.search(win) or SEND.search(win)
-                                                                   or DIALOG.search(win))
-        if commit:
-            covered = (_covered_dialog(ctx, "ok", win) if enter else None) or _retry_of(ctx, win)
-        if commit and covered is None:
-            held, approved = _commit_gate(ctx, before, "desktop_key", {"key": combo, "window": win}, "")
-            if held:
-                return held
+    d = decide_key(ctx, key, mods, bool(args.get("commit")), lambda: call(ctx.task, "look", {"allowed": allowed}))
+    if "held" in d:
+        return d["held"]
     st = call(ctx.task, "key", {"allowed": allowed, "key": key, **({"modifiers": mods} if mods else {})})
-    _log(ctx, "key", combo, window=win or st.get("window", ""), after=st.get("window", ""),
-         **({"approved": approved} if approved else {}), **({"covered_by": covered} if covered else {}))
+    _log(ctx, "key", d["combo"], window=d["window"] or st.get("window", ""), after=st.get("window", ""), **marks(d))
     ctx.db.commit()
     return _out(st)
 

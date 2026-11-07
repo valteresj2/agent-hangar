@@ -1921,3 +1921,57 @@ class IssueSubscription(OrgScoped, Base):
     issue_id: Mapped[int] = mapped_column(Integer, index=True)
     user_id: Mapped[int] = mapped_column(Integer, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+# ------------------------------------------------------------------ computadores compartilhados
+class Workstation(OrgScoped, Base):
+    """O computador de uma pessoa, ligado pelo app Agent Hangar Desktop para os Digital employees usarem quando
+    precisam (desktop_* numa máquina de verdade). A dona escolhe os apps, quem pode usar e se pergunta a cada uso."""
+    __tablename__ = "workstations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    os: Mapped[str] = mapped_column(String(40), default="")
+    apps: Mapped[list] = mapped_column(JSON, default=list)  # [{name, process}]
+    allow_managed: Mapped[bool] = mapped_column(Boolean, default=True)  # os funcionários que a dona gerencia
+    allow_team_ids: Mapped[list] = mapped_column(JSON, default=list)  # e os dos times escolhidos
+    auth_mode: Mapped[str] = mapped_column(String(16), default="ask")  # ask | preauthorized
+    token_hash: Mapped[str] = mapped_column(String(64), default="", index=True)
+    token_hint: Mapped[str] = mapped_column(String(8), default="")
+    status: Mapped[str] = mapped_column(String(10), default="on")  # on | off
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class WorkstationLease(OrgScoped, Base):
+    """Um empréstimo do computador a um funcionário para uma tarefa: pedido → (autorizado pela dona) → em uso → fim.
+    Um por vez por máquina; os outros esperam na fila (status queued, com um pedido do sistema que libera a tarefa)."""
+    __tablename__ = "workstation_leases"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workstation_id: Mapped[int] = mapped_column(ForeignKey("workstations.id", ondelete="CASCADE"), index=True)
+    employee_id: Mapped[int] = mapped_column(Integer, index=True)
+    task_id: Mapped[int] = mapped_column(Integer, index=True)
+    app: Mapped[str] = mapped_column(String(120), default="")
+    reason: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(12), default="requested", index=True)  # requested|queued|active|denied|ended
+    request_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ended_reason: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_step_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WorkstationStep(OrgScoped, Base):
+    """Um passo de tela (já liberado pela alçada) na fila do computador emprestado. Os argumentos vão cifrados (podem
+    ter o valor de um segredo) e o passo é apagado assim que o resultado é lido."""
+    __tablename__ = "workstation_steps"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lease_id: Mapped[int] = mapped_column(ForeignKey("workstation_leases.id", ondelete="CASCADE"), index=True)
+    workstation_id: Mapped[int] = mapped_column(Integer, index=True)
+    command: Mapped[str] = mapped_column(String(20))  # open | look | click | type_text | key | scroll
+    args_enc: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(10), default="queued", index=True)  # queued | taken | done
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

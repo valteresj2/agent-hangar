@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from .. import deploy
 from .. import services as svc
 from ..db import SessionLocal
-from .deps import acc, db_dep, guard, member_route
+from .deps import acc, db_dep, guard, member_route, query_flag
 
 router = APIRouter(prefix="/api")
 hooks = APIRouter(prefix="/hooks")
@@ -157,9 +157,14 @@ def _fields(b: HireBody) -> dict:
     return {k: v for k, v in b.model_dump().items() if k != "request"}
 
 
-@router.get("/employees")
-def employees(request: Request, db=Depends(db_dep)):
-    return guard(lambda: svc.employees.list_employees(db, acc(request, db)))
+@router.get("/employees", dependencies=[member_route(
+    allow_app=True, when=query_flag("mine"), why="forbidden: pelo app Hangar, só os funcionários que a pessoa gerencia (mine=1)")])
+def employees(request: Request, mine: bool = False, db=Depends(db_dep)):
+    """mine=1: só os que a pessoa gerencia (o app Agent Hangar Desktop escolhe quem trabalha no computador dela)."""
+    def run():
+        out = svc.employees.list_employees(db, acc(request, db))
+        return [e for e in out if e.get("can_manage")] if mine else out
+    return guard(run)
 
 
 @router.post("/employees/plan")
@@ -432,7 +437,8 @@ class RuntimeBody(BaseModel):
     rotate: bool = False  # gera um token novo (o anterior deixa de valer)
 
 
-@router.put("/employees/{slug}/runtime")
+# o app Agent Hangar Desktop liga o computador da pessoa como posto do funcionário (só quem gerencia: find "manage")
+@router.put("/employees/{slug}/runtime", dependencies=[member_route(allow_app=True)])
 def set_runtime(slug: str, body: RuntimeBody, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.employee_external.set_runtime(db, acc(request, db), slug, body.runtime, body.rotate))
 
@@ -447,6 +453,7 @@ class WorkerGateBody(BaseModel):
     args: dict = Field(default_factory=dict)
     rationale: str = ""
     kind: str = "tool"  # tool | ask_human (args.question) | capability (args.need)
+    screenshot: str = ""  # desktop:<ação> no computador da pessoa: a captura da janela (PNG base64) antes da ação
 
 
 class WorkerToolBody(BaseModel):
@@ -474,6 +481,7 @@ class ProgressBody(BaseModel):
     tokens: int = 0
     tool: WorkerToolBody | None = None
     job: WorkerJobBody | None = None
+    desktop: dict | None = None  # computador da pessoa: {event (do /gate), after (janela depois), ok, error}
 
 
 class ResultBody(BaseModel):
@@ -499,6 +507,59 @@ def _worker(request: Request, fn):
         raise HTTPException(409, str(e)) from None
 
 
+# ------------------------------------------------------------------ computador compartilhado (token wst_…)
+class WorkstationBeatBody(BaseModel):
+    info: dict = Field(default_factory=dict)  # os, versão, seen_requests (quantos pedidos o app já mostrou)
+    wait_s: float = 0  # long-poll: espera até isso por um passo ou pedido novo (máx. 25 s)
+
+
+class StepResultBody(BaseModel):
+    result: dict = Field(default_factory=dict)  # {ok, detail, window, app, size, elements, dica, screenshot} ou {error}
+
+
+class LeaseAnswerBody(BaseModel):
+    allow: bool
+    reason: str = ""
+
+
+def _workstation(request: Request, fn):
+    from ..services import workstations
+    h = request.headers.get("authorization", "")
+    token = h[7:].strip() if h.lower().startswith("bearer ") else ""
+    if not token:
+        raise HTTPException(401, "token ausente: Authorization: Bearer <token do computador (wst_…)>")
+    try:
+        return fn(token)
+    except workstations.Unauthorized as e:
+        raise HTTPException(401, str(e)) from None
+    except svc.PlatformError as e:
+        raise HTTPException(409, str(e)) from None
+
+
+@hooks.post("/workstation/heartbeat")
+def workstation_heartbeat(body: WorkstationBeatBody, request: Request, db=Depends(db_dep)):
+    from ..services import workstations
+    return _workstation(request, lambda t: workstations.heartbeat(db, t, body.info, body.wait_s))
+
+
+@hooks.post("/workstation/steps/{step_id}/result")
+def workstation_step_result(step_id: int, body: StepResultBody, request: Request, db=Depends(db_dep)):
+    from ..services import workstations
+    return _workstation(request, lambda t: workstations.step_result(db, t, step_id, body.result))
+
+
+@hooks.post("/workstation/leases/{lease_id}/answer")
+def workstation_answer(lease_id: int, body: LeaseAnswerBody, request: Request, db=Depends(db_dep)):
+    from ..services import workstations
+    return _workstation(request, lambda t: workstations.answer(db, t, lease_id, body.allow, body.reason))
+
+
+@hooks.post("/workstation/leases/{lease_id}/stop")
+def workstation_stop(lease_id: int, request: Request, db=Depends(db_dep)):
+    from ..services import workstations
+    return _workstation(request, lambda t: workstations.stop(db, t, lease_id))
+
+
 @hooks.post("/worker/heartbeat")
 def worker_heartbeat(body: HeartbeatBody, request: Request, db=Depends(db_dep)):
     return _worker(request, lambda t: svc.employee_external.heartbeat(db, t, body.worker, body.want_task))
@@ -506,14 +567,16 @@ def worker_heartbeat(body: HeartbeatBody, request: Request, db=Depends(db_dep)):
 
 @hooks.post("/worker/tasks/{task_id}/gate")
 def worker_gate(task_id: int, body: WorkerGateBody, request: Request, db=Depends(db_dep)):
-    return _worker(request, lambda t: svc.employee_external.gate(db, t, task_id, body.tool, body.args, body.rationale, body.kind))
+    return _worker(request, lambda t: svc.employee_external.gate(db, t, task_id, body.tool, body.args, body.rationale, body.kind,
+                                                                 body.screenshot))
 
 
 @hooks.post("/worker/tasks/{task_id}/progress")
 def worker_progress(task_id: int, body: ProgressBody, request: Request, db=Depends(db_dep)):
     return _worker(request, lambda t: svc.employee_external.progress(
         db, t, task_id, body.note, body.cost_usd, body.tokens,
-        tool=body.tool.model_dump() if body.tool else None, job=body.job.model_dump() if body.job else None))
+        tool=body.tool.model_dump() if body.tool else None, job=body.job.model_dump() if body.job else None,
+        desktop=body.desktop))
 
 
 @hooks.post("/worker/tasks/{task_id}/result")

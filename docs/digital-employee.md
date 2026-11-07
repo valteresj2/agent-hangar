@@ -607,6 +607,51 @@ to use and for a confirmation. From then on, the employee picks up its tasks in 
 - *Desligar o posto* stops the worker in that window. *Devolver à plataforma* revokes the token and the platform runs
   the employee's tasks again.
 
+### Working on the screen of a computer (Agent Hangar Desktop)
+
+The desktop app can be a worker too: in *Configurações → Posto no computador*, a person picks an employee they manage
+and the apps of that computer it may use, and the employee works on the screen — looks at the app's window, clicks,
+types and presses keys — with the same tools and rules as the governed desktop (`desktop_open`, `desktop_look`,
+`desktop_click`, `desktop_type`, `desktop_key`, `desktop_scroll`, `desktop_screenshot`). Windows, macOS (14+) and Linux
+(X11).
+
+- Every action except looking and scrolling asks `POST /hooks/worker/tasks/{id}/gate` with
+  `tool: "desktop:<open|click|type|key|screenshot>"`, `args.window` and, when it may confirm something, `screenshot`
+  (the window as PNG). `services/desktop_local.py` applies the governed desktop's rules (`services/desktop.py`:
+  `decide_click`, `decide_type`, `decide_key`): a click, Enter or shortcut that saves, confirms, sends or pays waits for a
+  decision with the screenshot as evidence, the click runs where the person approved (`where`), the "Yes" right after
+  an approved click and a retry without effect are covered, a repeated confirmation is refused. Each allowed action is a
+  `desktop` event on the timeline (marked `local`, with the machine); the worker sends the window after it in
+  `progress` (`desktop: {event, after}`).
+- `text: "secret://name"` is resolved by the vault and returned only in the gate's answer to the worker (`text`,
+  `secret: true`); the timeline shows `[segredo]`. The app types it only into a password field.
+- The platform's own desktop tools are off for an external employee (the worker's tools have the same names).
+- On the computer, the app keeps the employee inside the allowed apps, shows an indicator with a Stop button (and
+  Ctrl+Alt+End), pauses when the person uses the mouse or keyboard and hands the task back when stopped.
+- The app lists the employees with `GET /api/employees?mine=1` and turns one on with
+  `PUT /api/employees/{slug}/runtime` (both open to the app token: contract M4 in `docs/app-hangar-workspace.md`). As
+  with VS Code, an employee has one worker at a time.
+
+### Borrowing a person's computer (shared workstations)
+
+A person can share their computer from the desktop app (*Configurações → Posto no computador → Compartilhar este
+computador*): `POST /api/app/workstations` registers it (apps, `allow_managed`, `allow_team_ids`, `auth_mode` =
+`ask` | `preauthorized`) and returns a `wst_…` token once. Employees that run on the platform then get the `computer`
+tool group (`services/workstations.py`):
+
+| Tool | |
+|---|---|
+| `computer_list` | The computers this employee may borrow (the owner manages it, or it belongs to one of the allowed teams), with apps, online and busy. |
+| `computer_use(computer, app, reason)` | Asks for a loan for the task. `ask`: a `workstation` request goes to the owner (in the app, *Decisões* or the portal; only she or an admin decides) and the task waits. Busy computer: the task waits in the queue (`workstation_queue`, released by the system when the computer is free). |
+| `computer_release` | Gives the computer back (also at the end of the task, after 30 min without steps, or when the owner presses Stop). |
+
+With an active loan, the usual `desktop_*` tools run on that computer: `desktop.call` routes each step to the
+computer's queue (`workstation_steps`, arguments encrypted, row deleted when the result comes back), so the authority and
+the commit rules are exactly the governed desktop's. The computer long-polls `/hooks/workstation/heartbeat` (requests to
+answer, the loan in use, the next step) and answers with `/steps/{id}/result`, `/leases/{id}/answer` and
+`/leases/{id}/stop`. A task that had a loan never falls back silently to the platform's desktop. The timeline gets
+`lease` events (requested, granted, denied, ended). `WORKSTATION_PREAUTHORIZED=0` forbids the pre-authorized mode.
+
 ## Goals
 
 Each goal (`kpis`) can point to a metric the platform measures, with a target:
