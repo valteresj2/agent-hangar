@@ -379,3 +379,23 @@ no repositório do Desktop; regras na plataforma: `central/app/services/desktop_
 | `POST /hooks/worker/tasks/{id}/gate` com `tool: "desktop:<open\|click\|type\|key\|screenshot>"` | A alçada das ações na tela, com `args.window` (a janela onde vai agir) e `screenshot` (PNG base64 da janela) quando a ação pode confirmar algo. Responde `allowed` (com `where` aprovado, `event`, e `text` só para um `secret://`), `waiting`, `denied` ou `simulated`. |
 | `POST /hooks/worker/tasks/{id}/progress` com `desktop: {event, after}` | A janela depois da ação (a regra da nova tentativa usa). |
 
+## 8. M6 — gravar uma tarefa e transformar em funcionário
+
+A pessoa grava no app a tarefa que faz (os apps escolhidos e a explicação dela) e a plataforma monta o rascunho de um
+Digital employee que a faz no computador dela. Desenho: `docs/platform/record-to-agent-plan.md` no repositório do
+Desktop; regras: `central/app/services/recordings.py`. Todas as rotas são da própria pessoa (token `app`).
+
+| Rota | O que é |
+|---|---|
+| `POST /api/app/recordings/transcribe` | `{audio: base64, mime}` (até 25 MB) → `{segments: [{start, end, text}], text, model}` pelo modelo `stt` do catálogo. Sem modelo de fala, `400` (o app oferece escrever a explicação). O áudio não fica guardado. |
+| `POST /api/app/recordings` | O pacote `{title, apps, steps, transcript, notes, recorded_on, duration_s, frames: [{frame, step, png}]}` (até 12 capturas) → `{id, status: drafted\|failed, draft, model, error}`. As capturas vão só para o modelo; não ficam. |
+| `POST /api/app/recordings/{id}/redraft` | O mesmo pacote de novo, para a mesma gravação. |
+| `GET /api/app/recordings`, `GET /api/app/recordings/{id}` | As gravações da pessoa (só as dela). |
+| `PUT /api/app/recordings/{id}/draft` | `{draft}`: as correções da pessoa. |
+| `POST /api/app/recordings/{id}/hire` | `{draft, workstation_id?}` → contrata em modo sombra, `intern`, com a rotina (`schedule.cron`) e as tarefas de experiência (começa a experiência). Recusa com perguntas sem resposta, sem agenda ou com um computador que não é dela. |
+| `DELETE /api/app/recordings/{id}` | Apaga a gravação. |
+
+O rascunho tem formato fixo: `title`, `mission`, `summary`, `steps [{n, app, action, target, value?, confirms?, note?}]`,
+`variables`, `confirmations`, `apps`, `schedule {cron, text}`, `questions [{question, answer}]`, `secrets [{name,
+field}]`, `probation [{title, description, expected}]`. Sem LLM (ou no mock), as regras montam o rascunho a partir dos
+passos e da fala.

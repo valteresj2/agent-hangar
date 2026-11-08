@@ -46,7 +46,7 @@ def announced_only(content: str, used_tools: bool) -> bool:
 JOB_MARK = re.compile(r"\[job #(\d+)")  # resultado de um job de código (runtime: _a2a_call)
 TERMINAL = ("done", "failed", "cancelled", "expired")
 BLOCKING = ("approval", "question", "capability", "plan", "review_fields", "doc_change", "message", "cross_review",
-            "workstation", "workstation_queue")  # pausam a tarefa até alguém decidir
+            "workstation", "workstation_queue", "workstation_wait")  # pausam a tarefa até alguém decidir
 SHADOW_REAL = ("read", "delegate")  # no modo sombra estas rodam de verdade; o resto é simulado
 QUIET = ("notice", "shadow")  # registros que não esperam decisão na caixa de Decisões
 WORKER = f"{os.environ.get('REPLICA_ID') or os.environ.get('HOSTNAME') or 'central'}-{os.getpid()}"

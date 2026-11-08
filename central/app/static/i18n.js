@@ -1540,6 +1540,7 @@
     "Projeto (gid)": "Project (gid)",
     "Consulta (ex.: active=true^assignment_group.name=Service Desk)": "Query (e.g. active=true^assignment_group.name=Service Desk)",
     "Desktop governado": "Governed desktop",
+    "Computadores das pessoas (emprestados para passos de tela)": "People's computers (borrowed for screen steps)",
     "Apps de desktop que ele pode abrir (separados por vírgula)": "Desktop apps it may open (comma-separated)",
     "Salvar apps": "Save apps",
     "Apps salvos": "Apps saved",

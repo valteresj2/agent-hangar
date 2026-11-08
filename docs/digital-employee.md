@@ -650,7 +650,20 @@ computer's queue (`workstation_steps`, arguments encrypted, row deleted when the
 the commit rules are exactly the governed desktop's. The computer long-polls `/hooks/workstation/heartbeat` (requests to
 answer, the loan in use, the next step) and answers with `/steps/{id}/result`, `/leases/{id}/answer` and
 `/leases/{id}/stop`. A task that had a loan never falls back silently to the platform's desktop. The timeline gets
-`lease` events (requested, granted, denied, ended). `WORKSTATION_PREAUTHORIZED=0` forbids the pre-authorized mode.
+`lease` events (requested, waiting, available, granted, denied, ended). `WORKSTATION_PREAUTHORIZED=0` forbids the
+pre-authorized mode.
+
+A **locked** computer (the app says so in its heartbeat) or one that was online in the last 24 h but is off now does not
+fail the loan: the task waits with a `workstation_wait` request (up to 2 h, the owner is notified; rejecting it gives
+up) and continues on its own when the computer is available again — asking the owner first in `ask` mode. A computer
+never seen online is still an error.
+
+### Employees hired from a recording
+
+In the desktop app, *Gravar uma tarefa* records a task the person does and explains; the platform turns it into a
+draft (`services/recordings.py`) and, after their review, hires an employee in shadow mode and probation whose
+instructions and routine carry the recorded procedure, the computer to borrow (`computer_use('<id>', app)`) and the
+secrets as `secret://` names (they register the values in the vault).
 
 ## Goals
 

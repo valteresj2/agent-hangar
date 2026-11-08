@@ -1940,6 +1940,8 @@ class Workstation(OrgScoped, Base):
     token_hint: Mapped[str] = mapped_column(String(8), default="")
     status: Mapped[str] = mapped_column(String(10), default="on")  # on | off
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # a sessão do computador está bloqueada (o app diz no heartbeat): o empréstimo espera em vez de falhar
+    locked: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
@@ -1953,7 +1955,7 @@ class WorkstationLease(OrgScoped, Base):
     task_id: Mapped[int] = mapped_column(Integer, index=True)
     app: Mapped[str] = mapped_column(String(120), default="")
     reason: Mapped[str] = mapped_column(Text, default="")
-    status: Mapped[str] = mapped_column(String(12), default="requested", index=True)  # requested|queued|active|denied|ended
+    status: Mapped[str] = mapped_column(String(12), default="requested", index=True)  # requested|waiting|queued|active|denied|ended
     request_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ended_reason: Mapped[str] = mapped_column(String(200), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -1975,3 +1977,22 @@ class WorkstationStep(OrgScoped, Base):
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Recording(OrgScoped, Base):
+    """Uma tarefa gravada no app (Gravar uma tarefa): os passos que a pessoa fez nos apps escolhidos, a explicação
+    (transcrição e notas) e o rascunho do funcionário que a plataforma montou. As capturas das janelas e o áudio não
+    ficam aqui: as capturas só vão para o modelo que monta o rascunho; o áudio só para a transcrição."""
+    __tablename__ = "recordings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(120), default="")
+    status: Mapped[str] = mapped_column(String(12), default="drafted")  # drafted | failed | hired
+    package: Mapped[dict] = mapped_column(JSON, default=dict)  # apps, steps, transcript, notes, recorded_on, duration_s
+    draft: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    model: Mapped[str] = mapped_column(String(200), default="")  # quem montou o rascunho ("regras" sem LLM)
+    employee_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    workstation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)

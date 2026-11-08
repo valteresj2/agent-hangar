@@ -5,6 +5,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.60.0] — 2026-11-08
+
+### Added
+- **Record a task, get an employee that does it** (Agent Hangar Desktop "Gravar uma tarefa"; contract M6 in
+  `docs/app-hangar-workspace.md`): the app records what the person does in the apps they chose (clicks with the
+  element, the final value of each field — never a password —, shortcuts, a capture of the window at each click) and
+  their explanation. `POST /api/app/recordings/transcribe` turns the narration into text with the company's speech model
+  (`stt` in the catalog; the audio is not kept). `POST /api/app/recordings` turns the package into a fixed-shape draft
+  (procedure, variables, confirmations, apps, schedule as cron, questions, secrets as `secret://`, three rehearsals) with
+  the company's default chat model (it sees the captures when it has vision), or rules when there is no LLM (the schedule is read from what they said, e.g.
+  "toda segunda às 9h" → `0 9 * * 1`). The captures are not stored. `POST /api/app/recordings/{id}/hire` hires from
+  the reviewed draft in **shadow mode**, `intern`, with the routine and the probation started, working on their shared
+  computer. New table `recordings` (migration `0057_recordings`).
+- **A locked computer makes the loan wait instead of failing**: the shared computer reports `locked` in its heartbeat;
+  locked (or off but seen in the last 24 h), `computer_use` holds the task with a `workstation_wait` request (up to
+  2 h, the owner is notified) and the task continues on its own when the computer is available again.
+
+### Fixed
+- The workstations group title in the portal is translated to English (it failed the i18n crawl of 0.59.0).
+
 ## [0.59.0] — 2026-11-07
 
 ### Added

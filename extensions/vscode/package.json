@@ -2,7 +2,7 @@
   "name": "agent-hangar",
   "displayName": "Agent Hangar",
   "description": "Os agentes de IA da sua empresa no chat do VS Code: como modelos (agente de código que edita e testa o seu projeto), o MCP da plataforma para criar e editar agentes e o posto de trabalho de um Digital employee (AG-UI, sob a alçada).",
-  "version": "0.59.0",
+  "version": "0.60.0",
   "publisher": "agent-hangar",
   "license": "Apache-2.0",
   "repository": { "type": "git", "url": "https://github.com/valteresj2/agent-hangar" },

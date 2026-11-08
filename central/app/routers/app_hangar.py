@@ -105,6 +105,72 @@ def remove_workstation(ws_id: int, request: Request, db=Depends(db_dep)):
     return guard(lambda: workstations.remove(db, principal(request), ws_id))
 
 
+# ------------------------------------------------------------------ gravar uma tarefa (services/recordings.py)
+class TranscribeBody(BaseModel):
+    audio: str
+    mime: str = "audio/webm"
+
+
+class DraftBody(BaseModel):
+    draft: dict
+
+
+class RecordingHireBody(BaseModel):
+    draft: dict
+    workstation_id: int | None = None
+
+
+@router.post("/recordings/transcribe")
+def transcribe_recording(body: TranscribeBody, request: Request, db=Depends(db_dep)):
+    """A explicação gravada vira texto (modelo de fala da empresa); o áudio não fica guardado."""
+    from ..services import recordings
+    return guard(lambda: recordings.transcribe(db, principal(request), body.model_dump()))
+
+
+@router.get("/recordings")
+def my_recordings(request: Request, db=Depends(db_dep)):
+    from ..services import recordings
+    return guard(lambda: recordings.mine(db, principal(request)))
+
+
+@router.post("/recordings")
+def create_recording(body: dict, request: Request, db=Depends(db_dep)):
+    """O pacote da gravação (passos, explicação, até 12 capturas) vira o rascunho do funcionário."""
+    from ..services import recordings
+    return guard(lambda: recordings.create(db, principal(request), body))
+
+
+@router.get("/recordings/{rec_id}")
+def get_recording(rec_id: int, request: Request, db=Depends(db_dep)):
+    from ..services import recordings
+    return guard(lambda: recordings.get(db, principal(request), rec_id))
+
+
+@router.post("/recordings/{rec_id}/redraft")
+def redraft_recording(rec_id: int, body: dict, request: Request, db=Depends(db_dep)):
+    from ..services import recordings
+    return guard(lambda: recordings.redraft(db, principal(request), rec_id, body))
+
+
+@router.put("/recordings/{rec_id}/draft")
+def save_recording_draft(rec_id: int, body: DraftBody, request: Request, db=Depends(db_dep)):
+    from ..services import recordings
+    return guard(lambda: recordings.save_draft(db, principal(request), rec_id, body.draft))
+
+
+@router.post("/recordings/{rec_id}/hire")
+def hire_from_recording(rec_id: int, body: RecordingHireBody, request: Request, db=Depends(db_dep)):
+    """O rascunho revisado vira um Digital employee em modo sombra e período de experiência."""
+    from ..services import recordings
+    return guard(lambda: recordings.hire(db, principal(request), rec_id, body.draft, body.workstation_id))
+
+
+@router.delete("/recordings/{rec_id}")
+def delete_recording(rec_id: int, request: Request, db=Depends(db_dep)):
+    from ..services import recordings
+    return guard(lambda: recordings.remove(db, principal(request), rec_id))
+
+
 @router.get("/events")
 async def events(request: Request):
     """Eventos da pessoa em SSE (docs/app-hangar-workspace.md, seção 2): retoma com Last-Event-ID, keepalive a cada

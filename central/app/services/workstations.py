@@ -43,6 +43,8 @@ from .common import PlatformError, audit, iso
 from .decision_kinds import close, handler
 
 ONLINE_FOR = timedelta(minutes=2)
+WAIT_MAX = timedelta(hours=2)  # bloqueado ou desligado: a tarefa espera até isso pelo computador
+SEEN_FOR = timedelta(hours=24)  # visto há pouco: está só bloqueado/dormindo (nunca visto = erro, como antes)
 IDLE_END_MIN = 30  # sem passos por esse tempo, o empréstimo termina (a tarefa pede de novo se precisar)
 STEP_TIMEOUT_S = 90
 POLL_S = 0.3
@@ -214,21 +216,32 @@ def _find(db, e: Employee, ref) -> Workstation:
 
 
 # ------------------------------------------------------------------ empréstimo
-def _hold(db, ctx, lease: WorkstationLease, kind: str, question: str, assigned: int | None) -> dict:
+def _hold(db, ctx, lease: WorkstationLease, kind: str, question: str, assigned: int | None,
+          expires: timedelta | None = None) -> dict:
     r = HumanRequest(employee_id=ctx.e.id, task_id=ctx.task.id, kind=kind, action_type="read", mode="approve",
                      question=question[:2000], rationale=(lease.reason or ctx.rationale or "")[:4000],
                      action_payload={"workstation_id": lease.workstation_id, "lease_id": lease.id, "app": lease.app},
                      assigned_user_id=assigned, approvals=[], created_at=now(),
-                     expires_at=now() + timedelta(minutes=config.DECISION_EXPIRES_MIN))
+                     expires_at=now() + (expires or timedelta(minutes=config.DECISION_EXPIRES_MIN)))
     db.add(r)
     db.flush()
     lease.request_id = r.id
     ctx.task.status = "waiting_human"
     tasksmod.event(db, ctx.task, "human_request", {"id": r.id, "kind": kind, "question": question[:300]})
     db.commit()
-    if kind == "workstation":
+    if kind in ("workstation", "workstation_wait"):
         tasksmod._notify_request(db, ctx.e, r)
     return {"status": "waiting", "request_id": r.id, "message": question}
+
+
+def unavailable(ws: Workstation) -> str | None:
+    """Por que o computador não pode ser usado agora e a tarefa deve esperar (bloqueado, desligado), None quando
+    pode, "" quando nunca foi visto (aí é erro, como antes)."""
+    if online(ws):
+        return "está bloqueado" if ws.locked else None
+    if ws.status == "on" and ws.heartbeat_at and now() - _aware(ws.heartbeat_at) <= SEEN_FOR:
+        return "está desligado, dormindo ou sem o app aberto"
+    return ""
 
 
 def _activate(db, lease: WorkstationLease, ws: Workstation):
@@ -255,7 +268,8 @@ def request(ctx, ref, app: str, reason: str) -> dict | str:
             return _ready_text(ws)
         raise PlatformError(f"esta tarefa já está com o computador '{ws.name}': libere com computer_release antes")
     ws = _find(db, e, ref)
-    if not online(ws):
+    why = unavailable(ws)
+    if why == "":
         raise PlatformError(f"o computador '{ws.name}' está desligado ou sem o app aberto agora")
     app = str(app or "").strip()
     if app and not any(app.lower() in (a["name"].lower(), a["process"].lower()) for a in ws.apps or []):
@@ -266,6 +280,12 @@ def request(ctx, ref, app: str, reason: str) -> dict | str:
                                                        WorkstationLease.status.in_(("requested", "queued"))))
     if pending is not None:  # voltou de uma decisão que ainda segura (não deveria): segue esperando
         return {"status": "waiting", "request_id": pending.request_id, "message": "o empréstimo ainda está pendente"}
+    waiting = db.scalar(select(WorkstationLease).where(WorkstationLease.task_id == task.id,
+                                                       WorkstationLease.workstation_id == ws.id,
+                                                       WorkstationLease.status == "waiting"))
+    if waiting is not None:
+        return {"status": "waiting", "request_id": waiting.request_id,
+                "message": "esperando o computador ficar disponível"}
     lease = WorkstationLease(workstation_id=ws.id, employee_id=e.id, task_id=task.id, app=app[:120],
                              reason=str(reason or "")[:2000], org_id=ws.org_id)
     db.add(lease)
@@ -273,12 +293,67 @@ def request(ctx, ref, app: str, reason: str) -> dict | str:
     a = db.get(Agent, e.agent_id)
     who = a.name if a else "um funcionário"
     tasksmod.event(db, task, "lease", {"action": "requested", "workstation": ws.name, "lease": lease.id, "app": lease.app})
+    if why:  # bloqueado ou desligado: espera (avisando a dona) em vez de falhar; continua sozinha quando ele voltar
+        lease.status = "waiting"
+        tasksmod.event(db, task, "lease", {"action": "waiting", "workstation": ws.name, "lease": lease.id, "why": why})
+        hours = int(WAIT_MAX.total_seconds() // 3600)
+        return _hold(db, ctx, lease, "workstation_wait",
+                     f"O computador '{ws.name}' de {_owner_name(db, ws)} {why}: a tarefa #{task.id} ({task.title}) de "
+                     f"{who} espera até {hours} h por ele e continua sozinha quando ele estiver disponível "
+                     "(desbloqueado e com o app aberto).", ws.owner_user_id, WAIT_MAX)
+    return _ask_or_grant(db, ctx, lease, ws, who)
+
+
+def _ask_or_grant(db, ctx, lease: WorkstationLease, ws: Workstation, who: str) -> dict | str:
+    task = ctx.task
     if ws.auth_mode == "ask":
         q = (f"{who} quer usar o computador '{ws.name}' para a tarefa #{task.id} ({task.title})"
              + (f", no app {lease.app}" if lease.app else "") + (f". Motivo: {lease.reason}" if lease.reason else "")
              + ". Permitir?")
         return _hold(db, ctx, lease, "workstation", q, ws.owner_user_id)
     return _grant(db, ctx, lease, ws)
+
+
+def wake(db, ws: Workstation):
+    """O computador voltou (desbloqueado, com o app aberto): as tarefas que esperavam por ele seguem — pedem a
+    autorização da dona (ask) ou entram em uso / na fila."""
+    from types import SimpleNamespace
+    if unavailable(ws) is not None:
+        return
+    for lease in list(db.scalars(select(WorkstationLease).where(WorkstationLease.workstation_id == ws.id,
+                                                                WorkstationLease.status == "waiting")
+                                 .order_by(WorkstationLease.id))):
+        task = db.get(EmployeeTask, lease.task_id)
+        e = db.get(Employee, lease.employee_id)
+        r = db.get(HumanRequest, lease.request_id) if lease.request_id else None
+        if task is None or e is None or (r is not None and r.status != "open"):
+            continue
+        if r is not None:
+            close(r, "approve", "o computador ficou disponível", "sistema")
+        lease.status, lease.request_id = "requested", None
+        tasksmod.event(db, task, "lease", {"action": "available", "workstation": ws.name, "lease": lease.id})
+        db.commit()
+        a = db.get(Agent, e.agent_id)
+        ctx = SimpleNamespace(db=db, e=e, task=task, rationale=lease.reason or "")
+        out = _ask_or_grant(db, ctx, lease, ws, a.name if a else "um funcionário")
+        if isinstance(out, str):  # em uso agora: a tarefa continua
+            tasksmod._resume(db, task, f"COMPUTADOR: {out}")
+            db.commit()
+
+
+@handler("workstation_wait")
+def decide_wait(db, acc, r: HumanRequest, e: Employee, task, decision: str, edit: dict, reason: str, who: str):
+    if decision != "reject":
+        raise PlatformError("a espera termina sozinha quando o computador fica disponível (reject = desistir)")
+    lease = db.get(WorkstationLease, (r.action_payload or {}).get("lease_id"))
+    close(r, "reject", reason, who)
+    if lease is not None and lease.status == "waiting":
+        lease.status, lease.ended_at, lease.ended_reason = "ended", now(), f"desistiu de esperar: {who}"
+    if task:
+        tasksmod._resume(db, task, f"COMPUTADOR: {who} desistiu de esperar o computador"
+                                   + (f" — {reason}" if reason else "") + ". Siga sem ele ou encerre explicando.")
+    db.commit()
+    return tasksmod.request_dict(db, r, e)
 
 
 def _grant(db, ctx, lease: WorkstationLease, ws: Workstation) -> dict | str:
@@ -350,22 +425,29 @@ def sweep(db):
     """Fecha o que ficou para trás: empréstimo sem passos há IDLE_END_MIN, de tarefa que terminou, ou cujo pedido
     expirou."""
     limit = now() - timedelta(minutes=IDLE_END_MIN)
-    for lease in list(db.scalars(select(WorkstationLease).where(WorkstationLease.status.in_(("requested", "queued", "active"))))):
+    for lease in list(db.scalars(select(WorkstationLease).where(
+            WorkstationLease.status.in_(("requested", "queued", "active", "waiting"))))):
         task = db.get(EmployeeTask, lease.task_id)
         if task is None or task.status in ("done", "failed", "cancelled", "expired", "review"):
             end(db, lease, "a tarefa terminou")
         elif lease.status == "active" and _aware(lease.last_step_at or lease.started_at) < limit:
             end(db, lease, f"{IDLE_END_MIN} min sem passos de tela")
-        elif lease.status == "requested" and lease.request_id:
+        elif lease.status in ("requested", "waiting") and lease.request_id:
             r = db.get(HumanRequest, lease.request_id)
             if r is not None and r.status in ("expired", "cancelled"):
-                lease.status, lease.ended_at, lease.ended_reason = "denied", now(), "o pedido expirou"
+                if lease.status == "requested":
+                    lease.status, lease.ended_reason = "denied", "o pedido expirou"
+                else:
+                    lease.status = "ended"
+                    lease.ended_reason = f"o computador ficou indisponível por {int(WAIT_MAX.total_seconds() // 3600)} h"
+                lease.ended_at = now()
                 db.commit()
 
 
 def on_task_end(db, task: EmployeeTask):
-    for lease in list(db.scalars(select(WorkstationLease).where(WorkstationLease.task_id == task.id,
-                                                                WorkstationLease.status.in_(("requested", "queued", "active"))))):
+    for lease in list(db.scalars(select(WorkstationLease).where(
+            WorkstationLease.task_id == task.id,
+            WorkstationLease.status.in_(("requested", "queued", "active", "waiting"))))):
         end(db, lease, "a tarefa terminou")
 
 
@@ -450,7 +532,8 @@ def route(task_id: int, command: str, args: dict, secret: bool = False) -> dict 
                              .order_by(WorkstationLease.id.desc()).limit(1))
             if last is not None:  # a tarefa usava um computador: nunca cair, calada, no desktop da plataforma
                 why = last.ended_reason or {"requested": "o empréstimo ainda não foi autorizado",
-                                            "queued": "a tarefa está na fila do computador"}.get(last.status, last.status)
+                                            "queued": "a tarefa está na fila do computador",
+                                            "waiting": "esperando o computador ficar disponível"}.get(last.status, last.status)
                 raise PlatformError(f"esta tarefa não está com o computador agora ({why}): peça de novo com computer_use")
             return None
         return run_step(db, lease, command, args, secret)
@@ -519,8 +602,10 @@ def heartbeat(db, token: str, info: dict | None = None, wait_s: float = 0) -> di
     ws.heartbeat_at = now()
     if info and info.get("os"):
         ws.os = str(info["os"])[:40]
+    ws.locked = bool((info or {}).get("locked"))
     db.commit()
     sweep(db)
+    wake(db, ws)
     deadline = time.monotonic() + max(0.0, min(float(wait_s or 0), 25.0))
     seen = int((info or {}).get("seen_requests") or 0)
     while True:
