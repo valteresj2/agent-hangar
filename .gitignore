@@ -68,3 +68,6 @@ scripts/demo/product-tour/compose_state.json
 scripts/demo/product-tour/*_out.json
 scripts/demo/product-tour/shots/
 !scripts/demo/product-tour/prompt.txt
+
+# resultados do Cua Bench (tests/bench/desktop/run.py)
+tests/bench/desktop/out/

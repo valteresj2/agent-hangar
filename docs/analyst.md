@@ -240,8 +240,8 @@ the project's budget (it stops at the limit) and the audit log.
 ## Governed desktop
 
 For desktop applications with no API and no web page — a legacy ERP, a spreadsheet, an installed system — the
-employee works in an isolated Linux desktop (compose profile `desktop`, built on [Cua](https://github.com/trycua/cua),
-MIT) and **looks at the screen**: `desktop_open`, `desktop_look`, `desktop_click`, `desktop_type`, `desktop_key`,
+employee works in an isolated Linux desktop (compose profile `desktop`, built on [Cua](https://github.com/trycua/cua);
+its desktop daemon `cua-spacesd` is [FSL-1.1-MIT](https://github.com/trycua/cua#licensing)) and **looks at the screen**: `desktop_open`, `desktop_look`, `desktop_click`, `desktop_type`, `desktop_key`,
 `desktop_scroll`, `desktop_screenshot`.
 
 - **Allowed apps** per employee (*Settings → Platform tools*): it only opens and operates those.
@@ -276,6 +276,24 @@ Gnumeric): login with a vault password, a date in another format, a nonexistent 
 confirmation dialog, menu + second window + scrolling, a spreadsheet with a formula saved through the "Save as"
 dialog, opening a CSV and reading it, and two payments in one task without duplicates. Run again on 0.58.4 on a regular
 install (`docker compose --profile desktop up -d desktop`): 8 of 8.
+
+**The same cases on [Cua Bench](https://github.com/trycua/cua/tree/main/libs/cua-bench)** (`tests/bench/desktop`): each
+case is a Cua Bench task that prepares the desktop, lets the Digital employee do the work through the platform (the
+agent adapter opens the task and answers as the manager) and then checks the **system's state** (the rows the ERP
+wrote, the saved spreadsheet), the answer, the approvals and that the vault password never showed up. A reference
+solution proves each check accepts the right state and rejects an untouched desktop.
+
+```bash
+python tests/bench/desktop/run.py --oracle          # the checks themselves, no model
+HANGAR_URL=http://localhost:8090 HANGAR_TOKEN=<admin> LLM_CONNECTION=<connection> \
+  python tests/bench/desktop/run.py [case ...] [--attempts 3]
+```
+
+The runner joins the desktop's network (no internet) and writes, under `tests/bench/desktop/out/`, `summary.json`
+(pass@k per case) and, per attempt, Cua Bench's files and `hangar-task.json` (the task's id, status, answer, approvals
+and tools). The employee's steps and screenshots stay on the task's timeline in the central.
+
+**First run** (cua-bench 0.4.4, deepseek through OpenRouter, regular install): 8 of 8, from 43 s to 4 min per case.
 
 ## Data governance
 

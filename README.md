@@ -360,7 +360,7 @@ recorded: fatura 102, pago R$ 12000,00 em 05/10/2026"></p>
   the desktop's token never leaves its container.
 - **Everything on the task's timeline,** with the screenshots kept as evidence.
 
-**Turn it on:** `docker compose --profile desktop up -d desktop` (built on [Cua](https://github.com/trycua/cua), MIT),
+**Turn it on:** `docker compose --profile desktop up -d desktop` (built on [Cua](https://github.com/trycua/cua); its desktop daemon, `cua-spacesd`, is [FSL-1.1-MIT](https://github.com/trycua/cua#licensing)),
 then list the apps in the employee's *Configurações*. Two sample apps come with it, Gnumeric and a Tk "legacy ERP";
 add your own in `mcp-servers/desktop/Dockerfile`.
 

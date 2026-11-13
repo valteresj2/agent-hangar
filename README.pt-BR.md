@@ -298,8 +298,8 @@ registrada: fatura 102, pago R$ 12000,00 em 05/10/2026"></p>
   o token do desktop não sai do container dele.
 - **Tudo na linha do tempo da tarefa,** com as capturas guardadas como evidência.
 
-**Para ligar:** `docker compose --profile desktop up -d desktop` (feito sobre o [Cua](https://github.com/trycua/cua),
-MIT) e liste os apps nas *Configurações* do funcionário. Vêm dois apps de exemplo, o Gnumeric e um "ERP legado" em Tk;
+**Para ligar:** `docker compose --profile desktop up -d desktop` (feito sobre o [Cua](https://github.com/trycua/cua);
+o daemon do desktop, `cua-spacesd`, é [FSL-1.1-MIT](https://github.com/trycua/cua#licensing)) e liste os apps nas *Configurações* do funcionário. Vêm dois apps de exemplo, o Gnumeric e um "ERP legado" em Tk;
 adicione os seus em `mcp-servers/desktop/Dockerfile`.
 
 **Testado com um modelo de verdade:** 8 de 8 casos com o DeepSeek pelo OpenRouter, entre eles:

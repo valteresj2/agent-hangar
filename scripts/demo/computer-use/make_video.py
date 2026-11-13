@@ -102,7 +102,7 @@ SEQ = [
           ["$ docker compose --profile desktop up -d desktop",
            "• Digital employee → Configurações: the apps it may open",
            "• Your own apps: add them to mcp-servers/desktop/Dockerfile",
-           "• Built on Cua (MIT); the token never leaves the desktop container"]), 8.0),
+           "• Built on Cua; the token never leaves the desktop container"]), 8.0),
     (slide("apps", "Admin · the governed desktop tools and the apps this employee may open"), 5.0),
     (slide("task-top", "The request, in plain words: log in, post the payment of invoice 102, confirm",
            (272, 0, 1440, 270)), 5.0),

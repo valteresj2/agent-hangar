@@ -1,5 +1,6 @@
-# Desktop governado: um desktop Linux isolado da Cua (https://github.com/trycua/cua, MIT) com o
-# daemon cua-spacesd (as ferramentas de desktop por MCP, com token, só dentro do container) e o nosso portão
+# Desktop governado: um desktop Linux isolado da Cua (https://github.com/trycua/cua) com o
+# daemon cua-spacesd (as ferramentas de desktop por MCP, com token, só dentro do container; licença FSL-1.1-MIT:
+# uso e hospedagem próprios livres, cada versão vira MIT dois anos depois) e o nosso portão
 # (app/gateway.py, :8000/mcp), que a central usa. O Digital employee nunca recebe o token.
 #
 # Para o piloto vêm duas aplicações de desktop: o Gnumeric (planilha, com árvore de acessibilidade) e um "ERP

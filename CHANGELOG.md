@@ -5,6 +5,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Computer-use cases on Cua Bench** (`tests/bench/desktop`): the eight governed-desktop cases as Cua Bench tasks
+  (cua-bench 0.4.4), with the Digital employee as the agent under test (`hangar_agent.HangarEmployee` works through the
+  central's API and the desktop gateway, answering as the manager). Each `evaluate` checks the state of the system
+  (the ERP's rows, the saved spreadsheet), the answer, the approvals and that the vault password never leaked; a
+  reference solution proves every check (`run.py --oracle`). Results: `summary.json` with pass@k and, per attempt,
+  the task's summary (`hangar-task.json`). First run with deepseek through OpenRouter: 8 of 8.
+
+### Fixed
+- **Cua license wording**: the governed desktop is built on Cua, and its desktop daemon `cua-spacesd` is
+  FSL-1.1-MIT, not MIT (README, analyst guide, desktop Dockerfile).
+
 ## [0.60.0] — 2026-11-08
 
 ### Added
