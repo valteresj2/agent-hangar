@@ -265,6 +265,7 @@ an admin.
 | GET / PUT | `/api/admin/notifications` | Admin: Slack app (`slack_bot_token`, `slack_signing_secret`, stored encrypted and never returned), `digest_hour` (-1 = off), `expiry_warn_min`, `due_soon_min`, `overdue_escalate_min`; also shows the e-mail status, the interactivity URL and the Slack manifest |
 | GET / PUT | `/api/me/notifications` | Where the caller gets decisions: `{channel: auto\|slack\|teams\|email\|off, teams_webhook, digest}`; returns `available` and the effective `route` |
 | POST | `/api/me/notifications/test` | Sends a test message through the effective channel |
+| GET / PUT | `/api/employees/{slug}/pacing` | Message pacing of an employee: `{quiet: off\|business, max_per_hour: 0..60, low: now\|digest}`; GET also returns `held` (messages waiting). PUT: who manages the employee |
 | POST | `/hooks/slack/interactions` | Slack buttons and forms. No session: authenticated by the Slack signature |
 | POST | `/hooks/slack/events` | Slack Events API (app mention, direct message): becomes a task. Slack signature |
 | POST | `/hooks/teams/messages` | Teams outgoing webhook: becomes a task. HMAC with the security token |

@@ -749,6 +749,8 @@ class Employee(OrgScoped, Base):
     learning_mode: Mapped[str] = mapped_column(String(4), default="on")  # on | off: propor artigos e procedimentos
     critic_mode: Mapped[str] = mapped_column(String(8), default="off")  # off | auto: um revisor crítico lê o memorando
     regression_mode: Mapped[str] = mapped_column(String(8), default="auto")  # auto: mudança no cargo roda as tarefas de ouro
+    # ritmo das mensagens para as pessoas: {quiet: off|business, max_per_hour: 0..60, low: now|digest} (services/pacing.py)
+    pacing: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_by: Mapped[str] = mapped_column(String(254), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     hired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -1977,6 +1979,23 @@ class WorkstationStep(OrgScoped, Base):
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PacedMessage(OrgScoped, Base):
+    """Uma mensagem de um Digital employee para uma pessoa (pedido de decisão, aviso de prazo): enviada na hora ou
+    segurada pelo ritmo do funcionário (fora do expediente, acima do teto por hora, baixa prioridade) e entregue depois,
+    num resumo só. As enviadas ficam como registro para contar o teto."""
+    __tablename__ = "paced_messages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    employee_id: Mapped[int] = mapped_column(Integer, index=True)
+    kind: Mapped[str] = mapped_column(String(12))  # request | due
+    ref_id: Mapped[int] = mapped_column(Integer)  # o pedido ou a tarefa
+    detail: Mapped[str] = mapped_column(String(300), default="")
+    status: Mapped[str] = mapped_column(String(10), default="sent", index=True)  # sent | held | released | dropped
+    reason: Mapped[str] = mapped_column(String(10), default="")  # quiet | cap | low (segurada)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Recording(OrgScoped, Base):

@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Message pacing per Digital employee** (*Settings → Message pacing*, `GET/PUT /api/employees/{slug}/pacing`):
+  decision requests and due warnings can wait for the company's business hours, respect a maximum per hour to the same
+  person, and, for low-priority tasks, wait for the daily digest. Urgent ones (about to expire, escalated, high
+  priority, overdue) go out at once. What waited goes out in a single summary per person and employee, without the
+  requests decided in the meantime. New table `paced_messages` and column `employees.pacing` (migration
+  `0058_pacing`).
 - **Follow-ups the employee sets** (`set_followup`, `cancel_followup`; group *Follow-ups*): when the work depends on
   something that hasn't happened yet, the Digital employee marks when to come back (`in` 30m…1w or `at`, from 5 minutes
   to 30 days) and what to check. The task sleeps in the new `waiting_timer` status, costing nothing, and wakes at the

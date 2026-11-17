@@ -482,6 +482,12 @@ def _deliver_request(db, request_id: int, user_id: int, why: str):
     u = db.get(User, user_id)
     if not r or r.status != "open" or not u or not u.active:
         return
+    from . import pacing
+    e = db.get(Employee, r.employee_id)
+    what = r.question if r.kind == "question" else (r.tool_name or r.kind)
+    if e is not None and not pacing.allow(db, e, u.id, "request", r.id, pacing.request_priority(db, r, why),
+                                          f"{r.kind}: {what}"[:300]):
+        return  # o ritmo do funcionário segurou: sai depois, no resumo (o pedido segue aberto em Decisões)
     cfg = org_cfg(db)
     via = route(cfg, u)
     c = content(db, r, why)
@@ -860,9 +866,12 @@ def _deliver_due(db, task_id: int, stage: str):
     if waiting:
         lines.append(f"Waiting for decision #{waiting}." if en else f"Aguardando a decisão #{waiting}.")
     cfg = org_cfg(db)
+    from . import pacing
     for uid in _people(db, e, task, stage):
         u = db.get(User, uid)
         via = route(cfg, u) if u and u.active else None
+        if via and not pacing.allow(db, e, u.id, "due", task.id, "normal" if stage == "soon" else "urgent", title):
+            continue  # "vence logo" respeita o ritmo; atrasada e escalada saem na hora
         if via:
             try:
                 _send_text(db, cfg, u, via, title, lines, f"{config.PUBLIC_BASE_URL}/app/#/tasks/{task.id}",

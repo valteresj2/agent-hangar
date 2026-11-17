@@ -602,9 +602,32 @@ async function empSettings(t, e) {
     const reason = prompt(`Desligar ${e.name}? Motivo (fica na auditoria):`);
     if (reason !== null) act(ev.target, () => api(`/employees/${e.slug}/status`, { method: 'POST', body: { to: 'offboarded', reason } }).then(route), 'Desligado');
   };
-  t.insertAdjacentHTML('beforeend', '<div id="s-ptools"></div><div id="s-golden"></div>');
+  t.insertAdjacentHTML('beforeend', '<div id="s-pacing"></div><div id="s-ptools"></div><div id="s-golden"></div>');
+  pacingCard($('#s-pacing'), e);
   platformToolsCard($('#s-ptools'), e);  // análise, extração, calculadoras… (analyst.js)
   goldenCard($('#s-golden'), e);  // tarefas de ouro e revisor crítico (analyst.js)
+}
+
+/* Ritmo das mensagens: o que ele manda para as pessoas espera o expediente, respeita um teto por hora e, se for de baixa
+   prioridade, vai para o resumo diário. Urgente (prestes a expirar, escalado, prioridade alta, atrasado) sai na hora. */
+async function pacingCard(box, e) {
+  const d = await api(`/employees/${e.slug}/pacing`).catch(() => null);
+  if (!d || !box) return;
+  const p = d.pacing, dis = e.can_manage ? '' : 'disabled';
+  box.innerHTML = `<div class="card mt"><h2>Ritmo das mensagens</h2>
+    <div class="mute small">Quando ele pode chamar as pessoas (pedidos de decisão, avisos de prazo). O que esperou sai num resumo só; urgente sai na hora.</div>
+    <label class="row small mt" style="gap:8px"><input type="checkbox" id="pc-quiet" ${p.quiet === 'business' ? 'checked' : ''} ${dis}>
+      <span>Só no expediente da empresa (calendário de dias úteis e horário)</span></label>
+    <label class="mt small">Máximo de mensagens por hora para a mesma pessoa (0 = sem limite)
+      <input id="pc-max" type="number" min="0" max="60" value="${p.max_per_hour}" style="max-width:120px" ${dis}></label>
+    <label class="row small mt" style="gap:8px"><input type="checkbox" id="pc-low" ${p.low === 'digest' ? 'checked' : ''} ${dis}>
+      <span>Pedidos de tarefas de baixa prioridade vão para o resumo diário</span></label>
+    ${d.held ? `<div class="small mt"><span class="pill info">${d.held}</span> <span>mensagem(ns) esperando para sair</span></div>` : ''}
+    ${e.can_manage ? '<div class="row mt"><button class="ghost" id="pc-save">Salvar ritmo</button></div>' : ''}</div>`;
+  const s = $('#pc-save', box);
+  if (s) s.onclick = ev => act(ev.target, () => api(`/employees/${e.slug}/pacing`, { method: 'PUT', body: {
+    quiet: $('#pc-quiet', box).checked ? 'business' : 'off', max_per_hour: Number($('#pc-max', box).value) || 0,
+    low: $('#pc-low', box).checked ? 'digest' : 'now' } }).then(() => pacingCard(box, e)), 'Ritmo salvo');
 }
 
 /* ---------- tarefa: linha do tempo ---------- */

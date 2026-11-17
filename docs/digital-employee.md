@@ -337,6 +337,24 @@ each company turns on the one it uses (or none, keeping the portal and MCP).
   lists the decisions waiting for them (with expiry times), the notices to read and the overdue tasks of the employees
   they manage. Each person can turn it off.
 
+### Message pacing
+
+Employees that work on their own must not become noise. Each one has a pacing, set by whoever manages it in
+*Settings → Message pacing* (`PUT /api/employees/{slug}/pacing`), for the decision requests and due warnings it
+sends to people:
+
+- **Business hours only** (`quiet: business`): outside the company calendar (business days, holidays and hours in
+  *Calendar*), messages wait for the next business hours.
+- **Maximum per hour** (`max_per_hour`, 0 = no limit): from this employee to the same person. The rest waits for the
+  hour to turn.
+- **Low priority to the digest** (`low: digest`): requests from low-priority tasks wait for the next daily digest time.
+- **Urgent never waits:** a request about to expire or escalated, a high-priority task, an overdue task.
+- What waited goes out **in a single summary** per person and employee, with the portal link; requests decided in the
+  meantime are left out. The request stays open in *Decisions* all along, and its expiry does not change.
+
+Loops (routines, triggers, webhooks) already close **silently** when there is nothing to report (`finish_task` with
+`findings=false`): nothing reaches a person, and the run still counts in the reports.
+
 ### Setting up Slack
 
 1. In [api.slack.com/apps](https://api.slack.com/apps?new_app=1), create the app *From a manifest*. The portal shows

@@ -60,6 +60,7 @@ from . import (  # noqa: F401  (svc.access.Access, svc.connect.snippet, svc.org.
                       org_chart,
                       org_learning,
                       orgs,
+                      pacing,
                       packages,
                       platform_tools,
                       playbooks,

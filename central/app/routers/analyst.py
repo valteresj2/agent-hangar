@@ -732,6 +732,26 @@ def critic_mode(slug: str, body: CriticBody, request: Request, db=Depends(db_dep
     return guard(run)
 
 
+class PacingBody(BaseModel):
+    quiet: str | None = None
+    max_per_hour: int | None = None
+    low: str | None = None
+
+
+@router.get("/employees/{slug}/pacing")
+def pacing_get(slug: str, request: Request, db=Depends(db_dep)):
+    def run():
+        e, _ = svc.employees.find(db, acc(request, db), slug)
+        return {"pacing": svc.pacing.settings(e), "held": svc.pacing.held_count(db, e)}
+    return guard(run)
+
+
+@router.put("/employees/{slug}/pacing")
+def pacing_put(slug: str, body: PacingBody, request: Request, db=Depends(db_dep)):
+    """Ritmo das mensagens: fora do expediente, teto por hora e baixa prioridade para o resumo (services/pacing.py)."""
+    return guard(lambda: svc.pacing.set_pacing(db, acc(request, db), slug, body.model_dump()))
+
+
 # ------------------------------------------------------------------ vigias
 @router.get("/watchers")
 def watchers(request: Request, db=Depends(db_dep)):

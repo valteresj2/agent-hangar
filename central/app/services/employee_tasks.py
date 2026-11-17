@@ -802,6 +802,8 @@ def tick() -> list[int]:
             sweep(db)
             from . import notify
             notify.sweep(db)  # alerta antes de expirar, resumo diário e prazos de tarefa
+            from . import pacing
+            pacing.sweep(db)  # o que o ritmo dos funcionários segurou e já pode sair
             from .employee_work import fire_routines
             fire_routines(db)
             from .employee_teamwork import poll_inboxes
