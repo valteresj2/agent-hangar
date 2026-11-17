@@ -280,7 +280,8 @@ window.addEventListener('load', () => {
 
 /* ---------- fase B: por que parou, dependências, arquivos e o histórico do cargo ---------- */
 const DIAG_STATE = { failed: 'Falhou', budget: 'Parada por orçamento', decision: 'Esperando uma decisão', colleague: 'Esperando um colega',
-  dependency: 'Esperando dependências', hold: 'Pausada', retry: 'Nova tentativa marcada' };
+  dependency: 'Esperando dependências', hold: 'Pausada', retry: 'Nova tentativa marcada', external: 'Esperando resposta de fora',
+  timer: 'Retorno marcado' };
 const fmtSize = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 
 function diagnosisView(x) {
@@ -288,7 +289,8 @@ function diagnosisView(x) {
   if (!d) return '';
   const act = d.actions || [];
   return `<div class="card mt ${d.state === 'failed' || d.state === 'budget' ? 'bad-card' : 'warn-card'}"><h2>Por que parou</h2>
-    <div><b>${esc(DIAG_STATE[d.state] || d.state)}</b> — <span data-noi18n>${esc(d.cause || '')}</span></div>
+    <div><b>${esc(DIAG_STATE[d.state] || d.state)}</b> — <span data-noi18n>${esc(d.state === 'timer' && d.at
+      ? `${new Date(d.at).toLocaleString()}: ${d.check || ''}` : (d.cause || ''))}</span></div>
     ${d.owner ? `<div class="small mt"><span class="mute">Próxima ação com:</span> <span data-noi18n>${esc(d.owner)}</span></div>` : ''}
     ${d.state === 'failed' ? `<div class="small mute mt"><span>Rodadas usadas</span> ${d.runs} / ${d.limit} · <span>tentativas</span> ${d.attempts}</div>` : ''}
     ${(d.side_effects || []).length ? `<div class="small mt"><b>A última rodada pode ter feito algo fora da plataforma:</b> <span data-noi18n>${d.side_effects.map(esc).join(', ')}</span>.

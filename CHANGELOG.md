@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Follow-ups the employee sets** (`set_followup`, `cancel_followup`; group *Follow-ups*): when the work depends on
+  something that hasn't happened yet, the Digital employee marks when to come back (`in` 30m…1w or `at`, from 5 minutes
+  to 30 days) and what to check. The task sleeps in the new `waiting_timer` status, costing nothing, and wakes at the
+  time with a "RETORNO MARCADO" message in its conversation, continuing with its history. A message from someone
+  wakes it early; pausing holds it. Shown in *Why it stopped* as *Follow-up scheduled* (`docs/analyst.md`).
 - **Computer-use cases on Cua Bench** (`tests/bench/desktop`): the eight governed-desktop cases as Cua Bench tasks
   (cua-bench 0.4.4), with the Digital employee as the agent under test (`hangar_agent.HangarEmployee` works through the
   central's API and the desktop gateway, answering as the manager). Each `evaluate` checks the state of the system

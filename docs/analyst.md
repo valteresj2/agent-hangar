@@ -122,6 +122,22 @@ A **queue** (*Digital employees → Queues*) is a team's single entry point: por
   Outside the 24-hour window since the person's last message, only a template approved in WhatsApp itself can be
   sent. People in the company can also ask for work over WhatsApp after linking their number (`link CODE`).
 
+## Follow-ups the employee sets
+
+When the work depends on something that hasn't happened yet (a payment clearing, a process finishing, a system
+updating), the Digital employee calls `set_followup` with when to come back (`in`: `30m`, `2h`, `3d`, `1w`; or `at`,
+ISO 8601 with the time zone) and what to check (`check`, written for someone who doesn't remember the context).
+
+- The round ends and the task sleeps in `waiting_timer` (*Follow-up scheduled* in *Why it stopped*), costing nothing.
+- At the time, the task wakes with a **RETORNO MARCADO** message holding what to check, and continues with all its
+  history. If it still hasn't happened, the employee sets another follow-up or decides the next step.
+- One follow-up per task: setting it again replaces the previous one; `cancel_followup` clears it. From 5 minutes to
+  30 days.
+- A message from someone in the task's conversation wakes it early. Pausing the task holds the follow-up; resuming
+  goes back to waiting (or wakes it, if the time has passed).
+- Nothing leaves the platform, so setting a follow-up doesn't go through the authority. The group can be turned off
+  per employee (*Follow-ups*).
+
 ## Calendar and meetings
 
 With the **company calendar** set up once by the admin — Microsoft 365 (a tenant app with calendar permission:

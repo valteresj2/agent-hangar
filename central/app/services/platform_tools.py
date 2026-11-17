@@ -32,6 +32,7 @@ GROUPS = {
     "documents": "Propor alterações em documentos",
     "memo": "Memorando de decisão",
     "issues": "Issues do quadro (comentar, mudar status, dividir em sub-issues)",
+    "followups": "Retorno marcado (a tarefa dorme e o funcionário confere mais tarde)",
 }
 
 
@@ -72,7 +73,7 @@ def _load():
     if _LOADED:
         return
     from . import analysis, calculators, extraction  # noqa: F401
-    for mod in ("work_queues", "correspondence", "meetings", "knowledge", "browser", "desktop", "workstations", "doc_changes", "decision_memos", "org_learning", "self_org", "issue_tools"):
+    for mod in ("work_queues", "correspondence", "meetings", "knowledge", "browser", "desktop", "workstations", "doc_changes", "decision_memos", "org_learning", "self_org", "issue_tools", "followups"):
         try:
             __import__(f"app.services.{mod}")
         except ModuleNotFoundError as ex:

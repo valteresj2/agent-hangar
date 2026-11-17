@@ -20,7 +20,7 @@ from . import employee_tasks as tasksmod
 from .access import Access
 from .common import PlatformError, audit, iso
 
-HOLDABLE = ("new", "blocked", "waiting_task", "waiting_budget", "waiting_external")
+HOLDABLE = ("new", "blocked", "waiting_task", "waiting_budget", "waiting_external", "waiting_timer")
 EXTRA_RUNS = 3
 
 
@@ -185,7 +185,8 @@ def hold(db: Session, acc: Access, task_id: int, on: bool) -> dict:
             x.status = "on_hold"
             changed += 1
         elif not on and x.status == "on_hold":
-            x.status = "blocked" if pending_deps(db, x) else "new"
+            from . import followups
+            x.status = "blocked" if pending_deps(db, x) else (followups.after_hold(db, x) or "new")
             tasksmod.event(db, x, "hold", {"on": False, "by": acc.p.name})
             changed += 1
     db.commit()
@@ -244,6 +245,11 @@ def diagnosis(db: Session, t: EmployeeTask) -> dict | None:
                        .order_by(ExternalThread.id.desc()))
         return {"state": "external", "cause": f"esperando a resposta de {th.contact_name or th.contact}" if th else
                 "esperando a resposta de alguém de fora", "owner": "", "actions": ["continue"]}
+    if t.status == "waiting_timer":
+        from . import followups
+        f = followups.info(db, t) or {}
+        return {"state": "timer", "cause": f"retorno marcado para {f.get('at', '?')}: {f.get('check', '')}"[:400],
+                "owner": "", "actions": [], "at": f.get("at"), "check": f.get("check")}
     if t.status == "on_hold":
         return {"state": "hold", "cause": "pausada", "owner": manager, "actions": ["resume"]}
     if t.status == "new" and t.not_before and tasksmod._aware(t.not_before) > now():

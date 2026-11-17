@@ -815,6 +815,8 @@ def tick() -> list[int]:
             work_queues.sweep(db)  # SLA estourado
             playbooks.sweep(db)  # execuções agendadas (@bd 1 08:00…)
             correspondence.sweep(db)  # lembretes sem resposta e promessas vencidas
+            from . import followups
+            followups.sweep(db)  # retornos marcados pelos funcionários que venceram
             meetings.sweep(db)  # briefings antes das reuniões
             from . import decision_memos, watchers
             watchers.sweep(db)  # vigias: só agem quando algo muda
@@ -954,10 +956,11 @@ def _run_task(task_id: int) -> EmployeeTask | None:
             open_req = db.scalar(select(HumanRequest.id).where(HumanRequest.task_id == task.id, HumanRequest.status == "open",
                                                                HumanRequest.kind.in_(BLOCKING)))
             child = db.get(EmployeeTask, task.waiting_on) if task.waiting_on else None
-            from . import correspondence
+            from . import correspondence, followups
             task.status = ("waiting_human" if open_req else
                            "waiting_task" if child is not None and child.status not in TERMINAL else
                            "waiting_external" if correspondence.waiting(db, task) else
+                           "waiting_timer" if followups.pending(db, task) else
                            "new")  # decidido (ou a repassada terminou) enquanto a rodada terminava: segue
             db.commit()
             if open_req:
@@ -968,6 +971,12 @@ def _run_task(task_id: int) -> EmployeeTask | None:
         if correspondence.waiting(db, task) and not task_thread.pending(db, task):  # espera a resposta de fora
             task.status = "waiting_external"
             event(db, task, "note", {"waiting": "resposta de fora"})
+            db.commit()
+            return task
+        from . import followups
+        if followups.pending(db, task) and not task_thread.pending(db, task):  # retorno marcado: dorme até a hora
+            task.status = "waiting_timer"
+            event(db, task, "note", {"waiting": "retorno marcado", **(followups.info(db, task) or {})})
             db.commit()
             return task
         if task_thread.pending(db, task):  # chegou mensagem durante a rodada: mais uma rodada antes de encerrar

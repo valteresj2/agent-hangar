@@ -8,7 +8,8 @@ const EMP_STATUS = { onboarding: ['Contratação', ''], probation: ['Em experiê
 const TASK_STATUS = { draft: ['Rascunho', ''], new: ['Na fila', 'info'], in_progress: ['Trabalhando', 'info'],
   waiting_human: ['Aguardando decisão', 'warn'], waiting_task: ['Aguardando colega', 'info'], done: ['Concluída', 'ok'], failed: ['Falhou', 'bad'],
   cancelled: ['Cancelada', ''], expired: ['Expirou', 'bad'], waiting_budget: ['Parada por orçamento', 'bad'],
-  blocked: ['Esperando dependências', 'info'], in_review: ['Em revisão', 'warn'], on_hold: ['Pausada', ''] };
+  blocked: ['Esperando dependências', 'info'], waiting_external: ['Aguardando resposta de fora', 'info'],
+  waiting_timer: ['Retorno marcado', 'info'], in_review: ['Em revisão', 'warn'], on_hold: ['Pausada', ''] };
 const ACTION_LABEL = { read: 'Ler e consultar', delegate: 'Delegar a outro agente', write_internal: 'Alterar dados internos', run_code: 'Executar código (harness)',
   send_external: 'Enviar para fora', speak_for_company: 'Falar em nome da empresa', publish: 'Publicar',
   financial: 'Dinheiro', delete: 'Apagar', prod_change: 'Mudar produção' };
@@ -623,7 +624,7 @@ async function taskPage(id) {
   main.innerHTML = `<a href="javascript:history.back()" class="mute small">← voltar</a>
   <div class="row between"><div><h1 data-noi18n>#${x.id} ${esc(x.title)}</h1><div class="sub">${taskPill(x.status)}${x.finding === false ? ' <span class="pill">sem achados</span>' : x.finding === true ? ' <span class="pill warn">achado</span>' : ''} pedida por ${esc(x.requester)}${x.via ? ` <span>pelo</span> ${esc(VIA_LABEL[x.via] || x.via)}` : ''} · ${when(x.created_at)}
     · ${x.runs} rodada(s) · ${usd(x.cost_usd)}</div>${duePill(x)}</div>
-    <span class="row" style="gap:6px">${['new', 'blocked', 'waiting_task', 'waiting_budget'].includes(x.status) ? '<button class="ghost" id="t-hold">Pausar</button>' : ''}
+    <span class="row" style="gap:6px">${['new', 'blocked', 'waiting_task', 'waiting_budget', 'waiting_external', 'waiting_timer'].includes(x.status) ? '<button class="ghost" id="t-hold">Pausar</button>' : ''}
       ${x.status === 'on_hold' ? '<button id="t-resume">Retomar</button>' : ''}
       ${['done', 'failed', 'cancelled', 'expired'].includes(x.status) ? '' : '<button class="ghost danger" id="t-cancel">Cancelar tarefa</button>'}</span></div>
   ${x.review_required && !['done', 'failed', 'cancelled'].includes(x.status) ? '<div class="small mute"><span class="pill warn">revisão</span> <span>o resultado passa por revisão antes de concluir</span></div>' : ''}

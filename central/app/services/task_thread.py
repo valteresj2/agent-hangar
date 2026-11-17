@@ -58,6 +58,9 @@ def post(db: Session, acc: Access, task_id: int, body: str) -> dict:
         raise PlatformError("tarefas do período de experiência não reabrem")
     m = TaskMessage(task_id=t.id, author=acc.p.name, user_id=acc.p.user_id, body=body, status="queued", created_at=now())
     db.add(m)
+    if t.status == "waiting_timer":  # dormindo num retorno marcado: a mensagem acorda antes da hora
+        from . import followups
+        followups.wake(db, t, "early")
     if t.status in REOPEN:  # acompanhamento: a tarefa volta para a fila e a mensagem vai na próxima rodada
         t.status, t.finished_at, t.error, t.attempts = "new", None, "", 0
         tasksmod.event(db, t, "reopened", {"by": acc.p.name})

@@ -109,6 +109,9 @@
     'Conta desconectada': 'Account disconnected',
     // fase B: dependências, revisão, arquivos, continuar e o histórico do cargo
     'Esperando dependências': 'Waiting for dependencies',
+    'Retorno marcado': 'Follow-up scheduled',
+    'Esperando resposta de fora': 'Waiting for an outside reply',
+    'Aguardando resposta de fora': 'Waiting for an outside reply',
     'Pausada': 'Paused',
     'revisão': 'review',
     'Resultado para revisar': 'Result to review',
