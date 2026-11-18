@@ -343,6 +343,9 @@ def refresh_llm_models() -> bool:
         return False
     from . import llm_models
     _pool.submit(llm_models.refresh_due)
+    if shared.take_once("hangarllm-hub", 3600):  # hub HangarLLM: renova as chaves perto de vencer e lê o gasto real
+        from . import hangarllm
+        _pool.submit(hangarllm.refresh_due)
     if shared.take_once("model-profiles", 3600):  # fichas: fontes sem custo e a pesquisa automática, de hora em hora
         from . import model_profiles
         _pool.submit(model_profiles.run_auto)

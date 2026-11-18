@@ -489,7 +489,8 @@ Harnesses de código são opcionais porque as imagens são grandes:
   gateway autenticado, com métricas por canal.
 - **Use o seu gateway de LLM.** O hangar nunca hospeda modelo: os agentes chamam o seu LiteLLM, OpenRouter ou
   provedor por meio de *conexões*. As chaves ficam criptografadas, há override por ambiente e o custo é calculado
-  em US$.
+  em US$. Ligue o [HangarLLM](docs/hangarllm.md) como hub e cada agente recebe uma chave só dele no gateway, toda
+  chamada leva etiquetas de agente e tarefa, e o gasto real volta do gateway.
 - **Governado como software.** Chaves com escopo (admin × invoke só de certos agentes), tokens internos por
   agente, auditoria, GitOps (`hangar apply -f agents.yaml`) e JSON Schema da spec.
 

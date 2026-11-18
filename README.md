@@ -514,7 +514,8 @@ a Slack or Teams webhook.
 
 **Bring your own LLM gateway.** The hangar never hosts a model. Agents call your LiteLLM, OpenRouter or provider
 through *connections*: URL, model and key, encrypted at rest. Connections can differ per environment and track cost
-in US$.
+in US$. Connect [HangarLLM](docs/hangarllm.md) as the hub and each agent gets a gateway key of its own, every call is
+tagged with the agent and task, and the real spend comes back from the gateway.
 
 ## How it works
 

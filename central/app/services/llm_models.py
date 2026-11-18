@@ -35,6 +35,11 @@ MAX_MODELS = 3000
 # id, nome, grupo, protocolo, base_url, como listar, prefixo na tabela pública do LiteLLM, tipos que costuma ter
 P = dict
 PROVIDERS = [
+    P(id="hangarllm", name="HangarLLM (hub)", group="hub", protocol="openai", base_url="http://hangarllm:4000/v1",
+      list="litellm", prefix="", kinds="text, embedding, rerank, image, tts, stt", initials="HL", color="#F5B400",
+      logo="/ui/providers/hangarllm.webp",
+      note="Ligue pela tela Hub HangarLLM: cada agente recebe uma chave só dele, as chamadas levam etiquetas e o gasto "
+           "real volta do gateway. A lista e o preço dos modelos vêm do próprio HangarLLM."),
     P(id="litellm", name="LiteLLM", group="gateway", protocol="openai", base_url="http://host.docker.internal:4000/v1",
       list="litellm", prefix="", kinds="text, embedding, rerank, image, tts, stt", initials="LL", color="#1F6FEB",
       note="O gateway da empresa (ou o seu). A lista vem de /model/info, com o tipo de cada modelo. De dentro do Docker, "
@@ -114,7 +119,7 @@ PROVIDERS = [
       note="Qualquer endpoint no formato de Mensagens da Anthropic (/v1/messages e /v1/models)."),
 ]
 BY_ID = {p["id"]: p for p in PROVIDERS}
-LOGOS = {p["id"] for p in PROVIDERS if p["group"] != "custom" and p["id"] != "litellm"}
+LOGOS = {p["id"] for p in PROVIDERS if p["group"] not in ("custom", "hub") and p["id"] != "litellm"}
 
 
 def provider(pid: str) -> dict:
@@ -122,7 +127,7 @@ def provider(pid: str) -> dict:
 
 
 def providers_view() -> list[dict]:
-    return [{**p, "logo": f"/ui/providers/{p['id']}.png" if p["id"] in LOGOS else ""} for p in PROVIDERS]
+    return [{**p, "logo": p.get("logo") or (f"/ui/providers/{p['id']}.png" if p["id"] in LOGOS else "")} for p in PROVIDERS]
 
 
 # ------------------------------------------------------------------ tipo de cada modelo
@@ -141,7 +146,8 @@ _VISION = re.compile(r"vision|(^|[-/])vl\b|-vl-|4o|gpt-4\.1|gpt-5|claude-(3|sonn
 _REASON = re.compile(r"(^|[-/])o[134]\b|(^|[-/])o[134]-|r1\b|reason|thinking|qwq|deepseek-v[34]|gpt-5|claude-(sonnet|opus)-4")
 _LITELLM_MODE = {"chat": "text", "completion": "text", "responses": "text", "embedding": "embedding", "rerank": "rerank",
                  "image_generation": "image", "image_edit": "image", "video_generation": "video", "audio_speech": "tts",
-                 "audio_transcription": "stt", "moderation": "moderation", "realtime": "text"}
+                 "audio_transcription": "stt", "moderation": "moderation", "realtime": "text",
+                 "decisions": "other"}
 _TOGETHER_TYPE = {"chat": "text", "language": "text", "code": "text", "embedding": "embedding", "rerank": "rerank",
                   "image": "image", "video": "video", "audio": "tts", "transcribe": "stt", "moderation": "moderation"}
 
@@ -372,6 +378,10 @@ def enrich(items: list[dict], prov: dict, cat: dict | None = None) -> list[dict]
 def sync_connection(db: Session, conn: LlmConnection, actor: str = "agendador") -> dict:
     """Atualiza a lista de modelos da conexão. Nunca levanta: um provedor fora do ar só marca o erro."""
     key = crypto.decrypt(conn.api_key) if conn.api_key else ""
+    if conn.provider == "hangarllm":  # a lista completa, com tipo e preço, vem com a chave de gestão do hub
+        from . import hangarllm
+        h = hangarllm.link(db)
+        key = hangarllm._admin_key(h) if h else key
     prov = provider(conn.provider)
     t = now()
     try:

@@ -41,6 +41,7 @@ from . import (  # noqa: F401  (svc.access.Access, svc.connect.snippet, svc.org.
                       goals,
                       governance,
                       guides,
+                      hangarllm,
                       home,
                       inbox,
                       issues,

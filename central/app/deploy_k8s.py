@@ -116,7 +116,8 @@ def run_agent(slug: str, env: str, resolved_spec: dict, llm_conf: dict):
                           "LLM_API_KEY": llm_conf.get("api_key", "")}, labels)
     plain = {"AGENT_SPEC": json.dumps(resolved_spec), "AGENT_SLUG": slug, "AGENT_ENV": env,
              "PUBLIC_URL": f"{config.PUBLIC_BASE_URL}/{'gw' if env == 'prod' else 'gw-stage'}/{slug}",
-             "INTERNAL_BASE_URL": config.INTERNAL_BASE_URL, "LLM_BASE_URL": llm_conf.get("base_url", "")}
+             "INTERNAL_BASE_URL": config.INTERNAL_BASE_URL, "LLM_BASE_URL": llm_conf.get("base_url", ""),
+             "LLM_GATEWAY": llm_conf.get("gateway", "")}
     pod = {"metadata": {"labels": {**labels, f"{LBL}/version": str(resolved_spec.get("version", ""))}},
            "spec": {"automountServiceAccountToken": False, "enableServiceLinks": False, **_sandbox(),
                     "imagePullSecrets": _pull_secrets(),

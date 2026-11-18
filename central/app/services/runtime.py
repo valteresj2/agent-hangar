@@ -157,12 +157,16 @@ def deploy_env(db: Session, slug: str, env: str, actor="admin", _stack=()) -> De
         if not dep or dep.version != sa.current_version:
             deploy_env(db, sub, env, actor, _stack + (slug,))
     spec = resolve_spec(db, a, env)
-    llm_conf = resolve_llm(db, spec, env)
+    llm_conf = resolve_llm(db, spec, env, a)
     spec["llm"]["model"] = llm_conf["model"]  # modelo efetivo, para o runtime e para exibição
     spec["llm"]["prices"] = list(llm_conf["prices"])
     from . import execution  # esforço, limite de saída, ferramentas em paralelo e cache, na língua do provedor
     spec["execution_resolved"] = execution.runtime_options(
         execution.resolve(db, spec, "runtime", llm_conf["connection"], llm_conf["model"], a.name, a.objective))
+    light = ((spec["execution_resolved"] or {}).get("light") or {}).get("model")
+    if llm_conf.get("gateway") and light and light != llm_conf["model"]:  # hub HangarLLM: a chave cobre o modelo leve
+        from . import hangarllm
+        llm_conf["api_key"] = hangarllm.agent_key(db, a, env, [llm_conf["model"], light])
     for d in a.deployments:
         if d.env == env and d.status == "running":
             d.status, d.stopped_at = "replaced", now()

@@ -51,7 +51,7 @@ def submit_job(db: Session, slug: str, task: str, env="stage", timeout_s=None, a
         raise PlatformError("task vazia")
     a = get_agent(db, slug)
     spec = resolve_spec(db, a, env)
-    hconf = resolve_harness(db, spec, env)
+    hconf = resolve_harness(db, spec, env, a)
     timeout_s = min(max(int(timeout_s or config.JOB_TIMEOUT_S), 10), config.JOB_MAX_TIMEOUT_S)
     skills_txt = "\n\n".join(f"## {s['name']}\n{s['content']}" for s in spec.get("skills_resolved", []))
     system_prompt = "\n\n".join(x for x in (spec.get("instructions", ""), skills_txt) if x)

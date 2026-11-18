@@ -5,7 +5,7 @@ const MODEL_KIND_HINT = { text: 'conversa, raciocínio, código', embedding: 'bu
   image: 'gerar imagens', video: 'gerar vídeos', tts: 'texto para voz', stt: 'voz para texto', moderation: 'filtrar conteúdo', other: '' };
 const CAP_LABEL = { vision: 'lê imagens', tools: 'ferramentas', reasoning: 'raciocínio', audio_in: 'ouve áudio', audio_out: 'fala' };
 const SRC_LABEL = { provider: 'informado pelo provedor', catalog: 'tabela pública de modelos', name: 'deduzido pelo nome', admin: 'corrigido por um admin' };
-const PV_GROUPS = [['gateway', 'Gateways e roteadores'], ['api', 'Provedores com API key'], ['local', 'Na sua máquina'], ['custom', 'Compatíveis (custom)']];
+const PV_GROUPS = [['hub', 'Hub'], ['gateway', 'Gateways e roteadores'], ['api', 'Provedores com API key'], ['local', 'Na sua máquina'], ['custom', 'Compatíveis (custom)']];
 let PV = null;  // {providers, kinds}
 
 async function pvLoad() {
@@ -46,10 +46,11 @@ async function providersPage() {
     const cards = g === 'custom'
       ? conns.map(x => card({ ...pvOf(x.provider), name: x.name }, [x])).join('')
       : list.map(p => card(p, pvConns(c, p.id))).join('');
+    const hubNote = g === 'hub' ? '<div class="sub">Ligue o HangarLLM uma vez e ele vira o hub dos agentes: cada agente recebe uma chave só dele, as chamadas levam etiquetas de agente e tarefa, e o gasto real volta do gateway. Os provedores abaixo seguem valendo, isolados.</div>' : '';
     return `<section class="mt"><div class="row between"><h2>${esc(title)}</h2><div class="row">
       ${g === 'custom' ? `<a class="btn ghost" href="#/providers/custom-anthropic">+ Compatível com Anthropic</a><a class="btn" href="#/providers/custom">+ Compatível com OpenAI</a>` : ''}
       ${conns.length ? `<button class="ghost pv-testall" data-n="${esc(conns.map(x => x.name).join(','))}">${icon('check')} Testar todas</button>` : ''}</div></div>
-      ${cards ? `<div class="pv-grid">${cards}</div>` : '<div class="mute small">Nenhum endpoint compatível ainda: use os botões acima para um vLLM, Azure, Bedrock via gateway ou qualquer API no formato da OpenAI ou da Anthropic.</div>'}</section>`;
+      ${hubNote}${cards ? `<div class="pv-grid">${cards}</div>` : '<div class="mute small">Nenhum endpoint compatível ainda: use os botões acima para um vLLM, Azure, Bedrock via gateway ou qualquer API no formato da OpenAI ou da Anthropic.</div>'}</section>`;
   };
   main.innerHTML = `<h1>Provedores de LLM</h1>
   <div class="sub">Conecte os provedores que a empresa usa. A central busca a lista de modelos de cada um (tipo de saída, contexto e preço) na hora e depois a cada hora; o construtor de agentes usa essa lista para escolher o modelo de cada agente e para saber quando falta um tipo de modelo.</div>
@@ -80,6 +81,7 @@ async function providersPage() {
 }
 
 async function providerDetail(id) {
+  if (id === 'hangarllm') return hubPage();
   const [c] = await Promise.all([api('/catalog'), pvLoad()]);
   const p = pvOf(id);
   const conns = pvConns(c, p.id);
@@ -539,4 +541,85 @@ async function tuneCard(box, a, canEdit, labels) {
       'Esforço trocado: nova versão criada (rode os testes para levar à produção)');
   }
   if (running) tunePoll = setTimeout(() => tuneCard(box, a, canEdit, labels), 4000);
+}
+
+/* ---------- Hub HangarLLM: liga uma vez; modelos, chave por agente, etiquetas e gasto real vêm do gateway ---------- */
+const HUB_PERIOD = { '1d': 'por dia', '7d': 'por semana', '30d': 'por mês' };
+const hubUsd = v => v && v < 0.01 ? `$${Number(v).toFixed(6)}` : usd(v);  // gasto de poucas chamadas: centavos de centavo
+async function hubPage() {
+  await pvLoad();
+  const p = pvOf('hangarllm');
+  const head = `<a href="#/providers" class="mute small">← Provedores de LLM</a>
+  <div class="row mt" style="gap:14px">${pvLogo(p, 48)}<div><h1 style="margin:0">Hub HangarLLM</h1>
+    <div class="mute small">Modelos, chaves por agente e gasto real num lugar só</div></div></div>`;
+  if (!ME.is_admin) { main.innerHTML = head + '<div class="card mt mute">Só admins da plataforma ligam e veem o hub.</div>'; return; }
+  const [s, c] = await Promise.all([api('/hangarllm'), api('/catalog')]);
+  const conn = s.connected ? c.llm_connections.find(x => x.name === s.connection) : null;
+  const iso = s.isolated || {};
+  const keys = (s.keys || []).filter(k => !k.central);
+  const keyRows = keys.map(k => `<tr><td>${k.agent ? `<a href="#/agents/${encodeURIComponent(k.agent)}">${esc(k.agent)}</a>` : '—'}</td>
+    <td>${esc(k.env)}</td><td class="small">${(k.models || []).map(m => `<code>${esc(m)}</code>`).join(' ')}</td>
+    <td class="small">${k.expires_at ? new Date(k.expires_at).toLocaleDateString(window.LOCALE || 'pt-BR') : '—'}</td>
+    <td>${hubUsd(k.spend_usd)}</td></tr>`).join('');
+  main.innerHTML = head + `<div class="sub mt">${esc(p.note)}</div>
+  ${s.connected ? `<div class="card mt"><div class="row between" style="align-items:flex-start;flex-wrap:wrap">
+    <div><div><span class="pill ${s.status === 'ok' ? 'ok' : 'bad'}">${s.status === 'ok' ? 'Conectado' : 'Com problema'}</span>
+      <span class="mute small">${copyable(s.url)}${s.checked_at ? ` · <span>conferido</span> ${ago(s.checked_at)}` : ''}</span></div>
+      ${s.error ? `<div class="bad-text small mt">${esc(s.error)}</div>` : ''}
+      ${s.ui_url ? `<div class="small mt"><a href="${esc(s.ui_url)}" target="_blank" rel="noopener">${icon('globe')} Abrir o painel do HangarLLM</a></div>` : ''}</div>
+    <div class="row" style="flex-wrap:wrap;justify-content:flex-end"><button class="ghost" id="hub-refresh">Atualizar agora</button>
+      <button class="ghost" id="hub-off">Desligar o hub</button></div></div>
+    <div class="grid g4 mt">
+      <div><div class="mute small">Modelos</div><b style="font-size:22px">${fmt(s.models_total)}</b><div class="small mt">${kindChips(s.models)}</div></div>
+      <div><div class="mute small">Chaves de agente</div><b style="font-size:22px">${fmt(keys.length)}</b><div class="mute small">uma por agente e ambiente, renovadas sozinhas</div></div>
+      <div><div class="mute small">Gasto real no gateway</div><b style="font-size:22px">${hubUsd(s.spend_usd)}</b><div class="mute small">somado das chaves criadas pela central</div></div>
+      <div><div class="mute small">Orçamento por agente</div><b style="font-size:22px">${usd(s.budget_usd)}</b><div class="mute small">${esc(HUB_PERIOD[s.budget_period] || s.budget_period)}, aplicado pelo gateway</div></div></div></div>
+  <div class="card mt"><h2 style="margin:0">Chaves dos agentes</h2>
+    <div class="mute small">Criadas no deploy, só com os modelos que o agente usa. A chave de gestão nunca sai da central.</div>
+    ${keyRows ? `<table class="mt"><thead><tr><th>Agente</th><th>Ambiente</th><th>Modelos</th><th>Vence</th><th>Gasto real</th></tr></thead><tbody>${keyRows}</tbody></table>`
+      : '<div class="mute small mt">Nenhuma ainda: escolha a conexão <code>hangarllm</code> num agente e publique em stage.</div>'}</div>
+  <div id="hub-conn"></div>` : ''}
+  <details class="card mt" ${s.connected ? '' : 'open'}><summary><b>${s.connected ? 'Configuração' : 'Ligar o HangarLLM'}</b></summary>
+    <div class="grid g2 mt">
+      <label>Endereço do HangarLLM <span class="mute">(como a central e os agentes chegam nele)</span><input id="hub-url" value="${esc(s.url || 'http://hangarllm:4000')}"></label>
+      <label>Chave de gestão <span class="mute">${s.connected ? '(vazio mantém a atual)' : '(chave mestra ou de gestão)'}</span><input id="hub-key" type="password" autocomplete="off"></label></div>
+    <div class="grid g3 mt">
+      <label>Painel <span class="mute">(opcional, para os links)</span><input id="hub-ui" value="${esc(s.ui_url || '')}" placeholder="https://localhost:4400/ui"></label>
+      <label>Orçamento de cada agente (US$)<input id="hub-budget" type="number" min="0.01" step="0.01" value="${s.budget_usd || 50}"></label>
+      <label>Período<select id="hub-period">${Object.entries(HUB_PERIOD).map(([v, l]) => `<option value="${v}" ${(s.budget_period || '30d') === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label></div>
+    <button id="hub-go" class="mt">${s.connected ? 'Salvar' : 'Ligar o hub'}</button>
+    <details class="mt"><summary class="small">Instalação local com Docker</summary>
+      <div class="mute small mt">O HangarLLM roda em outro compose. Este botão põe o container dele nas redes dos agentes e dos jobs com o nome <code>hangarllm</code>; aí o endereço é <code>http://hangarllm:4000</code>, sem o certificado local. Refaça depois de recriar o container do HangarLLM.</div>
+      <div class="row mt" style="gap:10px;align-items:flex-end"><label style="min-width:260px">Container<input id="hub-ctr" value="hangarllm-hangarllm-1"></label>
+        <button class="ghost" id="hub-net">Pôr na rede dos agentes</button></div></details></details>
+  <div class="card mt"><h2 style="margin:0">O que segue isolado</h2>
+    <div class="mute small">Continua funcionando como antes, sem chave por agente nem gasto real do gateway.</div>
+    <div class="row mt" style="gap:18px;flex-wrap:wrap">
+      <a href="#/providers">${fmt(iso.llm_connections || 0)} <span>conexões diretas de LLM</span></a>
+      <a href="#/connectors">${fmt(iso.connectors || 0)} <span>conectores (MCP)</span></a>
+      <a href="#/catalog">${fmt(iso.skills || 0)} <span>skills</span></a></div></div>`;
+  if (conn) {
+    $('#hub-conn').innerHTML = connCard(conn);
+    const del = $('#hub-conn .cc-del');
+    if (del) del.remove();  // a conexão do hub sai ao desligar o hub (que revoga as chaves)
+    const desk = $('#hub-conn .cc-desk');
+    if (desk) desk.style.display = 'none';  // o Hangar desktop só fala o protocolo da Anthropic; o hub é OpenAI
+    connWire(conn, p);
+  }
+  $('#hub-go').onclick = e => act(e.target, async () => {
+    const r = await api('/hangarllm', { method: 'PUT', body: { url: $('#hub-url').value.trim(), admin_key: $('#hub-key').value,
+      ui_url: $('#hub-ui').value.trim(), budget_usd: num($('#hub-budget').value), budget_period: $('#hub-period').value } });
+    toast(`Hub ligado: ${fmt(r.models_total)} modelo(s)`);
+    await hubPage();
+  });
+  $('#hub-net').onclick = e => act(e.target, async () => {
+    const r = await api('/hangarllm/network', { method: 'POST', body: { container: $('#hub-ctr').value.trim() } });
+    $('#hub-url').value = r.url;
+    toast(`Pronto: use ${r.url}`);
+  });
+  const rf = $('#hub-refresh');
+  if (rf) rf.onclick = e => act(e.target, async () => { await api('/hangarllm/refresh', { method: 'POST' }); await hubPage(); }, 'Atualizado');
+  const off = $('#hub-off');
+  if (off) off.onclick = e => confirm('Desligar o hub? As chaves dos agentes são revogadas no HangarLLM e a conexão hangarllm sai do catálogo.') &&
+    act(e.target, async () => { await api('/hangarllm', { method: 'DELETE' }); await hubPage(); }, 'Hub desligado');
 }

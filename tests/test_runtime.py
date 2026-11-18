@@ -158,3 +158,19 @@ def test_employee_prompt_names_only_its_tools_and_asks_for_missing_ones(rt, monk
     monkeypatch.setattr(rt, "EMPLOYEE", {"title": "Minutes", "manager": "Ann", "authority": [], "lang": "en"})
     assert "Available in this conversation: ask_human." in rt.tools_note(["ask_human"])
     assert "never fake a result" in rt.system_prompt()
+
+
+def test_llm_calls_carry_hangarllm_tags_only_through_the_hub(rt, monkeypatch):
+    """Hub HangarLLM: cada chamada leva agente, ambiente e tarefa (o gasto real fica etiquetado no gateway)."""
+    monkeypatch.setattr(rt, "LLM_API_KEY", "hgr_agente")
+    assert rt._llm_headers() == {"Authorization": "Bearer hgr_agente"}  # outro provedor: nada a mais
+    monkeypatch.setattr(rt, "LLM_GATEWAY", "hangarllm")
+    tok = rt.TASK.set("77")
+    try:
+        h = rt._llm_headers()
+    finally:
+        rt.TASK.reset(tok)
+    assert h["Authorization"] == "Bearer hgr_agente"
+    assert h["x-hangarllm-tags"] == f"agent-hangar,agent:{rt.SLUG},env:{rt.ENV},task:77"
+    assert h["x-hangarllm-session-id"] == f"{rt.SLUG}-task-77"
+    assert "task:" not in rt._llm_headers()["x-hangarllm-tags"] and "x-hangarllm-session-id" not in rt._llm_headers()

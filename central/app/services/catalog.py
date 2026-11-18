@@ -79,7 +79,7 @@ def upsert_llm_connection(db: Session, name, base_url, model_name, api_key="", d
                             "ou 'deepseek' (harness deepseek-harness, API nativa da DeepSeek)")
     c = db.scalar(select(LlmConnection).where(LlmConnection.name == name)) or LlmConnection(name=name)
     if c.id is None and provider is None:  # conexão nova sem provedor: o endereço diz qual é (senão "custom")
-        provider = next((p["id"] for p in llm_models.PROVIDERS if p["base_url"] and p["group"] != "custom"
+        provider = next((p["id"] for p in llm_models.PROVIDERS if p["base_url"] and p["group"] not in ("custom", "hub")
                          and p["base_url"].split("//")[-1].split("/")[0] in base_url), "custom")
     if provider is not None:
         c.provider = provider
@@ -222,16 +222,29 @@ def default_chat_llm(db: Session) -> dict | None:
     return {"connection": conn.name} if conn else None
 
 
-def resolve_llm(db: Session, spec: dict, env: str) -> dict:
+def _agent_key(db: Session, conn: LlmConnection, agent: Agent | None, env: str, spec: dict) -> tuple[str, str]:
+    """(chave, gateway) que o agente recebe. Conexão do hub HangarLLM: a chave virtual só deste agente e ambiente, com
+    os modelos que ele usa nela (a chave da conexão é da central e nunca vai para um agente). As outras: a da conexão."""
+    from . import hangarllm, llm_models
+    if not hangarllm.is_hub(conn):
+        return crypto.decrypt(conn.api_key), ""
+    if agent is None:
+        raise PlatformError("a conexão do hub HangarLLM só é entregue a um agente (chave por agente)")
+    models = [m or conn.model_name for c, m in llm_models._effective(spec, env) if c == conn.name]
+    return hangarllm.agent_key(db, agent, env, models or [conn.model_name]), hangarllm.PROVIDER
+
+
+def resolve_llm(db: Session, spec: dict, env: str, agent: Agent | None = None) -> dict:
     """LlmConnection do catálogo (com override por ambiente) -> {connection, base_url, api_key, model,
-    temperature} prontos para o container do agente de chat."""
+    temperature, gateway} prontos para o container do agente de chat. `agent`: quem recebe (a conexão do hub
+    HangarLLM entrega a chave só dele)."""
     llm = spec.get("llm") or {}
     override = llm.get(env) if isinstance(llm.get(env), dict) else {}
     conn_name = override.get("connection") or llm.get("connection") or ""
     model = override.get("model") or llm.get("model") or ""
     temperature = override.get("temperature", llm.get("temperature", 0.2))
     if not conn_name:
-        return {"connection": "", "base_url": "", "api_key": "", "model": model or config.DEFAULT_MODEL,
+        return {"connection": "", "base_url": "", "api_key": "", "gateway": "", "model": model or config.DEFAULT_MODEL,
                 "temperature": temperature, "prices": (None, None)}
     conn = get_connection(db, conn_name)
     if conn.protocol != "openai":
@@ -239,12 +252,13 @@ def resolve_llm(db: Session, spec: dict, env: str) -> dict:
             f"Conexão '{conn_name}' é protocol='{conn.protocol}'; agentes de chat precisam de uma conexão "
             "protocol='openai' (endpoint /v1/chat/completions).")
     from . import llm_models
-    return {"connection": conn.name, "base_url": conn.base_url, "api_key": crypto.decrypt(conn.api_key),
+    key, gateway = _agent_key(db, conn, agent, env, spec)
+    return {"connection": conn.name, "base_url": conn.base_url, "api_key": key, "gateway": gateway,
             "model": model or conn.model_name, "temperature": temperature,
             "prices": llm_models.prices_for(db, conn, model or conn.model_name)}
 
 
-def resolve_harness(db: Session, spec: dict, env: str) -> dict:
+def resolve_harness(db: Session, spec: dict, env: str, agent: Agent | None = None) -> dict:
     """Harness (claude-code | codex | hermes | deepseek-harness) + a conexão que o alimenta, com override
     por ambiente. Sem `connection`, o job roda em modo mock (sem chamar LLM nenhum)."""
     h = spec.get("harness") or {}
@@ -257,7 +271,7 @@ def resolve_harness(db: Session, spec: dict, env: str) -> dict:
         raise PlatformError(f"Harness '{harness_id}' desconhecido. Opções: {sorted(HARNESS_PROTOCOL)}")
     conn_name = override.get("connection") or h.get("connection") or ""
     if not conn_name:
-        return {"harness_id": harness_id, "connection": "", "base_url": "", "api_key": "", "model": "",
+        return {"harness_id": harness_id, "connection": "", "base_url": "", "api_key": "", "gateway": "", "model": "",
                 "mock": True, "prices": (None, None)}
     from . import llm_models
     conn = get_connection(db, conn_name)
@@ -266,8 +280,9 @@ def resolve_harness(db: Session, spec: dict, env: str) -> dict:
         raise PlatformError(f"Conexão '{conn_name}' é protocol='{conn.protocol}'; o harness '{harness_id}' "
                             f"precisa de uma conexão protocol='{wanted}'.")
     model = override.get("model") or h.get("model") or conn.model_name
+    key, gateway = _agent_key(db, conn, agent, env, spec)
     return {"harness_id": harness_id, "connection": conn.name, "base_url": conn.base_url,
-            "api_key": crypto.decrypt(conn.api_key), "model": model, "mock": False,
+            "api_key": key, "gateway": gateway, "model": model, "mock": False,
             "prices": llm_models.prices_for(db, conn, model)}
 
 

@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **HangarLLM hub** (*Providers → HangarLLM*, `GET/PUT/DELETE /api/hangarllm`, [docs/hangarllm.md](docs/hangarllm.md)):
+  connect HangarLLM once with its address and a management key and it feeds the `hangarllm` connection with the
+  gateway's models and prices. Each agent gets a virtual key of its own per environment, holding only the models it uses
+  (plus its light model), a per-key budget and a 30-day expiry the central renews; deleting the agent revokes it, and
+  the management key never reaches an agent. Every call carries `agent`, `env` and `task` tags and a session per task,
+  and the real spend of each key comes back every hour. `hangar setup` offers it first in the LLM step, and a button
+  puts a local HangarLLM container on the agents' network as `http://hangarllm:4000`. Direct providers and other
+  gateways keep working, isolated. New tables `hub_links` and `hub_keys` (migration `0060_hangarllm_hub`).
 - **Nightly lesson curation** for Digital employees: once a day, overnight, for those with new work, the platform
   reviews the period (tasks, corrections, people's messages, quality notes, failures) and proposes merging repeated
   lessons, rewriting or removing stale ones, and new lessons from patterns seen in two or more tasks. Proposals join
@@ -33,6 +41,8 @@ All notable changes to this project are documented here. The format follows
   the task's summary (`hangar-task.json`). First run with deepseek through OpenRouter: 8 of 8.
 
 ### Fixed
+- **Agent runtime without a connection** no longer points at a `litellm:4000` service that never existed: an empty
+  `LLM_BASE_URL` is the default.
 - **Cua license wording**: the governed desktop is built on Cua, and its desktop daemon `cua-spacesd` is
   FSL-1.1-MIT, not MIT (README, analyst guide, desktop Dockerfile).
 

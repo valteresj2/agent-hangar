@@ -26,9 +26,9 @@ LEVEL_LABEL = {"minimal": "mínimo", "low": "baixo", "medium": "médio", "high":
 ROLE_EFFORT = {"planner": "high", "coder": "high", "analyst": "medium", "general": "medium", "writer": "low",
                "support": "low", "extractor": "low", "classifier": "minimal"}
 # provedores (da conexão) que aceitam `reasoning_effort` no /chat/completions; a OpenRouter usa `reasoning.effort`
-EFFORT_PROVIDERS = {"openai", "litellm", "gemini", "groq", "xai", "fireworks", "together", "nebius", "custom", "ollama"}
+EFFORT_PROVIDERS = {"openai", "litellm", "hangarllm", "gemini", "groq", "xai", "fireworks", "together", "nebius", "custom", "ollama"}
 # cache explícito (cache_control) só faz diferença em modelos Claude atrás de um gateway; os outros fazem sozinhos
-CACHE_GATEWAYS = {"litellm", "openrouter"}
+CACHE_GATEWAYS = {"litellm", "hangarllm", "openrouter"}
 AUTO_CACHE = {"openai", "deepseek", "gemini", "xai", "groq"}
 CLAUDE = re.compile(r"claude|anthropic", re.I)
 # o que cada harness entende como esforço (o nível pedido vira o mais próximo que ele aceita)

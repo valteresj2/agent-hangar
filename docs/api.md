@@ -369,6 +369,8 @@ Agents reach the memory at `/internal/memory/mcp` with their internal token and 
 | GET | `/api/catalog` | Skills, MCP servers, connections (keys masked) |
 | POST | `/api/catalog/skills` · `/api/catalog/mcps` · `/api/catalog/llm` | Upsert. For `/llm`, `model_name` is optional (the default comes from the provider's model list, fetched on save) and `provider` names the card (`openai`, `openrouter`, `litellm`…) |
 | DELETE | `/api/catalog/llm/{name}` | Refused while an agent uses it |
+| GET · PUT · DELETE | `/api/hangarllm` | HangarLLM hub ([hangarllm.md](hangarllm.md)): status, connect or update `{url, admin_key, ui_url, budget_usd, budget_period}`, disconnect (revokes every agent key). Admin |
+| POST | `/api/hangarllm/refresh` · `/api/hangarllm/network` | Renew agent keys and read real spend now · Docker install: put the HangarLLM container on the agents' network as `hangarllm`. Admin |
 | POST | `/api/catalog/llm/{name}/test` | Real, minimal call to the connection's LLM (checks URL, key and model): `{ok, latency_ms, detail}`. Admin |
 | PATCH | `/api/catalog/llm/{name}/code` | `{allow_code}`: approve a connection to receive code (coding mode, code evaluations) when `code_policy` is `approved`. Admin |
 | GET | `/api/catalog/providers` | Known LLM providers (logo, base URL, protocol, usual model types) and the model types |

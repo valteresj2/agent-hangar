@@ -22,6 +22,7 @@ os.environ.update({
     "DATA_STUDIO_FILES_URL": "http://data-studio.test:8001",
     "MODEL_CATALOG_URL": "",  # nada de baixar a tabela pública de modelos nos testes
     "MCP_REGISTRY_URL": "",  # nem o registro MCP do GitHub (test_mcp_registry liga com uma API falsa)
+    "LLM_BASE_URL": "http://llm.test/v1",  # o runtime dos agentes carregado nos testes (as chamadas vão a um transporte falso)
 })
 sys.path.insert(0, os.path.join(ROOT, "central"))
 

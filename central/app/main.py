@@ -28,6 +28,7 @@ from .routers import (
     deps,
     employees,
     gateway,
+    hangarllm,
     internal,
     issues,
     memory,
@@ -321,6 +322,7 @@ app.include_router(connectors.router)  # conectores (MCP): catálogo, cadastro e
 app.include_router(oauth.router)
 app.include_router(app_hangar.router)  # o app Hangar (desktop): perfil, dispositivos, design tokens e o admin
 app.include_router(app_llm.router)  # o proxy de LLM do app Hangar (chave do dispositivo, credencial do cofre)
+app.include_router(hangarllm.router)  # o hub HangarLLM: modelos, chave por agente e gasto real
 app.include_router(memory.router)
 app.include_router(internal.router)
 app.include_router(gateway.router)

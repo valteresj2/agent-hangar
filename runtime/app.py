@@ -33,8 +33,9 @@ SPEC = json.loads(os.environ["AGENT_SPEC"])
 SLUG = os.environ.get("AGENT_SLUG", "agent")
 ENV = os.environ.get("AGENT_ENV", "stage")
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
-LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://litellm:4000/v1").rstrip("/")
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "").rstrip("/")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
+LLM_GATEWAY = os.environ.get("LLM_GATEWAY", "")  # "hangarllm": a chave é só deste agente e cada chamada leva etiquetas
 # Credencial deste agente na central (HMAC do slug — nunca o token de admin). Vai junto com X-Agent-Slug
 # nas chamadas a sub-agentes e ao dashboard; a central confere se o destino é permitido para este agente.
 INTERNAL_TOKEN = os.environ.get("INTERNAL_TOKEN", "")
@@ -332,6 +333,18 @@ async def _dashboard_call(args):
     if r.status_code >= 400:
         return f"erro ({r.status_code}): {r.text[:400]}"
     return r.text[:6000]
+
+
+def _llm_headers() -> dict:
+    """Cabeçalhos das chamadas ao LLM. No hub HangarLLM, as etiquetas ligam cada chamada ao agente, ao ambiente e à
+    tarefa (o gasto real aparece assim no gateway); a sessão agrupa as chamadas da mesma tarefa."""
+    h = {"Authorization": f"Bearer {LLM_API_KEY}"} if LLM_API_KEY else {}
+    if LLM_GATEWAY == "hangarllm":
+        tags = ["agent-hangar", f"agent:{SLUG}", f"env:{ENV}"] + ([f"task:{TASK.get()}"] if TASK.get() else [])
+        h["x-hangarllm-tags"] = ",".join(tags)
+        if TASK.get():
+            h["x-hangarllm-session-id"] = f"{SLUG}-task-{TASK.get()}"
+    return h
 
 
 def _mcp_headers(url: str = "") -> dict:
@@ -954,7 +967,7 @@ async def _lite(messages: list[dict]) -> tuple[str, dict, list]:
     if MODEL.startswith("mock"):
         text = f"[mock:{SLUG}] {text_of(msgs[-1]['content'])[:60]}"
         return text, {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}, []
-    headers = {"Authorization": f"Bearer {LLM_API_KEY}"} if LLM_API_KEY else {}
+    headers = _llm_headers()
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     # modelos com raciocínio gastam tokens antes do texto: um teto baixo devolve conteúdo vazio. 1500 costuma
     # sobrar; se ainda vier vazio, uma segunda tentativa sem teto.
@@ -1011,7 +1024,7 @@ async def _chat(messages: list[dict], client_tools: list | None = None, tool_cho
         n_out = len(out.split())
         return out, {"prompt_tokens": n_in, "completion_tokens": n_out, "total_tokens": n_in + n_out}, trace, []
     by_name = {t.name: t for t in tools}
-    headers = {"Authorization": f"Bearer {LLM_API_KEY}"} if LLM_API_KEY else {}
+    headers = _llm_headers()
     try:
         return await _loop(msgs, llm_tools, ctools, client_names, by_name, headers, usage, trace, start, tool_choice)
     except WaitingHuman as w:  # Digital employee: a ação espera uma decisão humana; a tarefa retoma depois dela

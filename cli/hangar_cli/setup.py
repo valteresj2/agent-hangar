@@ -30,6 +30,10 @@ import yaml
 
 # ---------------------------------------------------------------- catálogos
 LLM_PROVIDERS = {
+    "hangarllm": {"label": "HangarLLM (hub: modelos, chave por agente e gasto real)", "base_url": "http://hangarllm:4000",
+                  "protocol": "openai", "key": True, "hub": True,
+                  "note": "cada agente recebe uma chave só dele no HangarLLM e o gasto real volta para o Hangar; "
+                          "informe a chave mestra (ou de gestão) do HangarLLM"},
     "openai": {"label": "OpenAI", "base_url": "https://api.openai.com/v1", "protocol": "openai", "key": True},
     "anthropic": {"label": "Anthropic (Claude)", "base_url": "https://api.anthropic.com", "protocol": "anthropic", "key": True,
                   "note": "serve o harness claude-code; para agentes de chat use um gateway OpenAI-compatible (LiteLLM, OpenRouter)"},
@@ -415,10 +419,20 @@ def _interactive_common(a: dict, prev: dict):
         p = LLM_PROVIDERS[prov]
         if p.get("note"):
             info(p["note"])
+    if prov != "none" and p.get("hub"):
+        llm["name"] = "hangarllm"
+        llm["base_url"] = ask("Endereço do HangarLLM (como a central e os agentes chegam nele)",
+                              prev_llm.get("base_url") or p["base_url"], required=True)
+        llm["api_key"] = ask("Chave de gestão do HangarLLM (a mestra ou uma de gestão)", "", secret=True, required=True)
+        llm["model"] = ""
+        if yes("O HangarLLM roda neste Docker? Pôr o container dele na rede dos agentes (http://hangarllm:4000)?", True):
+            llm["network_container"] = ask("Container do HangarLLM", prev_llm.get("network_container") or "hangarllm-hangarllm-1")
+    elif prov != "none":
         llm["name"] = ask("Nome da conexão", prev_llm.get("name") or prov)
         llm["base_url"] = ask("URL base", prev_llm.get("base_url") or p["base_url"], required=True)
         llm["model"] = ask("Modelo padrão (ex.: gpt-4.1-mini, anthropic/claude-sonnet-4.5, llama3.1)", prev_llm.get("model", ""), required=True)
         llm["api_key"] = ask("Chave de API", "", secret=True, required=p["key"]) or ("ollama" if prov == "ollama" else "")
+    if prov != "none":
         llm["protocol"] = p["protocol"]
         llm["approve_for_code"] = yes("Aprovar esta conexão para receber código (agentes de código no VS Code)?", True)
     a["llm"] = llm
@@ -525,7 +539,10 @@ def validate(a: dict) -> dict:
         a["llm"].setdefault("approve_for_code", True)
         if prov == "ollama":
             a["llm"].setdefault("api_key", "ollama")
-        for k in ("base_url", "model"):
+        if p.get("hub"):
+            a["llm"]["name"] = "hangarllm"
+            a["llm"].setdefault("model", "")  # o padrão sai da lista do próprio HangarLLM
+        for k in ("base_url",) if p.get("hub") else ("base_url", "model"):
             if not a["llm"].get(k) or "<" in a["llm"].get(k, ""):
                 errs.append(f"llm.{k} é obrigatório")
         if p["key"] and not a["llm"].get("api_key"):
@@ -617,7 +634,18 @@ def configure(api: Api, a: dict, local_base: str) -> dict:
     """Passos idempotentes pela API. Devolve {admin_password (se gerada), client_token}."""
     result: dict = {}
     llm = a.get("llm") or {}
-    if llm.get("provider", "none") != "none":
+    if llm.get("provider") == "hangarllm":
+        if llm.get("network_container"):
+            r = api.req("POST", "/api/hangarllm/network", json={"container": llm["network_container"]})
+            (ok if r.status_code < 400 else warn)(f"rede dos agentes: {r.json().get('url') if r.status_code < 400 else r.text[:200]}")
+        r = api.req("PUT", "/api/hangarllm", json={"url": llm["base_url"], "admin_key": llm.get("api_key", "")})
+        if r.status_code >= 400:
+            raise SetupError(f"não consegui ligar o HangarLLM: {r.text[:200]}")
+        ok(f"HangarLLM ligado como hub: {r.json().get('models_total', 0)} modelo(s), uma chave por agente")
+        if llm.get("approve_for_code"):
+            api.req("PATCH", "/api/catalog/llm/hangarllm/code", json={"allow_code": True})
+            ok("conexão aprovada para receber código")
+    elif llm.get("provider", "none") != "none":
         r = api.req("POST", "/api/catalog/llm", json={"name": llm["name"], "base_url": llm["base_url"],
                                                        "model_name": llm["model"], "api_key": llm.get("api_key", ""),
                                                        "protocol": llm["protocol"], "description": f"hangar setup · {llm['provider']}"})

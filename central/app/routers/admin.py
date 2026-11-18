@@ -495,6 +495,8 @@ def add_llm_connection(b: LlmConnectionBody, request: Request, db=Depends(db_dep
     """Salva a conexão e já busca a lista de modelos do provedor. Conexão nova sem modelo padrão e sem lista
     (chave errada, provedor fora do ar) não fica salva: o erro volta para o admin corrigir."""
     def go():
+        if b.provider == svc.hangarllm.PROVIDER:  # a conexão do hub nasce da ligação: chave por agente, nunca a de gestão
+            raise svc.PlatformError("o HangarLLM se liga pela tela Hub HangarLLM (Provedores de LLM → HangarLLM)")
         new = db.scalar(select(LlmConnection).where(LlmConnection.name == b.name)) is None
         protocol = b.protocol or svc.llm_models.provider(b.provider or "custom")["protocol"]
         c = svc.upsert_llm_connection(db, b.name, b.base_url, b.model_name, b.api_key, b.description, actor(request),
@@ -652,7 +654,11 @@ def llm_connection_desktop(name: str, b: DesktopSync, request: Request, db=Depen
 
 @router.delete("/catalog/llm/{name}", dependencies=[Depends(require_admin)])
 def del_llm_connection(name: str, request: Request, db=Depends(db_dep)):
-    guard(lambda: svc.delete_llm_connection(db, name, actor(request)))
+    def go():
+        if svc.hangarllm.is_hub(svc.get_connection(db, name)):  # sair do hub revoga as chaves: pela tela do hub
+            raise svc.PlatformError("a conexão do hub sai quando você desliga o HangarLLM na tela Hub HangarLLM")
+        svc.delete_llm_connection(db, name, actor(request))
+    guard(go)
     return {"ok": True}
 
 

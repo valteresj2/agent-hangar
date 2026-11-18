@@ -65,7 +65,9 @@ def run_agent(slug: str, env: str, resolved_spec: dict, llm_conf: dict):
                    # token só deste agente: ele não consegue se passar por outro ao chamar a central
                    "INTERNAL_TOKEN": auth.agent_token(slug),
                    "INTERNAL_ENV_TOKEN": auth.agent_env_token(slug, env),
-                   "LLM_BASE_URL": llm_conf.get("base_url", ""), "LLM_API_KEY": llm_conf.get("api_key", "")}
+                   "LLM_BASE_URL": llm_conf.get("base_url", ""), "LLM_API_KEY": llm_conf.get("api_key", ""),
+                   # hangarllm: cada chamada leva etiquetas (agente, ambiente, tarefa) para o gasto real no gateway
+                   "LLM_GATEWAY": llm_conf.get("gateway", "")}
     try:
         return c.containers.run(
             config.RUNTIME_IMAGE, name=name, detach=True, environment=environment,

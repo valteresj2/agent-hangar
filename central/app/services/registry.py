@@ -151,6 +151,8 @@ def delete_agent(db: Session, slug: str, actor="admin"):
     # AgentLineage e AgentGuide têm ON DELETE CASCADE no Postgres; no SQLite, apagamos aqui
     db.query(AgentLineage).filter(AgentLineage.agent_id == a.id).delete()
     db.query(AgentGuide).filter(AgentGuide.agent_id == a.id).delete()
+    from . import hangarllm
+    hangarllm.revoke_agent(db, a.id, actor)  # as chaves do agente no hub HangarLLM deixam de valer
     db.delete(a)
     db.commit()
     audit(db, actor, "agent.delete", slug)

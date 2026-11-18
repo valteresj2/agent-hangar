@@ -2017,3 +2017,38 @@ class Recording(OrgScoped, Base):
     workstation_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class HubLink(OrgScoped, Base):
+    """O HangarLLM ligado como hub da empresa (services/hangarllm.py): endereço, chave de gestão (criptografada) e a
+    conexão de LLM que ele alimenta. Um por empresa."""
+    __tablename__ = "hub_links"
+    __table_args__ = (UniqueConstraint("org_id", name="uq_hublink_org"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    url: Mapped[str] = mapped_column(String(300))  # como a central e os agentes chegam nele (ex.: http://hangarllm:4000)
+    ui_url: Mapped[str] = mapped_column(String(300), default="")  # o painel, para os links da tela
+    admin_key: Mapped[str] = mapped_column(Text, default="")  # "enc:v1:…": nunca sai da central nem vai para um agente
+    connection_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    budget_usd: Mapped[float] = mapped_column(Float, default=50.0)  # orçamento de cada chave de agente, por período
+    budget_period: Mapped[str] = mapped_column(String(10), default="30d")
+    status: Mapped[str] = mapped_column(String(12), default="ok")  # ok | error
+    error: Mapped[str] = mapped_column(Text, default="")
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class HubKey(OrgScoped, Base):
+    """Uma chave virtual do HangarLLM criada pela central: uma por agente e ambiente (os agentes recebem a deles, nunca a
+    de gestão) e a da própria central (agent_id nulo). Validade curta, renovada antes de vencer; revogada ao excluir."""
+    __tablename__ = "hub_keys"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    env: Mapped[str] = mapped_column(String(10), default="")  # stage | prod | "" (central)
+    alias: Mapped[str] = mapped_column(String(200), index=True)
+    key: Mapped[str] = mapped_column(Text)  # "enc:v1:…"
+    token: Mapped[str] = mapped_column(String(100), default="")  # o hash que o HangarLLM usa para gerir a chave
+    models: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    spend_usd: Mapped[float] = mapped_column(Float, default=0.0)  # gasto real, lido do HangarLLM
+    spend_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
