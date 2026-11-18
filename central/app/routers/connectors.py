@@ -129,7 +129,12 @@ def _load(request: Request, name: str) -> McpServer:
             raise HTTPException(404, f"conector '{name}' não encontrado")
         if not svc.connectors.can_use(a, m):
             raise HTTPException(403, f"o conector '{name}' é de outro time ou pessoal")
-        headers = svc.connectors.resolve_headers(db, m)
+        if m.auth == "hub":  # HangarLLM: a chave do próprio agente, só com os servidores do hub das specs dele
+            headers = svc.hangarllm.mcp_headers(db, a, request.headers.get("x-agent-env", ""),
+                                                request.headers.get("x-hangar-task", ""),
+                                                svc.hangarllm.spec_mcps(*caller_specs(a)))
+        else:
+            headers = svc.connectors.resolve_headers(db, m)
         db.expunge(m)
         return m, headers
 

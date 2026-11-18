@@ -229,7 +229,11 @@ an admin.
 |---|---|---|
 | GET | `/api/employees` | Digital employees you can see, with status, task counts, open decisions and 30-day cost |
 | POST | `/api/employees/plan` | Creates nothing: `missing` (each with the question for the owner), `optional`, `reuse` and `authority_default` |
+| POST | `/api/employees/draft` | Creates nothing: `{text}` becomes `{source: llm \| rules, fields}` with the job sheet (name, title, mission, responsibilities, systems, three probation tasks) |
 | POST | `/api/employees` | Hire. With a required field missing it returns `created: false` and the questions |
+| GET | `/api/market` | The admitted Digital employees you can see: name, title, mission, team, systems, avatar and `mine` |
+| GET | `/api/market/{slug}` | The job, example requests and `copy` (`allowed`, `reason`, `full`); `instructions`, `skills` and `apps` only for who can see the spec |
+| POST | `/api/market/{slug}/use` | Hires a personal copy in shadow mode; answers like the hire |
 | GET | `/api/employees/{slug}` | Job, rules, effective authority, probation tasks and `metrics` |
 | PATCH | `/api/employees/{slug}` | Manage: job, responsibilities (3+), systems, channels, manager, backups, limits, report webhook and hour. Only the manager or an admin changes `autonomy_level` |
 | POST | `/api/employees/{slug}/probation` | Manage: deploys stage and queues the probation tasks |
@@ -369,8 +373,9 @@ Agents reach the memory at `/internal/memory/mcp` with their internal token and 
 | GET | `/api/catalog` | Skills, MCP servers, connections (keys masked) |
 | POST | `/api/catalog/skills` · `/api/catalog/mcps` · `/api/catalog/llm` | Upsert. For `/llm`, `model_name` is optional (the default comes from the provider's model list, fetched on save) and `provider` names the card (`openai`, `openrouter`, `litellm`…) |
 | DELETE | `/api/catalog/llm/{name}` | Refused while an agent uses it |
-| GET · PUT · DELETE | `/api/hangarllm` | HangarLLM hub ([hangarllm.md](hangarllm.md)): status, connect or update `{url, admin_key, ui_url, budget_usd, budget_period}`, disconnect (revokes every agent key). Admin |
-| POST | `/api/hangarllm/refresh` · `/api/hangarllm/network` | Renew agent keys and read real spend now · Docker install: put the HangarLLM container on the agents' network as `hangarllm`. Admin |
+| GET · PUT · DELETE | `/api/hangarllm` | HangarLLM hub ([hangarllm.md](hangarllm.md)): status (models, MCP servers, skills, keys), connect or update `{url, admin_key, ui_url, budget_usd, budget_period, share_skills}` (empty `url` finds HangarLLM in Docker), disconnect (revokes every agent key, removes the `hub:…` connectors). Admin |
+| POST | `/api/hangarllm/refresh` · `/api/hangarllm/network` | Renew agent keys, read real spend and sync MCP servers and skills now · Docker install: put the HangarLLM container on the agents' network as `hangarllm`. Admin |
+| GET | `/api/hangarllm/discover` | Docker install: the HangarLLM containers the central sees. Admin |
 | POST | `/api/catalog/llm/{name}/test` | Real, minimal call to the connection's LLM (checks URL, key and model): `{ok, latency_ms, detail}`. Admin |
 | PATCH | `/api/catalog/llm/{name}/code` | `{allow_code}`: approve a connection to receive code (coding mode, code evaluations) when `code_policy` is `approved`. Admin |
 | GET | `/api/catalog/providers` | Known LLM providers (logo, base URL, protocol, usual model types) and the model types |

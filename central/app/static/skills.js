@@ -69,7 +69,7 @@ async function skillsHome() {
     l = l.sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name) : String(b.updated_at || '').localeCompare(String(a.updated_at || '')) || a.name.localeCompare(b.name));
     $('#sk-list').innerHTML = l.map(s => `<div class="sk-row" data-n="${esc(s.name)}" tabindex="0">
         <span class="sk-ic">${SK_ICON}</span>
-        <span class="sk-txt"><span><b data-noi18n>${esc(s.name)}</b> ${s.team ? `<span class="chip" data-noi18n>${esc(s.team)}</span>` : ''}${s.status === 'deprecated' ? ' <span class="pill warn">descontinuada</span>' : ''}</span>
+        <span class="sk-txt"><span><b data-noi18n>${esc(s.name)}</b> ${s.team ? `<span class="chip" data-noi18n>${esc(s.team)}</span>` : ''}${s.status === 'deprecated' ? ' <span class="pill warn">descontinuada</span>' : ''}${s.source === 'hub' ? ' <span class="pill">HangarLLM</span>' : ''}</span>
           <span class="mute small sk-sub">${s.created_by ? `<span>por</span> <span data-noi18n>${esc(s.created_by)}</span> · ` : ''}<span data-noi18n>${esc(s.description || '')}</span></span></span>
         <span class="mute small sk-date">${esc(skDate(s.updated_at))}</span>
         <button class="ghost sk-more" data-n="${esc(s.name)}" title="Mais">⋮</button></div>`).join('')

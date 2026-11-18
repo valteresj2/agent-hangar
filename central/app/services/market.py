@@ -76,7 +76,7 @@ def _copy_block(db: Session, acc: Access) -> str:
     """Por que a pessoa não pode criar a cópia agora ('' = pode). As mesmas regras do agente pessoal."""
     from . import workspace
     try:
-        workspace.check_personal(db, acc, None)
+        workspace.check_personal(db, acc, workspace.personal_llm(db))
         workspace.personal_team(db, acc, None)
     except (Forbidden, PlatformError) as err:
         return str(err)
@@ -102,9 +102,12 @@ def use(db: Session, acc: Access, slug: str) -> dict:
     e, a = _find(db, acc, slug)
     tasks = [{"title": t.title, "body": t.body, "expected": t.expected} for t in _probation(db, e) if t.expected]
     full = _base_spec(acc, a) is not None
+    from . import workspace
+    # o workspace só libera algumas conexões para agentes pessoais: a cópia usa a primeira (a da base pode não ser uma)
+    llm = workspace.personal_llm(db)
     return empmod.hire(
         db, acc, "", name=a.name, title=e.title, mission=e.mission, responsibilities=list(e.responsibilities or []),
         systems=list(e.systems or []), kpis=list(e.kpis or []), probation_tasks=tasks, channels=["portal", "mcp"],
         accept_default_authority=True, shadow=True, personal=True, base=a.slug if full else "",
-        instructions_from_base=full, default_llm=True, working_hours=e.working_hours or "",
+        instructions_from_base=full, default_llm=True, llm=llm, working_hours=e.working_hours or "",
         task_budget_usd=e.task_budget_usd, task_time_limit_min=e.task_time_limit_min)

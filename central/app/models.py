@@ -176,6 +176,10 @@ class Skill(OrgScoped, Base):
     # arquivos além do SKILL.md (references/, scripts/, assets/…): [{path, content}] — só texto
     files: Mapped[list | None] = mapped_column(JSON, nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # "hub": veio do HangarLLM (somente leitura aqui; edita-se lá). hub_ref: a versão lida do hub ou a versão local
+    # publicada nele (skills da empresa)
+    source: Mapped[str] = mapped_column(String(12), default="")
+    hub_ref: Mapped[str] = mapped_column(String(40), default="")
 
 
 class McpServer(OrgScoped, Base):
@@ -2035,6 +2039,8 @@ class HubLink(OrgScoped, Base):
     error: Mapped[str] = mapped_column(Text, default="")
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    share_skills: Mapped[bool] = mapped_column(Boolean, default=True)  # publicar as skills da empresa no hub
+    sync: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # resumo da última sincronização (MCPs e skills)
 
 
 class HubKey(OrgScoped, Base):
@@ -2048,6 +2054,7 @@ class HubKey(OrgScoped, Base):
     key: Mapped[str] = mapped_column(Text)  # "enc:v1:…"
     token: Mapped[str] = mapped_column(String(100), default="")  # o hash que o HangarLLM usa para gerir a chave
     models: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
+    mcps: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)  # servidores MCP do hub liberados
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     spend_usd: Mapped[float] = mapped_column(Float, default=0.0)  # gasto real, lido do HangarLLM
     spend_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

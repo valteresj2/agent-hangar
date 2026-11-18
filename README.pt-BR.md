@@ -407,6 +407,9 @@ agente escreve um rascunho, marcado para revisão até um mantenedor aprovar. Ve
 de só chamá-lo. Ele tem cargo, gestor humano e **alçada**; recebe tarefas e trabalha nelas em segundo plano.
 - **Contratação em modo self:** a sua ferramenta de IA pergunta pelo MCP o que faltar (`plan_employee` →
   `hire_employee`) e nada é criado até o cargo estar completo.
+- **Ou no portal, em linguagem comum:** descreva o que ele deve fazer e a ficha do cargo se preenche para você revisar,
+  ou escolha um funcionário já admitido no **marketplace** e receba uma cópia pessoal em modo sombra
+  ([contratação pelo portal](docs/digital-employee.md#hiring-from-the-portal), [marketplace](docs/digital-employee.md#marketplace)).
 - **Experiência, depois admissão:** primeiro ele faz tarefas reais em stage; o gestor lê os resultados e o admite em
   produção.
 - **Alçada aplicada pela plataforma, não pelo prompt:** antes de cada ferramenta, o runtime pergunta à central. Cada
@@ -489,8 +492,9 @@ Harnesses de código são opcionais porque as imagens são grandes:
   gateway autenticado, com métricas por canal.
 - **Use o seu gateway de LLM.** O hangar nunca hospeda modelo: os agentes chamam o seu LiteLLM, OpenRouter ou
   provedor por meio de *conexões*. As chaves ficam criptografadas, há override por ambiente e o custo é calculado
-  em US$. Ligue o [HangarLLM](docs/hangarllm.md) como hub e cada agente recebe uma chave só dele no gateway, toda
-  chamada leva etiquetas de agente e tarefa, e o gasto real volta do gateway.
+  em US$. Ligue o [HangarLLM](docs/hangarllm.md) como hub e tudo se conecta: os modelos, os servidores MCP e as skills
+  dele chegam aos agentes, cada agente recebe uma chave só dele no gateway, toda chamada leva etiquetas de agente e
+  tarefa, e o gasto real volta do gateway.
 - **Governado como software.** Chaves com escopo (admin × invoke só de certos agentes), tokens internos por
   agente, auditoria, GitOps (`hangar apply -f agents.yaml`) e JSON Schema da spec.
 

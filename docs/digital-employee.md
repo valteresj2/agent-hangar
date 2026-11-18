@@ -73,6 +73,39 @@ The hire builds the agent through the normal composer:
 - the probation tasks also become judge tests;
 - a guide is written for its **Guide** tab.
 
+## Hiring from the portal
+
+*New agent* in the portal is two columns. On the left the person writes what the agent should do, when and with which
+apps; **Fill in the sheet** calls `POST /api/employees/draft` and the job sheet on the right fills in: name, job title,
+mission, responsibilities, apps and three test requests. Nothing is created until **Create agent**.
+
+- The draft comes from the company's first chat connection (OpenAI protocol). Without one, or when the call fails,
+  simple rules use only what the text says (the first sentence as the mission, the sentences as responsibilities, the
+  apps named in it) and the page says the job title and the test requests are left to fill in.
+- *Before acting* is the autonomy level in plain words ("Asks for approval on anything that changes something" is the
+  intern level) and *Who can use it* chooses a personal agent (*Only me*) or a team one, with its manager.
+- Backups, channels, skills, goals, budget, limits and the authority table are under *Advanced*, with the same
+  defaults as the API.
+
+## Marketplace
+
+*Marketplace* in the portal lists the Digital employees that were **admitted** (status `active`) and that the person
+can see, with search, a filter by team and a page per agent: what to ask it (the titles of its probation tasks), what
+it does, what it works with and what a copy takes. Personal agents are never listed.
+
+**Use this agent** (`POST /api/market/{slug}/use`) hires a personal copy:
+
+| | |
+|---|---|
+| Goes with the copy | The job: title, mission, responsibilities, systems, goals and the probation tasks |
+| Goes for who can see the spec (the original's team) | Instructions, skills and apps of the production version, as the composer base |
+| For the others | New instructions written from the job |
+| Never goes | Conversations, tasks, memory, lessons, the original's own authority rules and connected accounts |
+
+The copy starts in shadow mode at the intern level with the person as manager, follows the workspace rules for
+personal agents (limit per member, budget, allowed LLM connections) and goes through probation like any hire. The
+original is never changed, and the lineage of the copy records the base.
+
 ## Authority
 
 Every tool call has an **action type**:

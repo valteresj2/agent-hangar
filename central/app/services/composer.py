@@ -447,8 +447,8 @@ def compose(db: Session, acc: Access, name: str, objective: str, final_output: s
                 sub_agents=_dedupe(list(base_spec.get("sub_agents") or []) + [a.slug for a in subs]),
                 skills=all_skills, mcps=_dedupe(list(base_spec.get("mcps") or []) + list(mcps or [])),
                 tools=_dedupe(list(base_spec.get("tools") or []) + list(tools or [])))
-    if llm:
-        spec["llm"] = {**(spec.get("llm") or {}), **llm}
+    if llm:  # {"connection": x, "model": None} troca a conexão e deixa o modelo padrão dela (o da base pode não existir nela)
+        spec["llm"] = {k: v for k, v in {**(spec.get("llm") or {}), **llm}.items() if v is not None}
     if default_llm and not spec.get("harness") and not any((spec.get("llm") or {}).get(k) for k in ("connection", "model")):
         # pedido de uma IA sem LLM escolhido (nem na base): a conexão de chat da empresa; no mock o agente só ecoaria
         from .catalog import default_chat_llm

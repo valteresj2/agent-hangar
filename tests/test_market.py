@@ -90,3 +90,24 @@ def test_another_team_copies_the_job_without_the_spec(client, env, rt):  # noqa:
 def test_unknown_agent_is_not_found(client, env):  # noqa: F811
     assert client.get("/api/market/nao-existe", headers=env["h"]["req"]).status_code in (400, 403, 404)
     assert client.post("/api/market/nao-existe/use", headers=env["h"]["req"]).status_code in (400, 403, 404)
+
+
+def test_use_follows_the_connections_the_workspace_allows(client, env, rt):  # noqa: F811
+    """Com as conexões de LLM dos agentes pessoais restritas, a cópia usa a primeira liberada em vez de falhar."""
+    slug = hire(client, env)
+    make_active(client, env, slug, rt)
+    _to_prod(slug)
+    client.post("/api/catalog/llm", headers=ADMIN, json={"name": "corp-mk", "provider": "openai", "base_url": "http://llm.test/v1",
+                                                         "api_key": "k", "model_name": "corp-model"})
+    client.put("/api/workspace/policy", headers=ADMIN, json={"personal_agents": {"llm_connections": ["corp-mk"]}})
+    try:
+        assert client.get(f"/api/market/{slug}", headers=env["h"]["req"]).json()["copy"]["allowed"] is True
+        assert client.get("/api/me/workspace", headers=env["h"]["req"]).json()["personal_llm"] == ["corp-mk"]
+        r = client.post(f"/api/market/{slug}/use", headers=env["h"]["req"])
+        assert r.status_code == 200 and r.json()["created"] is True, r.text
+        with SessionLocal() as db:
+            llm = svc.spec_of(svc.get_agent(db, r.json()["employee"]["slug"])).get("llm") or {}
+        assert llm.get("connection") == "corp-mk" and not llm.get("model"), llm
+    finally:
+        client.put("/api/workspace/policy", headers=ADMIN, json={"personal_agents": {"llm_connections": []}})
+        client.delete("/api/catalog/llm/corp-mk", headers=ADMIN)

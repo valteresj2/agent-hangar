@@ -26,6 +26,7 @@ async function connectorsPage() {
   const bySec = id => id === 'popular' ? items.filter(x => x.popular).sort((a, b) => (a.kind === 'curated' ? 0 : 1) - (b.kind === 'curated' ? 0 : 1))
     : items.filter(x => x.section === id && !(x.popular && x.kind === 'curated'));
   const custom = installed.filter(m => ['custom', 'curated', 'remote', 'github'].includes(m.source));
+  const hub = installed.filter(m => m.source === 'hub');
   main.innerHTML = `<div class="cx-head"><div><h1>Conectores</h1><div class="sub">Conecte servidores MCP para os agentes trabalharem com as ferramentas da empresa</div></div>
     <div class="cx-addw"><button id="cx-add">${icon('plus')} Adicionar</button>
       <div class="cx-menu card" hidden><a href="#/connectors/custom">${icon('plug')} Servidor MCP personalizado</a><a href="#/connectors/import">${icon('file')} Importar JSON (mcpServers)</a></div></div></div>
@@ -33,6 +34,11 @@ async function connectorsPage() {
   <div id="cx-body">
     <section class="cx-sec"><h2>Instalados <span class="mute">›</span></h2>
       <div class="cx-installed">${installed.map(m => `<a href="#/connectors/${encodeURIComponent(m.name)}" class="cx-tile" title="${esc(m.name)}">${cxIcon(m.icon, 28, m.name)}${m.status && m.status !== 'ok' ? '<i class="cx-dot"></i>' : ''}</a>`).join('') || '<span class="mute small">Nenhum ainda</span>'}</div></section>
+    ${hub.length ? `<section class="cx-sec"><h2><a href="#/providers/hangarllm">Do HangarLLM <span class="mute">›</span></a></h2>
+      <div class="mute small">Servidores do gateway HangarLLM: cada agente chama com a chave dele e o gasto aparece no hub.</div>
+      <div class="cx-grid mt">${hub.map(m => `<a class="cx-row" href="#/connectors/${encodeURIComponent(m.name)}">${cxIcon(m.icon, 32, m.name)}
+        <span class="cx-txt"><b data-noi18n>${esc(m.name)}</b><span class="mute small" data-noi18n>${esc(m.description || '')}</span></span>
+        <span class="pill ${(CX_STATUS[m.status] || CX_STATUS[''])[1]}">${esc((CX_STATUS[m.status] || CX_STATUS[''])[0])}</span></a>`).join('')}</div></section>` : ''}
     <div class="seg mt" role="tablist"><button class="ghost small ${view === 'catalog' ? 'on' : ''}" data-v="catalog">Catálogo</button><button class="ghost small ${view === 'custom' ? 'on' : ''}" data-v="custom">Personalizados</button></div>
     ${view === 'custom'
       ? `<section class="cx-sec"><div class="cx-grid">${custom.map(m => `<a class="cx-row" href="#/connectors/${encodeURIComponent(m.name)}">${cxIcon(m.icon, 32, m.name)}
@@ -287,7 +293,7 @@ async function connectorDetail(name) {
   main.innerHTML = `<a href="#/connectors" class="mute small">← Conectores</a>
   <div class="row between mt" style="flex-wrap:wrap;gap:12px"><div class="row" style="gap:16px">${cxIcon(c.icon, 56, c.name)}<div><h1 style="margin:0" data-noi18n>${esc(c.name)}</h1>
       <div class="small"><span class="pill ${st[1]}">${esc(st[0])}</span> ${c.checked_at ? `<span class="mute">· <span>testado</span> ${ago(c.checked_at)}</span>` : ''}</div></div></div>
-    ${c.can_manage ? `<div class="row">${c.bridged ? '<button id="cd-check" class="ghost">Reconectar</button>' : ''}<button id="cd-del" class="ghost">Remover</button></div>` : ''}</div>
+    ${c.can_manage ? `<div class="row">${c.bridged ? '<button id="cd-check" class="ghost">Reconectar</button>' : ''}${c.source === 'hub' ? '' : '<button id="cd-del" class="ghost">Remover</button>'}</div>` : ''}</div>
   ${c.status_detail ? `<div class="card warn-card mt" data-noi18n>${esc(c.status_detail)}</div>` : ''}
   ${c.description ? `<div class="sub mt" data-noi18n>${esc(c.description)}</div>` : ''}
   <div class="grid g2 mt"><div class="card"><h2>Conexão</h2><dl class="kv">
@@ -297,7 +303,7 @@ async function connectorDetail(name) {
         <dt>Internet</dt><dd class="small">${[...(c.stdio.registry || []), ...(c.stdio.egress || [])].map(h => `<code class="inline" data-noi18n>${esc(h)}</code>`).join(' ')}
           ${c.server_info && c.server_info.egress_denied ? `<div class="bad-text"><span>recusado:</span> <span data-noi18n>${esc(c.server_info.egress_denied.host)}</span> (${c.server_info.egress_denied.count}×)</div>` : ''}</dd>`
         : `<dt>Endereço</dt><dd>${copyable(c.url)}</dd><dt>Transporte</dt><dd>${c.transport === 'sse' ? 'SSE (legado)' : 'Streamable HTTP'}</dd>`}
-      <dt>Autenticação</dt><dd>${esc({ none: 'nenhuma', bearer: 'Bearer token', headers: 'headers personalizados', oauth: 'OAuth' }[c.auth] || c.auth)}
+      <dt>Autenticação</dt><dd>${esc({ none: 'nenhuma', bearer: 'Bearer token', headers: 'headers personalizados', oauth: 'OAuth', hub: 'chave do próprio agente no HangarLLM' }[c.auth] || c.auth)}
         ${c.headers.map(h => `<div class="small"><code class="inline" data-noi18n>${esc(h.name)}</code> ${h.secret ? `<span class="mute" data-noi18n>${esc(h.value)}</span>` : '<span class="mute">····</span>'}</div>`).join('')}</dd>
       <dt>Quem pode usar</dt><dd>${esc({ org: 'toda a empresa', team: 'um time', personal: 'só quem criou (agentes pessoais)' }[c.scope])}</dd>
       ${c.bridged ? '<dt>Ponte</dt><dd class="small mute">os agentes falam com a central; a credencial fica no cofre</dd>' : ''}</dl></div>

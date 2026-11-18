@@ -181,6 +181,8 @@ jobs:
           HANGAR_TOKEN=$(grep '^ADMIN_TOKEN=' .env | cut -d= -f2-) python tests/e2e/i18n_crawl.py
       - name: Actions in the interface (console and portal, real clicks)
         run: HANGAR_TOKEN=$(grep '^ADMIN_TOKEN=' .env | cut -d= -f2-) python tests/e2e/ui_actions.py
+      - name: Marketplace and hiring from a plain-text request (API and real clicks)
+        run: HANGAR_TOKEN=$(grep '^ADMIN_TOKEN=' .env | cut -d= -f2-) ECHO_URL=http://e2e-echo:8080 python tests/e2e/market.py
       - name: CopilotKit example app in a real browser (AG-UI)
         run: |
           export HANGAR_TOKEN=$(grep '^ADMIN_TOKEN=' .env | cut -d= -f2-) ECHO_URL=http://e2e-echo:8080

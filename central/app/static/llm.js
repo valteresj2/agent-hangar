@@ -46,7 +46,7 @@ async function providersPage() {
     const cards = g === 'custom'
       ? conns.map(x => card({ ...pvOf(x.provider), name: x.name }, [x])).join('')
       : list.map(p => card(p, pvConns(c, p.id))).join('');
-    const hubNote = g === 'hub' ? '<div class="sub">Ligue o HangarLLM uma vez e ele vira o hub dos agentes: cada agente recebe uma chave só dele, as chamadas levam etiquetas de agente e tarefa, e o gasto real volta do gateway. Os provedores abaixo seguem valendo, isolados.</div>' : '';
+    const hubNote = g === 'hub' ? '<div class="sub">Ligue o HangarLLM uma vez e ele vira o hub dos agentes: modelos, servidores MCP e skills num lugar só, uma chave por agente, etiquetas de agente e tarefa em cada chamada e o gasto real de volta do gateway. Os provedores abaixo seguem valendo, isolados.</div>' : '';
     return `<section class="mt"><div class="row between"><h2>${esc(title)}</h2><div class="row">
       ${g === 'custom' ? `<a class="btn ghost" href="#/providers/custom-anthropic">+ Compatível com Anthropic</a><a class="btn" href="#/providers/custom">+ Compatível com OpenAI</a>` : ''}
       ${conns.length ? `<button class="ghost pv-testall" data-n="${esc(conns.map(x => x.name).join(','))}">${icon('check')} Testar todas</button>` : ''}</div></div>
@@ -543,25 +543,56 @@ async function tuneCard(box, a, canEdit, labels) {
   if (running) tunePoll = setTimeout(() => tuneCard(box, a, canEdit, labels), 4000);
 }
 
-/* ---------- Hub HangarLLM: liga uma vez; modelos, chave por agente, etiquetas e gasto real vêm do gateway ---------- */
+/* ---------- Hub HangarLLM: liga uma vez; modelos, MCPs, skills, chave por agente e gasto real vêm do gateway ---------- */
 const HUB_PERIOD = { '1d': 'por dia', '7d': 'por semana', '30d': 'por mês' };
 const hubUsd = v => v && v < 0.01 ? `$${Number(v).toFixed(6)}` : usd(v);  // gasto de poucas chamadas: centavos de centavo
+function hubMcpCard(s) {
+  const rows = (s.mcps || []).map(m => `<tr><td><a href="#/connectors">${esc(m.alias)}</a><div class="mute small">${esc(m.description || '')}</div></td>
+    <td>${fmt(m.tools)}${m.pending ? ` <span class="pill warn">${fmt(m.pending)} <span>para aprovar</span></span>` : ''}</td>
+    <td><span class="pill ${m.status === 'ok' ? 'ok' : m.status ? 'bad' : ''}" title="${esc(m.status_detail || '')}">${m.status === 'ok' ? 'No ar' : m.status ? 'Com problema' : '—'}</span></td>
+    <td class="small">${(m.used_by || []).map(a => `<a href="#/agents/${encodeURIComponent(a)}">${esc(a)}</a>`).join(', ') || '<span class="mute">ninguém ainda</span>'}</td></tr>`).join('');
+  const err = ((s.sync || {}).mcps || {}).error;
+  return `<div class="card mt"><h2 style="margin:0">Servidores MCP do hub</h2>
+    <div class="mute small">Cada servidor cadastrado no HangarLLM vira um conector <code>hub:…</code>. O agente que o escolhe chama pela ponte da central com a chave dele, que só libera os servidores da spec dele. Ferramenta nova ou alterada fica bloqueada até um admin aprovar em Conectores.</div>
+    ${err ? `<div class="bad-text small mt">${esc(err)}</div>` : ''}
+    ${rows ? `<table class="mt"><thead><tr><th>Servidor</th><th>Ferramentas</th><th>Status</th><th>Usado por</th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<div class="mute small mt">Nenhum servidor no HangarLLM ainda: cadastre em MCP Servers${s.ui_url ? ` (<a href="${esc(s.ui_url)}" target="_blank" rel="noopener">abrir o painel</a>)` : ''} e clique em Atualizar agora.</div>`}</div>`;
+}
+function hubSkillsCard(s) {
+  const sk = s.skills || {}, res = (s.sync || {}).skills || {};
+  const list = (xs, link) => xs.length ? xs.map(x => `<a href="#/skills/${encodeURIComponent(x.name)}" class="chip">${esc(x.name)}${x.version ? ` <span class="mute">v${esc(String(x.version))}</span>` : ''}</a>`).join(' ')
+    : `<span class="mute small">${link}</span>`;
+  return `<div class="card mt"><div class="row between" style="flex-wrap:wrap;gap:10px"><h2 style="margin:0">Skills</h2>
+      <label class="row small" style="gap:6px"><input type="checkbox" id="hub-share" ${s.share_skills ? 'checked' : ''}> <span>Publicar as skills da empresa no Skill Hub</span></label></div>
+    <div class="mute small">As skills publicadas no Skill Hub do HangarLLM chegam aqui prontas para os agentes (somente leitura: edite no HangarLLM). As da empresa vão para lá com a palavra-chave <code>agent-hangar</code>. Nome igual de outra origem não é sobrescrito.</div>
+    ${res.error ? `<div class="bad-text small mt">${esc(res.error)}</div>` : ''}
+    <div class="grid g2 mt">
+      <div><div class="mute small">Do hub para cá</div><div class="mt" style="display:flex;flex-wrap:wrap;gap:6px">${list(sk.from_hub || [], 'nenhuma publicada no Skill Hub')}</div></div>
+      <div><div class="mute small">Da empresa para o hub</div><div class="mt" style="display:flex;flex-wrap:wrap;gap:6px">${list(sk.published || [], s.share_skills ? 'nenhuma ainda' : 'publicação desligada')}</div></div></div>
+    ${(sk.conflicts || []).length ? `<div class="small mt"><span class="pill warn">Conflito de nome</span> ${(sk.conflicts).map(n => `<code>${esc(n)}</code>`).join(' ')} <span class="mute">existe aqui e no hub com origens diferentes</span></div>` : ''}
+    ${(res.errors || []).length ? `<details class="small mt"><summary>${fmt(res.errors.length)} <span>aviso(s) da última sincronização</span></summary>${res.errors.map(e => `<div class="mute">${esc(e)}</div>`).join('')}</details>` : ''}</div>`;
+}
 async function hubPage() {
   await pvLoad();
   const p = pvOf('hangarllm');
   const head = `<a href="#/providers" class="mute small">← Provedores de LLM</a>
   <div class="row mt" style="gap:14px">${pvLogo(p, 48)}<div><h1 style="margin:0">Hub HangarLLM</h1>
-    <div class="mute small">Modelos, chaves por agente e gasto real num lugar só</div></div></div>`;
+    <div class="mute small">Modelos, MCPs e skills num lugar só, com chave por agente e gasto real</div></div></div>`;
   if (!ME.is_admin) { main.innerHTML = head + '<div class="card mt mute">Só admins da plataforma ligam e veem o hub.</div>'; return; }
   const [s, c] = await Promise.all([api('/hangarllm'), api('/catalog')]);
   const conn = s.connected ? c.llm_connections.find(x => x.name === s.connection) : null;
   const iso = s.isolated || {};
   const keys = (s.keys || []).filter(k => !k.central);
+  const found = (s.found || [])[0];
+  const sk = s.skills || {};
   const keyRows = keys.map(k => `<tr><td>${k.agent ? `<a href="#/agents/${encodeURIComponent(k.agent)}">${esc(k.agent)}</a>` : '—'}</td>
-    <td>${esc(k.env)}</td><td class="small">${(k.models || []).map(m => `<code>${esc(m)}</code>`).join(' ')}</td>
+    <td>${esc(k.env)}</td><td class="small">${(k.models || []).map(m => `<code>${esc(m)}</code>`).join(' ') || '<span class="mute">—</span>'}</td>
+    <td class="small">${(k.mcps || []).map(m => `<code>${esc(m)}</code>`).join(' ') || '<span class="mute">—</span>'}</td>
     <td class="small">${k.expires_at ? new Date(k.expires_at).toLocaleDateString(window.LOCALE || 'pt-BR') : '—'}</td>
     <td>${hubUsd(k.spend_usd)}</td></tr>`).join('');
   main.innerHTML = head + `<div class="sub mt">${esc(p.note)}</div>
+  ${!s.connected && found ? `<div class="card mt" style="border-color:var(--accent)"><b>Encontrei o HangarLLM neste Docker</b>
+    <div class="mute small mt">Container <code>${esc(found.container)}</code>. Cole a chave de gestão abaixo e clique em Ligar o hub: a central põe o container na rede dos agentes, traz os modelos, os servidores MCP e as skills.</div></div>` : ''}
   ${s.connected ? `<div class="card mt"><div class="row between" style="align-items:flex-start;flex-wrap:wrap">
     <div><div><span class="pill ${s.status === 'ok' ? 'ok' : 'bad'}">${s.status === 'ok' ? 'Conectado' : 'Com problema'}</span>
       <span class="mute small">${copyable(s.url)}${s.checked_at ? ` · <span>conferido</span> ${ago(s.checked_at)}` : ''}</span></div>
@@ -571,17 +602,19 @@ async function hubPage() {
       <button class="ghost" id="hub-off">Desligar o hub</button></div></div>
     <div class="grid g4 mt">
       <div><div class="mute small">Modelos</div><b style="font-size:22px">${fmt(s.models_total)}</b><div class="small mt">${kindChips(s.models)}</div></div>
-      <div><div class="mute small">Chaves de agente</div><b style="font-size:22px">${fmt(keys.length)}</b><div class="mute small">uma por agente e ambiente, renovadas sozinhas</div></div>
-      <div><div class="mute small">Gasto real no gateway</div><b style="font-size:22px">${hubUsd(s.spend_usd)}</b><div class="mute small">somado das chaves criadas pela central</div></div>
-      <div><div class="mute small">Orçamento por agente</div><b style="font-size:22px">${usd(s.budget_usd)}</b><div class="mute small">${esc(HUB_PERIOD[s.budget_period] || s.budget_period)}, aplicado pelo gateway</div></div></div></div>
+      <div><div class="mute small">Servidores MCP</div><b style="font-size:22px">${fmt((s.mcps || []).length)}</b><div class="mute small">conectores <code>hub:…</code> para os agentes</div></div>
+      <div><div class="mute small">Skills</div><b style="font-size:22px">${fmt((sk.from_hub || []).length + (sk.published || []).length)}</b><div class="mute small">${fmt((sk.from_hub || []).length)} <span>do hub</span> · ${fmt((sk.published || []).length)} <span>publicadas lá</span></div></div>
+      <div><div class="mute small">Gasto real no gateway</div><b style="font-size:22px">${hubUsd(s.spend_usd)}</b><div class="mute small">${usd(s.budget_usd)} <span>por agente</span> ${esc(HUB_PERIOD[s.budget_period] || s.budget_period)}</div></div></div></div>
+  ${hubMcpCard(s)}
+  ${hubSkillsCard(s)}
   <div class="card mt"><h2 style="margin:0">Chaves dos agentes</h2>
-    <div class="mute small">Criadas no deploy, só com os modelos que o agente usa. A chave de gestão nunca sai da central.</div>
-    ${keyRows ? `<table class="mt"><thead><tr><th>Agente</th><th>Ambiente</th><th>Modelos</th><th>Vence</th><th>Gasto real</th></tr></thead><tbody>${keyRows}</tbody></table>`
-      : '<div class="mute small mt">Nenhuma ainda: escolha a conexão <code>hangarllm</code> num agente e publique em stage.</div>'}</div>
+    <div class="mute small">Criadas no deploy (ou no primeiro uso de um MCP do hub), só com os modelos e os servidores MCP que o agente usa, com orçamento e validade renovada sozinha. A chave de gestão nunca sai da central.</div>
+    ${keyRows ? `<table class="mt"><thead><tr><th>Agente</th><th>Ambiente</th><th>Modelos</th><th>MCP</th><th>Vence</th><th>Gasto real</th></tr></thead><tbody>${keyRows}</tbody></table>`
+      : '<div class="mute small mt">Nenhuma ainda: escolha a conexão <code>hangarllm</code> ou um conector <code>hub:…</code> num agente e publique em stage.</div>'}</div>
   <div id="hub-conn"></div>` : ''}
   <details class="card mt" ${s.connected ? '' : 'open'}><summary><b>${s.connected ? 'Configuração' : 'Ligar o HangarLLM'}</b></summary>
     <div class="grid g2 mt">
-      <label>Endereço do HangarLLM <span class="mute">(como a central e os agentes chegam nele)</span><input id="hub-url" value="${esc(s.url || 'http://hangarllm:4000')}"></label>
+      <label>Endereço do HangarLLM <span class="mute">(vazio = procurar no Docker desta instalação)</span><input id="hub-url" value="${esc(s.url || '')}" placeholder="http://hangarllm:4000"></label>
       <label>Chave de gestão <span class="mute">${s.connected ? '(vazio mantém a atual)' : '(chave mestra ou de gestão)'}</span><input id="hub-key" type="password" autocomplete="off"></label></div>
     <div class="grid g3 mt">
       <label>Painel <span class="mute">(opcional, para os links)</span><input id="hub-ui" value="${esc(s.ui_url || '')}" placeholder="https://localhost:4400/ui"></label>
@@ -589,8 +622,8 @@ async function hubPage() {
       <label>Período<select id="hub-period">${Object.entries(HUB_PERIOD).map(([v, l]) => `<option value="${v}" ${(s.budget_period || '30d') === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label></div>
     <button id="hub-go" class="mt">${s.connected ? 'Salvar' : 'Ligar o hub'}</button>
     <details class="mt"><summary class="small">Instalação local com Docker</summary>
-      <div class="mute small mt">O HangarLLM roda em outro compose. Este botão põe o container dele nas redes dos agentes e dos jobs com o nome <code>hangarllm</code>; aí o endereço é <code>http://hangarllm:4000</code>, sem o certificado local. Refaça depois de recriar o container do HangarLLM.</div>
-      <div class="row mt" style="gap:10px;align-items:flex-end"><label style="min-width:260px">Container<input id="hub-ctr" value="hangarllm-hangarllm-1"></label>
+      <div class="mute small mt">Com o endereço vazio, a central acha o container sozinha. Se precisar, este botão põe o container do HangarLLM nas redes dos agentes e dos jobs com o nome <code>hangarllm</code>; aí o endereço é <code>http://hangarllm:4000</code>, sem o certificado local. Refaça depois de recriar o container do HangarLLM.</div>
+      <div class="row mt" style="gap:10px;align-items:flex-end"><label style="min-width:260px">Container<input id="hub-ctr" value="${esc(found ? found.container : 'hangarllm-hangarllm-1')}"></label>
         <button class="ghost" id="hub-net">Pôr na rede dos agentes</button></div></details></details>
   <div class="card mt"><h2 style="margin:0">O que segue isolado</h2>
     <div class="mute small">Continua funcionando como antes, sem chave por agente nem gasto real do gateway.</div>
@@ -609,7 +642,7 @@ async function hubPage() {
   $('#hub-go').onclick = e => act(e.target, async () => {
     const r = await api('/hangarllm', { method: 'PUT', body: { url: $('#hub-url').value.trim(), admin_key: $('#hub-key').value,
       ui_url: $('#hub-ui').value.trim(), budget_usd: num($('#hub-budget').value), budget_period: $('#hub-period').value } });
-    toast(`Hub ligado: ${fmt(r.models_total)} modelo(s)`);
+    toast(`Hub ligado: ${fmt(r.models_total)} modelo(s), ${fmt((r.mcps || []).length)} servidor(es) MCP`);
     await hubPage();
   });
   $('#hub-net').onclick = e => act(e.target, async () => {
@@ -617,9 +650,14 @@ async function hubPage() {
     $('#hub-url').value = r.url;
     toast(`Pronto: use ${r.url}`);
   });
+  const share = $('#hub-share');
+  if (share) share.onchange = () => act(share, async () => {
+    await api('/hangarllm', { method: 'PUT', body: { url: s.url, share_skills: share.checked } });
+    await hubPage();
+  }, 'Salvo');
   const rf = $('#hub-refresh');
   if (rf) rf.onclick = e => act(e.target, async () => { await api('/hangarllm/refresh', { method: 'POST' }); await hubPage(); }, 'Atualizado');
   const off = $('#hub-off');
-  if (off) off.onclick = e => confirm('Desligar o hub? As chaves dos agentes são revogadas no HangarLLM e a conexão hangarllm sai do catálogo.') &&
+  if (off) off.onclick = e => confirm('Desligar o hub? As chaves dos agentes são revogadas no HangarLLM, a conexão hangarllm e os conectores hub:… saem do catálogo e as skills publicadas pela central saem do Skill Hub. As skills que vieram do hub ficam aqui, como skills da empresa.') &&
     act(e.target, async () => { await api('/hangarllm', { method: 'DELETE' }); await hubPage(); }, 'Hub desligado');
 }

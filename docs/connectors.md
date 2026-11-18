@@ -9,6 +9,10 @@ catalog:
 - sections by category (Populares, Produtividade, Comunicação, Vendas e CRM, Finanças, Dados, Desenvolvimento, IA,
   Monitoramento, Segurança), with each connector's icon and a **+** button.
 
+With the [HangarLLM hub](hangarllm.md) connected, a **Do HangarLLM** section lists the servers of HangarLLM's MCP
+gateway as `hub:<alias>` connectors. They are managed on HangarLLM, and each agent calls them with its own gateway
+key.
+
 ## Where connectors come from
 
 | Source | What | How it connects |

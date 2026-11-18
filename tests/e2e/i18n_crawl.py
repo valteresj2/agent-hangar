@@ -31,7 +31,7 @@ DATA_ENDPOINTS = ["/api/agents", "/api/users", "/api/keys", "/api/catalog", "/ap
                   "/api/plugins", "/api/teams", "/api/remote-mcps", "/api/connect", "/api/deployments", "/api/tests",
                   "/api/usage", "/api/schedules", "/api/oauth/clients"]
 PAGES_APP = ["", "inbox", "search?q=e2e", "org", "employees/new", "decisions", "mine", "org?view=tree",
-             "connect-ai", "access", "employees/new?personal=1", "issues", "my-issues", "issues?view=list",
+             "connect-ai", "access", "employees/new?personal=1", "market", "issues", "my-issues", "issues?view=list",
              "issues?view=table", "issues?view=swim", "issues?view=timeline", "keys"]
 PAGES_UI = ["", "live", "announcements", "inbox", "projects", "goals", "budgets", "files", "org", "skills", "packages",
             "secrets", "orgs", "extraction", "calculators", "agents", "approvals", "workforce/overview",

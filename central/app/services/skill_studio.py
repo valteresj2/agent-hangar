@@ -28,6 +28,8 @@ def _get(db: Session, name: str) -> Skill:
 
 
 def can_edit(acc: Access, s: Skill) -> bool:
+    if s.source == "hub":  # veio do Skill Hub do HangarLLM: edita-se lá (a central traz a versão nova sozinha)
+        return False
     return acc.p.is_admin or (s.team_id is not None and RANK.get(acc.teams.get(s.team_id, ""), 0) >= RANK["developer"])
 
 
@@ -58,7 +60,7 @@ def skill_dict(db: Session, s: Skill, acc: Access, detail: bool = False) -> dict
          "team_id": s.team_id, "cases": len(s.cases or []) + (1 if s.test else 0), "created_by": s.created_by,
          "last_run": {"version": last.version, "passed": last.passed, "at": iso(last.at)} if last else None,
          "can_edit": can_edit(acc, s), "files_count": 1 + len(s.files or []), "updated_at": iso(s.updated_at),
-         "team": _team_name(db, s.team_id)}
+         "team": _team_name(db, s.team_id), "source": s.source or "", "in_hub": bool(s.hub_ref)}
     if detail:
         record(db, s, s.created_by or "sistema", "versão inicial")  # skills antigas ganham a revisão atual
         d.update(content=s.content, examples=s.examples or "", test=s.test, case_list=s.cases or [],

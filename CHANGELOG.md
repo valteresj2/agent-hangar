@@ -3,9 +3,23 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.61.0] — 2026-11-18
 
 ### Added
+- **HangarLLM hub: MCP servers and skills, plug and play.**
+  - **Connect with only the key.** Leave the address empty and the central finds the HangarLLM container in Docker,
+    puts it on the agents' network and connects. `hangar setup` asks only for the key.
+  - **MCP servers.** Every server of HangarLLM's MCP gateway becomes a `hub:<alias>` connector. The agent calls it
+    through the central's bridge with its own key, which reaches only the hub servers in its spec; an MCP-only key
+    calls no model. Tool calls carry the agent's tags into the gateway's spend logs, and tool approval works as with
+    any connector.
+  - **Skills, in both directions.** Skills published on the Skill Hub arrive as read-only skills, and the company's
+    active skills are published there under the `agent-hangar` keyword, with a toggle to stop. Names from another
+    origin are never overwritten, and the Skill Hub's upload limit spreads a large catalog over several syncs.
+  - **Sync.** Everything syncs on connect, on **Refresh now** and every hour.
+  - **Disconnect.** It cleans up the hub pieces and keeps pulled skills as company skills.
+  - **Keys.** Agent keys now turn the gateway's auto-rotation off.
+  - **Migration.** `0061_hangarllm_mcp_skills` adds the columns this needs.
 - **HangarLLM hub** (*Providers → HangarLLM*, `GET/PUT/DELETE /api/hangarllm`, [docs/hangarllm.md](docs/hangarllm.md)):
   connect HangarLLM once with its address and a management key and it feeds the `hangarllm` connection with the
   gateway's models and prices. Each agent gets a virtual key of its own per environment, holding only the models it uses
@@ -14,6 +28,19 @@ All notable changes to this project are documented here. The format follows
   and the real spend of each key comes back every hour. `hangar setup` offers it first in the LLM step, and a button
   puts a local HangarLLM container on the agents' network as `http://hangarllm:4000`. Direct providers and other
   gateways keep working, isolated. New tables `hub_links` and `hub_keys` (migration `0060_hangarllm_hub`).
+- **Marketplace of Digital employees** in the portal (*Marketplace*, `GET /api/market`, `GET /api/market/{slug}`,
+  `POST /api/market/{slug}/use`, [docs/digital-employee.md](docs/digital-employee.md#marketplace)): the admitted
+  employees a person can see, with search, a filter by team and a page per agent (what to ask it, what it does, what it
+  works with, what a copy takes). **Use this agent** hires a personal copy in shadow mode with the person as manager;
+  the original is never changed. Team members who can see the spec copy the instructions, skills and apps through the
+  composer base; the others copy the job and get new instructions. Conversations, tasks, memory, lessons and connected
+  accounts never go along.
+- **Hire from a plain-text request** (`POST /api/employees/draft`): the hire page is two columns. The person describes
+  what the agent should do and the job sheet fills in for review; the draft comes from the company's first chat
+  connection and, without one or when the call fails, from simple rules that use only what the text says (the page
+  says so). The sheet shows the essentials and moves the rest to *Advanced* with the same defaults.
+- **End-to-end test of both** (`tests/e2e/market.py`, in the CI): the storefront, the copy going through probation in
+  real containers, the draft with and without a model, and the screens with real clicks.
 - **Nightly lesson curation** for Digital employees: once a day, overnight, for those with new work, the platform
   reviews the period (tasks, corrections, people's messages, quality notes, failures) and proposes merging repeated
   lessons, rewriting or removing stale ones, and new lessons from patterns seen in two or more tasks. Proposals join
@@ -40,7 +67,15 @@ All notable changes to this project are documented here. The format follows
   reference solution proves every check (`run.py --oracle`). Results: `summary.json` with pass@k and, per attempt,
   the task's summary (`hangar-task.json`). First run with deepseek through OpenRouter: 8 of 8.
 
+### Changed
+- **Portal menu in two groups** (*Day to day* and *More*), and the product's terms explained in plain words where
+  people first meet them: the autonomy level says what the agent does without asking, the *Authority* and *Probation*
+  tabs open with one sentence, and *My issues* has a subtitle.
+
 ### Fixed
+- **Personal agents when the workspace restricts LLM connections**: a marketplace copy and the hire page now use the
+  first allowed connection with its default model, instead of failing because the page never asks for a model.
+  `GET /api/me/workspace` returns the list as `personal_llm`.
 - **Agent runtime without a connection** no longer points at a `litellm:4000` service that never existed: an empty
   `LLM_BASE_URL` is the default.
 - **Cua license wording**: the governed desktop is built on Cua, and its desktop daemon `cua-spacesd` is

@@ -38,8 +38,8 @@ PROVIDERS = [
     P(id="hangarllm", name="HangarLLM (hub)", group="hub", protocol="openai", base_url="http://hangarllm:4000/v1",
       list="litellm", prefix="", kinds="text, embedding, rerank, image, tts, stt", initials="HL", color="#F5B400",
       logo="/ui/providers/hangarllm.webp",
-      note="Ligue pela tela Hub HangarLLM: cada agente recebe uma chave só dele, as chamadas levam etiquetas e o gasto "
-           "real volta do gateway. A lista e o preço dos modelos vêm do próprio HangarLLM."),
+      note="Ligue uma vez e tudo se conecta: os modelos, os servidores MCP e as skills do HangarLLM chegam aos agentes, "
+           "cada agente usa uma chave só dele, as chamadas levam etiquetas e o gasto real volta do gateway."),
     P(id="litellm", name="LiteLLM", group="gateway", protocol="openai", base_url="http://host.docker.internal:4000/v1",
       list="litellm", prefix="", kinds="text, embedding, rerank, image, tts, stt", initials="LL", color="#1F6FEB",
       note="O gateway da empresa (ou o seu). A lista vem de /model/info, com o tipo de cada modelo. De dentro do Docker, "

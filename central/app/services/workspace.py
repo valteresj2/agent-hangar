@@ -425,6 +425,13 @@ def check_personal(db, acc: Access, llm: dict | None):
         raise PlatformError("nos agentes pessoais, use uma destas conexões de LLM: " + ", ".join(pa["llm_connections"]))
 
 
+def personal_llm(db) -> dict | None:
+    """O LLM de um agente pessoal criado sem escolher modelo (cópia do marketplace, tela de contratação), quando o
+    workspace só libera algumas conexões: a primeira liberada, com o modelo padrão dela. None sem restrição."""
+    allowed = policy(db)["personal_agents"]["llm_connections"]
+    return {"connection": allowed[0], "model": None} if allowed else None
+
+
 def make_personal(db, a: Agent, user_id: int):
     a.personal_owner_id, a.visibility = user_id, "private"
     db.commit()
@@ -578,4 +585,5 @@ def home(db, acc: Access) -> dict:
             "my_tasks": [{"id": t.id, "title": t.title, "status": t.status, "created_at": iso(t.created_at)} for t in tasks],
             "month_cost_usd": round(cost, 4), "personal_spent_usd": round(personal_spent(db, uid), 4),
             "personal_cap_usd": pa["monthly_budget_usd"], "personal_allowed": pa["enabled"],
-            "personal_count": sum(1 for x in mine if x["personal"]), "personal_max": pa["max_per_member"]}
+            "personal_count": sum(1 for x in mine if x["personal"]), "personal_max": pa["max_per_member"],
+            "personal_llm": pa["llm_connections"]}

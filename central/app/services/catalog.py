@@ -231,7 +231,8 @@ def _agent_key(db: Session, conn: LlmConnection, agent: Agent | None, env: str, 
     if agent is None:
         raise PlatformError("a conexão do hub HangarLLM só é entregue a um agente (chave por agente)")
     models = [m or conn.model_name for c, m in llm_models._effective(spec, env) if c == conn.name]
-    return hangarllm.agent_key(db, agent, env, models or [conn.model_name]), hangarllm.PROVIDER
+    return (hangarllm.agent_key(db, agent, env, models or [conn.model_name], hangarllm.spec_mcps(spec)),
+            hangarllm.PROVIDER)
 
 
 def resolve_llm(db: Session, spec: dict, env: str, agent: Agent | None = None) -> dict:

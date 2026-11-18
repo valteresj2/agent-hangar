@@ -239,6 +239,9 @@ def resolve_headers(db: Session, m_or_cfg, team_id: int | None = None) -> dict:
         out["Authorization"] = f"Bearer {tok}"
     if get("stdio"):  # servidor local: só a central fala com o container dele
         out["X-Runner-Token"] = runner_token(get("name"))
+    if get("auth") == "hub":  # servidor do HangarLLM: a central confere com a chave dela (os agentes usam a deles)
+        from . import hangarllm
+        out.update(hangarllm.mcp_headers(db, None))
     return out
 
 
@@ -742,6 +745,8 @@ def remove(db: Session, acc: Access, name: str):
     from . import remote_mcp
     m = _get(db, name)
     _can_manage(acc, m, None, False)
+    if m.source == "hub":
+        raise PlatformError("este conector vem do HangarLLM: tire o servidor de lá (ou desligue o hub em Provedores)")
     users = [a.slug for a in db.scalars(select(Agent)) if name in {(x if isinstance(x, str) else x.get("name"))
                                                                     for x in (spec_of(a).get("mcps") or [])}]
     if users:
@@ -857,7 +862,8 @@ def connector_dict(db: Session, m: McpServer, acc: Access | None = None) -> dict
             "headers": [{"name": h["name"], "secret": str(h.get("value", "")).startswith("secret://"),
                          "value": h["value"] if str(h.get("value", "")).startswith("secret://") else "····"}
                         for h in (m.headers or [])],
-            "icon": icon_url(m.icon or (f"docker:{m.name[7:]}" if m.name.startswith("docker:") else "")), "category": m.category, "status": m.status or ("ok" if m.source in ("manual", "docker") else ""),
+            "icon": "/ui/providers/hangarllm.webp" if m.source == "hub" else
+                    icon_url(m.icon or (f"docker:{m.name[7:]}" if m.name.startswith("docker:") else "")), "category": m.category, "status": m.status or ("ok" if m.source in ("manual", "docker") else ""),
             "status_detail": m.status_detail, "checked_at": iso(m.checked_at), "server_info": m.server_info or {},
             "tools": [{**{k: v for k, v in t.items() if k != "hash"}, "action_type": kinds.get(t["name"])}
                       for t in (m.tools or [])],

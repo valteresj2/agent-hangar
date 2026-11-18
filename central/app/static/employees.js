@@ -226,6 +226,8 @@ async function employeeHirePage() {
       probation_tasks: [...document.querySelectorAll('.h-pt')].map(r => ({ title: $('.pt-title', r).value.trim(), body: $('.pt-title', r).value.trim(), expected: $('.pt-exp', r).value.trim() }))
         .filter(t => t.title),
       personal,
+      // o workspace só libera algumas conexões para agentes pessoais: a ficha não pede modelo, então vai a primeira
+      ...(personal && (ws.personal_llm || []).length ? { llm: { connection: ws.personal_llm[0], model: null } } : {}),
       kpis: lines($('#h-kpis').value).map(k => ({ name: k })), report_webhook: $('#h-hook').value.trim(), working_hours: $('#h-hours').value.trim(),
       task_budget_usd: num('#h-budget'), task_time_limit_min: num('#h-limit'), report_hour: num('#h-hour'),
     };
