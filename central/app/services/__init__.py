@@ -44,6 +44,7 @@ from . import (  # noqa: F401  (svc.access.Access, svc.connect.snippet, svc.org.
                       home,
                       inbox,
                       issues,
+                      job_draft,
                       knowledge,
                       learning,
                       llm,

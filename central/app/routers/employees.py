@@ -57,6 +57,10 @@ class HireBody(BaseModel):
     plan_id: str = ""
 
 
+class DraftBody(BaseModel):
+    text: str = Field(max_length=8000)
+
+
 class StatusBody(BaseModel):
     to: str
     reason: str = ""
@@ -170,6 +174,12 @@ def employees(request: Request, mine: bool = False, db=Depends(db_dep)):
 @router.post("/employees/plan")
 def plan(body: HireBody, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.employees.plan(db, acc(request, db), body.request, **_fields(body)))
+
+
+@router.post("/employees/draft")
+def draft(body: DraftBody, request: Request, db=Depends(db_dep)):
+    """A ficha do cargo a partir de um texto livre (services/job_draft.py). Não cria nada."""
+    return guard(lambda: svc.job_draft.draft(db, acc(request, db), body.text))
 
 
 @router.post("/employees")

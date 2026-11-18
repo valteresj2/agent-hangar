@@ -573,3 +573,17 @@ a.mk-card:hover{border-color:var(--ink);color:var(--ink)}
 .mk-instr p{margin:0 0 8px}.mk-instr ul,.mk-instr ol{margin:0 0 8px;padding-left:20px}.mk-instr .md-h{font:600 16px/1.3 var(--f-sign);margin:14px 0 6px}
 .mk-instr>:first-child{margin-top:0}.mk-instr>:last-child{margin-bottom:0}
 @media(max-width:860px){.mk-page{grid-template-columns:minmax(0,1fr)}.mk-main,.mk-side{grid-column:1;grid-row:auto}.mk-side{position:static}.mk-hero h1{font-size:28px}}
+/* ---------- contratação em duas colunas: o pedido à esquerda, a ficha à direita (employees.js) ---------- */
+.hire{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:28px;align-items:start;margin-top:14px}
+.hire-ask{position:sticky;top:20px}
+.hire-ask p{margin:0 0 10px}
+.hire-ask textarea{width:100%;font-size:15px}
+.hire-list{display:grid;gap:8px}
+.hire-ex,.hire-ex:hover{justify-content:flex-start;text-align:left;font-weight:400;white-space:normal;line-height:1.4;padding:10px 12px;border-radius:var(--r-lg)}
+.hire-ready{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.hire-ready a.chip{text-decoration:none}.hire-ready a.chip:hover{border-color:var(--ink)}
+.ag-av.xs{width:18px;height:18px}
+.hire-sheet select{width:100%}
+.hire-sheet h3{margin-top:22px}
+.hire-sheet label.row{flex-wrap:nowrap;align-items:flex-start}.hire-sheet label.row input[type=checkbox]{margin-top:4px;flex-shrink:0}
+@media(max-width:860px){.hire{grid-template-columns:minmax(0,1fr)}.hire-ask{position:static}}

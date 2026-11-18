@@ -90,85 +90,151 @@ function empCard(e) {
     <div class="mute small mt">${working} na fila · ${t.waiting_human || 0} aguardando · ${t.done || 0} concluídas · ${usd(e.cost_30d)} em 30 dias</div></div>`;
 }
 
-/* ---------- contratação: MCP primeiro, formulário guiado como alternativa ---------- */
+/* ---------- contratação: a pessoa conta o que quer, a ficha se preenche e ela ajusta antes de criar ----------
+   Duas colunas. À esquerda, o pedido em texto livre (POST /employees/draft preenche a ficha), exemplos e os agentes
+   prontos do marketplace. À direita, a ficha: o essencial à vista e o resto em Avançado, com os padrões de sempre. */
 const HIRE_PROMPT = () => window.LANG === 'en'
   ? 'Use Agent Hangar to hire a Digital employee: <job title>, who <mission>. Ask me for anything that is missing before hiring.'
   : 'Use o Agent Hangar para contratar um Digital employee: <cargo>, que <missão>. Pergunte o que faltar antes de contratar.';
+const HIRE_EXAMPLES = () => window.LANG === 'en'
+  ? ['Every weekday morning, sort my e-mail inbox and draft replies; never send without my approval.',
+    'On Mondays at 9 am, review the CRM pipeline and tell me which deals are stalled.',
+    'Follow my mentions in the team chat and tell me what needs an answer today.']
+  : ['Toda manhã de dia útil, organize a minha caixa de e-mail e rascunhe respostas; nunca envie sem eu aprovar.',
+    'Às segundas às 9h, revise o pipeline do CRM e me diga quais negócios estão parados.',
+    'Acompanhe as minhas menções no chat do time e me avise do que precisa de resposta hoje.'];
+/* o nível de autonomia dito pelo que ele faz (os padrões de employee_gate.AUTONOMY_DEFAULTS; o piso da empresa vale por cima) */
+const LEVEL_PLAIN = { intern: 'Pede aprovação para tudo que muda algo (recomendado)', junior: 'Muda dados internos e avisa; o resto pede aprovação',
+  pleno: 'Muda dados internos sozinho; o resto pede aprovação', senior: 'Também roda código e envia mensagens para fora, avisando' };
 
 async function employeeHirePage() {
   const teams = ME.teams || [];
-  const personal = qsOf().get('personal') === '1';  // agente pessoal do membro: só ele vê, com as regras do workspace
-  main.innerHTML = `<a href="#/employees" class="mute small">← Digital employees</a><h1>${personal ? 'Novo agente pessoal' : 'Contratar um Digital employee'}</h1>
-  ${personal ? '<div class="card hero">Agente <b>pessoal</b>: só você (e a auditoria) vê. Você é o gestor. Segue as regras do workspace (limite de agentes, conexões de LLM e orçamento do mês). Quando o time quiser usar, peça a promoção em <a href="#/mine">Meus agentes</a>.</div>' : ''}
-  <div class="sub">O cargo só é criado quando estiver completo: missão, responsabilidades, gestor, sistemas, alçada, canais e as tarefas do período de experiência.</div>
-  <div class="card hero"><h2>${icon('chat')} Pela sua ferramenta de IA (modo self, recomendado)</h2>
-    <div class="mute small">No Claude, ChatGPT, Codex ou Cursor conectados ao Hangar (MCP), peça a contratação. A IA chama <code class="inline">plan_employee</code>,
-      faz as perguntas que faltarem (no máximo 4 por vez), mostra o resumo do cargo para você confirmar e só então chama <code class="inline">hire_employee</code>.</div>
-    <div class="mt">${copyable(HIRE_PROMPT())}</div>
-    <div class="small mt"><a href="#/connect">Conectar ferramenta →</a></div></div>
-  <div class="card mt"><h2>Ou pelo formulário guiado</h2>
-    <div class="mute small">Clique em <b>Verificar</b> a qualquer momento: o Hangar diz o que falta (com a pergunta) e o que dá para reaproveitar do catálogo.</div>
-    <div class="grid g2 mt">
-      <label>Cargo<input id="h-title" placeholder="ex.: Analista de renovações"></label>
-      <label>Gestor (e-mail)<input id="h-manager" placeholder="${personal ? 'você (deixe em branco)' : 'quem aprova e recebe os relatórios'}"></label>
-      <label style="grid-column:1/-1">Missão<input id="h-mission" placeholder="o resultado pelo qual ele responde"></label>
-      <label>Responsabilidades (uma por linha, 3 ou mais)<textarea id="h-resp" rows="4"></textarea></label>
-      <label>Sistemas e ferramentas (uma por linha)<textarea id="h-systems" rows="4" placeholder="ex.: CRM&#10;e-mail"></textarea></label>
-      <label>Agentes do catálogo que ele usa (slugs, separados por vírgula)<input id="h-specialists" placeholder="opcional"></label>
-      <label>Skills e MCPs (separados por vírgula)<input id="h-pieces" placeholder="ex.: skill:propostas, mcp:crm"></label>
-      <label>Substitutos (e-mails, separados por vírgula)<input id="h-backups" placeholder="decidem quando o gestor não responde"></label>
-      <label>Time<select id="h-team">${teams.map(t => `<option value="${esc(t.slug)}">${esc(t.name)}</option>`).join('')}</select></label>
-      <label>Nível de autonomia<select id="h-level">${Object.entries(LEVEL_LABEL).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
-      <fieldset class="small"><legend>Canais de entrada</legend>${CHANNELS.map(c => `<label class="row" style="gap:6px"><input type="checkbox" class="h-ch" value="${c}" ${['portal', 'mcp'].includes(c) ? 'checked' : ''}>${c}</label>`).join('')}</fieldset>
-    </div>
-    <h3 class="mt">Período de experiência</h3>
-    <div class="mute small">Tarefas reais do cargo, com o resultado esperado. Ele as faz em stage; quando terminar, o gestor aprova a admissão.</div>
-    <div id="h-prob"></div><button class="ghost small" id="h-prob-add">+ tarefa</button>
-    <h3 class="mt">Alçada</h3><div id="h-auth" class="mute small">Clique em Verificar para ver a alçada padrão do nível escolhido, já com o piso da empresa.</div>
-    <label class="row mt" style="gap:6px"><input type="checkbox" id="h-accept"> Aceito a alçada padrão (posso mudar depois, na aba Alçada)</label>
-    <label class="row mt" style="gap:6px"><input type="checkbox" id="h-shadow" checked> Começar em modo sombra (recomendado): as ações que mudam algo são só simuladas até você confiar nele</label>
-    <details class="mt"><summary>Opcional: metas, relatórios e limites</summary><div class="grid g2 mt">
-      <label>Metas (KPIs), uma por linha<textarea id="h-kpis" rows="3"></textarea></label>
-      <label>Webhook dos relatórios (Slack ou Teams, se for a ferramenta da empresa)<input id="h-hook" placeholder="https://hooks…"></label>
-      <label>Orçamento por tarefa (US$)<input id="h-budget" type="number" step="0.1" placeholder="1.00"></label>
-      <label>Tempo limite por tarefa (min)<input id="h-limit" type="number" placeholder="30"></label>
-      <label>Hora do relatório diário<input id="h-hour" type="number" min="0" max="23" placeholder="18"></label>
-      <label>Horário de trabalho<input id="h-hours" placeholder="ex.: seg-sex 8h-18h"></label></div></details>
-    <div id="h-out" class="mt"></div>
-    <div class="row mt"><button class="ghost" id="h-plan">Verificar</button><button id="h-hire">Contratar</button></div></div>`;
+  const [ws, ready] = await Promise.all([api('/me/workspace').catch(() => ({})), api('/market').catch(() => [])]);
+  // agente pessoal do membro: só ele vê, com as regras do workspace. O link de quem chega já escolhe (?personal=1)
+  let personal = qsOf().get('personal') === '1';
+  const canChoose = !!ws.personal_allowed && teams.length > 0;
+  const me = ME.user ? ME.user.email : '';
+  main.innerHTML = `<a href="${personal ? '#/mine' : '#/employees'}" class="mute small">${personal ? '← Meus agentes' : '← Digital employees'}</a>
+  <h1>Novo agente</h1>
+  <div class="hire">
+    <section class="hire-ask" aria-labelledby="hire-h-ask">
+      <h2 id="hire-h-ask">Conte o que ele deve fazer</h2>
+      <p class="mute">Diga o que, quando e com quais apps. A ficha ao lado se preenche e você ajusta o que quiser antes de criar.</p>
+      <label class="sr-only" for="h-ask">O que ele deve fazer</label>
+      <textarea id="h-ask" rows="5" placeholder="${esc(HIRE_EXAMPLES()[0])}" data-noi18n></textarea>
+      <div class="row mt"><button id="h-draft">Preencher a ficha</button></div>
+      <div id="h-draft-out" role="status"></div>
+      <h3>Exemplos</h3>
+      <div class="hire-list">${HIRE_EXAMPLES().map(x => `<button type="button" class="ghost hire-ex" data-noi18n>${esc(x)}</button>`).join('')}</div>
+      ${ready.length ? `<h3>Ou comece por um pronto</h3>
+        <div class="hire-ready">${ready.slice(0, 8).map(a => `<a class="chip" href="#/market/${esc(a.slug)}" data-noi18n>${agentAvatar(a, 'xs')}${esc(a.name)} · ${esc(a.title)}</a>`).join('')}</div>
+        <a href="#/market" class="small">Ver o marketplace →</a>` : ''}
+      <details class="mt"><summary>Pedir para a sua ferramenta de IA</summary>
+        <div class="mute small mt">No Claude, ChatGPT, Codex ou Cursor conectados ao Hangar (MCP), peça a contratação. A IA chama <code class="inline">plan_employee</code>,
+          faz as perguntas que faltarem (no máximo 4 por vez), mostra o resumo do cargo para você confirmar e só então chama <code class="inline">hire_employee</code>.</div>
+        <div class="mt">${copyable(HIRE_PROMPT())}</div>
+        <div class="small mt"><a href="${USER_MODE ? '#/connect-ai' : '#/connect'}">Conectar ferramenta →</a></div></details>
+    </section>
+    <section class="card hire-sheet" aria-labelledby="hire-h-sheet">
+      <h2 id="hire-h-sheet" tabindex="-1">A ficha do cargo</h2>
+      <div class="grid g2">
+        <label>Nome (opcional)<input id="h-name" placeholder="ex.: Helena" autocomplete="off"></label>
+        <label>Cargo<input id="h-title" placeholder="ex.: Analista de renovações"></label>
+        <label style="grid-column:1/-1">Missão<input id="h-mission" placeholder="o resultado pelo qual ele responde"></label>
+        <label>Responsabilidades (uma por linha, 3 ou mais)<textarea id="h-resp" rows="5"></textarea></label>
+        <label>Apps e sistemas (um por linha)<textarea id="h-systems" rows="5" placeholder="ex.: CRM&#10;e-mail"></textarea></label>
+      </div>
+      <h3 id="hire-h-act">Antes de agir</h3>
+      <select id="h-level" aria-labelledby="hire-h-act">${Object.entries(LEVEL_PLAIN).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+      <label class="row mt" style="gap:6px"><input type="checkbox" id="h-shadow" checked> Começar em modo sombra: as ações que mudam algo são só simuladas até você confiar nele</label>
+      <h3 id="hire-h-who">Quem pode usar</h3>
+      ${canChoose ? `<div class="seg" role="group" aria-labelledby="hire-h-who"><button type="button" class="ghost" data-who="me">Só eu</button><button type="button" class="ghost" data-who="team">Meu time</button></div>` : ''}
+      <div id="h-who-note" class="mute small mt"></div>
+      <div class="grid g2 mt" id="h-team-box">
+        <label>Time<select id="h-team">${teams.map(t => `<option value="${esc(t.slug)}">${esc(t.name)}</option>`).join('')}</select></label>
+        <label>Gestor (e-mail)<input id="h-manager" value="${esc(me)}" placeholder="quem aprova e recebe os relatórios"></label>
+      </div>
+      <h3>Três pedidos de teste</h3>
+      <div class="mute small">Pedidos reais do cargo, com o resultado esperado. Ele os faz no período de experiência e você aprova a admissão depois.</div>
+      <div id="h-prob"></div><button type="button" class="ghost small mt" id="h-prob-add">+ pedido</button>
+      <details class="mt"><summary>Avançado</summary><div class="grid g2 mt">
+        <label>Substitutos (e-mails, separados por vírgula)<input id="h-backups" placeholder="decidem quando o gestor não responde"></label>
+        <label>Agentes do catálogo que ele usa (slugs, separados por vírgula)<input id="h-specialists" placeholder="opcional"></label>
+        <label>Skills e MCPs (separados por vírgula)<input id="h-pieces" placeholder="ex.: skill:propostas, mcp:crm"></label>
+        <fieldset class="small"><legend>Canais de entrada</legend>${CHANNELS.map(c => `<label class="row" style="gap:6px"><input type="checkbox" class="h-ch" value="${c}" ${['portal', 'mcp'].includes(c) ? 'checked' : ''}>${c}</label>`).join('')}</fieldset>
+        <label>Metas (KPIs), uma por linha<textarea id="h-kpis" rows="3"></textarea></label>
+        <label>Webhook dos relatórios (Slack ou Teams, se for a ferramenta da empresa)<input id="h-hook" placeholder="https://hooks…"></label>
+        <label>Orçamento por tarefa (US$)<input id="h-budget" type="number" step="0.1" placeholder="1.00"></label>
+        <label>Tempo limite por tarefa (min)<input id="h-limit" type="number" placeholder="30"></label>
+        <label>Hora do relatório diário<input id="h-hour" type="number" min="0" max="23" placeholder="18"></label>
+        <label>Horário de trabalho<input id="h-hours" placeholder="ex.: seg-sex 8h-18h"></label></div>
+        <h3>Alçada</h3><div id="h-auth" class="mute small">Clique em Verificar para ver a alçada padrão do nível escolhido, já com o piso da empresa.</div>
+        <label class="row mt" style="gap:6px"><input type="checkbox" id="h-accept" checked> Aceito a alçada padrão (posso mudar depois, na aba Alçada)</label></details>
+      <div id="h-out" class="mt" role="status"></div>
+      <div class="row mt"><button id="h-hire">Criar agente</button><button class="ghost" id="h-plan">Verificar o que falta</button></div>
+    </section>
+  </div>`;
   const prob = $('#h-prob');
-  const addProb = () => prob.insertAdjacentHTML('beforeend', `<div class="grid g3 mt h-pt">
-    <input class="pt-title" placeholder="Tarefa"><input class="pt-body" placeholder="O que fazer"><input class="pt-exp" placeholder="Resultado esperado"></div>`);
+  const addProb = (t = {}) => prob.insertAdjacentHTML('beforeend', `<div class="grid g2 mt h-pt">
+    <input class="pt-title" aria-label="Pedido" placeholder="Pedido" value="${esc(t.title || '')}"><input class="pt-exp" aria-label="Resultado esperado" placeholder="Resultado esperado" value="${esc(t.expected || '')}"></div>`);
   for (let i = 0; i < 3; i++) addProb();
-  $('#h-prob-add').onclick = addProb;
+  $('#h-prob-add').onclick = () => addProb();
+  const setWho = () => {  // só eu: o gestor é a própria pessoa e o time é o dela; o time escolhe gestor e time
+    main.querySelectorAll('[data-who]').forEach(b => { const on = (b.dataset.who === 'me') === personal; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+    $('#h-team-box').hidden = personal;
+    $('#h-who-note').textContent = window.t(personal ? 'Só você (e a auditoria) vê. Você é o gestor. Quando o time quiser usar, peça a promoção em Meus agentes.'
+      : 'O time vê e entrega tarefas. O gestor aprova o que for sensível e recebe os relatórios.');
+  };
+  main.querySelectorAll('[data-who]').forEach(b => b.onclick = () => { personal = b.dataset.who === 'me'; setWho(); });
+  setWho();
+  main.querySelectorAll('.hire-ex').forEach(b => b.onclick = () => { const a = $('#h-ask'); a.value = b.textContent; a.focus(); });
+  const fill = f => {
+    const set = (id, v) => { if (v) $(id).value = v; };
+    set('#h-name', f.name); set('#h-title', f.title); set('#h-mission', f.mission);
+    set('#h-resp', (f.responsibilities || []).join('\n')); set('#h-systems', (f.systems || []).join('\n'));
+    if ((f.probation_tasks || []).length) { prob.innerHTML = ''; f.probation_tasks.forEach(addProb); while (prob.children.length < 3) addProb(); }
+  };
+  $('#h-draft').onclick = e => act(e.currentTarget, async () => {
+    const text = $('#h-ask').value.trim();
+    if (text.length < 10) throw new Error(window.t('Descreva em uma ou duas frases o que ele deve fazer.'));
+    const r = await api('/employees/draft', { method: 'POST', body: { text } });
+    fill(r.fields);
+    $('#h-draft-out').innerHTML = r.source === 'llm'
+      ? '<div class="card ok-card mt">Ficha preenchida. Revise e ajuste antes de criar.</div>'
+      : '<div class="card warn-card mt">Não há um modelo de IA conectado para escrever a ficha, então aproveitei só o que estava no seu texto. Complete o cargo e os pedidos de teste.</div>';
+    $('#hire-h-sheet').focus();
+  });
   const fields = () => {
     const pieces = csv($('#h-pieces').value);
     const num = id => $(id).value === '' ? null : Number($(id).value);
     return {
-      title: $('#h-title').value.trim(), mission: $('#h-mission').value.trim(), manager: $('#h-manager').value.trim(),
+      request: $('#h-ask').value.trim(), name: $('#h-name').value.trim(),
+      title: $('#h-title').value.trim(), mission: $('#h-mission').value.trim(), manager: personal ? '' : $('#h-manager').value.trim(),
       responsibilities: lines($('#h-resp').value), systems: lines($('#h-systems').value), specialists: csv($('#h-specialists').value),
       skills: pieces.filter(p => !p.startsWith('mcp:')).map(p => p.replace(/^skill:/, '')), mcps: pieces.filter(p => p.startsWith('mcp:')).map(p => p.slice(4)),
-      backups: csv($('#h-backups').value), team: $('#h-team').value, autonomy_level: $('#h-level').value,
+      backups: csv($('#h-backups').value), team: personal ? '' : $('#h-team').value, autonomy_level: $('#h-level').value,
       channels: [...document.querySelectorAll('.h-ch:checked')].map(c => c.value), accept_default_authority: $('#h-accept').checked, shadow: $('#h-shadow').checked,
-      probation_tasks: [...document.querySelectorAll('.h-pt')].map(r => ({ title: $('.pt-title', r).value.trim(), body: $('.pt-body', r).value.trim(), expected: $('.pt-exp', r).value.trim() }))
+      probation_tasks: [...document.querySelectorAll('.h-pt')].map(r => ({ title: $('.pt-title', r).value.trim(), body: $('.pt-title', r).value.trim(), expected: $('.pt-exp', r).value.trim() }))
         .filter(t => t.title),
       personal,
       kpis: lines($('#h-kpis').value).map(k => ({ name: k })), report_webhook: $('#h-hook').value.trim(), working_hours: $('#h-hours').value.trim(),
       task_budget_usd: num('#h-budget'), task_time_limit_min: num('#h-limit'), report_hour: num('#h-hour'),
     };
   };
+  // no agente pessoal o gestor é a própria pessoa: a verificação usa o e-mail dela (a contratação já faz isso no servidor)
+  const forPlan = () => { const f = fields(); return personal ? { ...f, manager: me } : f; };
   const showPlan = p => {
     $('#h-auth').innerHTML = `<table><tr><th>Tipo de ação</th><th>Modo</th><th>Piso da empresa</th></tr>${p.authority_default.map(r =>
       `<tr><td>${esc(ACTION_LABEL[r.action_type] || r.action_type)}</td><td>${modePill(r.mode)}</td><td>${r.floor ? modePill(r.floor) : '<span class="mute">—</span>'}</td></tr>`).join('')}</table>`;
     const reuse = p.reuse && (p.reuse.agents || []).length ? `<div class="mt small"><b>Dá para reaproveitar:</b> ${p.reuse.agents.map(a => `<code class="inline">${esc(a.slug)}</code>`).join(' ')}
       ${(p.reuse.skills || []).map(s => `<code class="inline">skill:${esc(s.slug || s.name || s)}</code>`).join(' ')}</div>` : '';
-    $('#h-out').innerHTML = p.ready ? `<div class="card ok-card"><b>Tudo pronto para contratar.</b>${reuse}</div>`
+    $('#h-out').innerHTML = p.ready ? `<div class="card ok-card"><b>Tudo pronto para criar.</b>${reuse}</div>`
       : `<div class="card warn-card"><b>Falta responder (${p.missing.length}):</b><ul>${p.missing.map(m => `<li data-noi18n>${esc(m.question)}</li>`).join('')}</ul>${reuse}</div>`;
   };
-  $('#h-plan').onclick = e => act(e.target, () => api('/employees/plan', { method: 'POST', body: fields() }).then(showPlan));
-  $('#h-hire').onclick = e => act(e.target, async () => {
+  $('#h-plan').onclick = e => act(e.currentTarget, () => api('/employees/plan', { method: 'POST', body: forPlan() }).then(showPlan));
+  $('#h-hire').onclick = e => act(e.currentTarget, async () => {
     const r = await api('/employees', { method: 'POST', body: fields() });
-    if (!r.created) return showPlan({ ...r, authority_default: (await api('/employees/plan', { method: 'POST', body: fields() })).authority_default });
+    if (!r.created) return showPlan({ ...r, authority_default: (await api('/employees/plan', { method: 'POST', body: forPlan() })).authority_default });
     toast('Contratado — comece o período de experiência');
     location.hash = `#/employees/${r.employee.slug}`;
   });
