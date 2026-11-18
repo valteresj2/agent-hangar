@@ -78,7 +78,7 @@ async function issuesPage(mine = false) {
     api('/projects').catch(() => [])]);
   const people = await issPeople(f.team);
   const nFilters = ['team', 'project', 'priority', 'label'].filter(k => f[k]).length + (!mine && f.assignee ? 1 : 0);
-  main.innerHTML = `<div class="iss-head"><div><h1>${mine ? 'Minhas issues' : 'Issues'}</h1>${ISS_ORG() ? `<div class="mute small">${esc(window.t('Visão da empresa: as issues de todos os membros e dos agentes, só leitura. Nada é apagado daqui — quem tem a issue a tira da lista dele no app, depois de concluída.'))}</div>` : ''}</div>
+  main.innerHTML = `<div class="iss-head"><div><h1>${mine ? 'Minhas issues' : 'Issues'}</h1>${mine && USER_MODE ? '<div class="mute small">As tarefas que você pediu ou acompanha, cada uma num cartão com quem está fazendo e em que pé está.</div>' : ''}${ISS_ORG() ? `<div class="mute small">${esc(window.t('Visão da empresa: as issues de todos os membros e dos agentes, só leitura. Nada é apagado daqui — quem tem a issue a tira da lista dele no app, depois de concluída.'))}</div>` : ''}</div>
     <div class="row iss-tools">
       <div class="seg">${Object.entries(ISS_VIEWS).map(([k, v]) => `<button class="ghost small ${f.view === k ? 'on' : ''}" data-view="${k}">${v}</button>`).join('')}</div>
       <details class="iss-pop"><summary class="ghost small btnlike">${icon('target')}<span>Filtro</span>${nFilters ? ` <b>${nFilters}</b>` : ''}</summary><div class="card iss-pop-body">

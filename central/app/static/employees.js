@@ -81,7 +81,7 @@ function empCard(e) {
   const working = (t.new || 0) + (t.in_progress || 0);
   return `<div class="card agent-card">
     <div class="row between"><a href="#/employees/${esc(e.slug)}"><b>${esc(e.name)}</b></a>${empPill(e.status)}</div>
-    <div class="small"><span data-noi18n>${esc(e.title)}</span>${e.shadow ? ' <span class="pill info">modo sombra</span>' : ''}</div>
+    <div class="small"><span data-noi18n>${esc(e.title)}</span>${e.shadow ? ' <span class="pill info" title="As ações que mudam algo são só simuladas, para você revisar">modo sombra</span>' : ''}</div>
     <div class="mute small one-line" data-noi18n title="${esc(e.mission)}">${esc(e.mission)}</div>
     <div class="row small mt" style="gap:6px;flex-wrap:wrap"><span class="chip">${icon('user')}${esc(e.manager || '—')}</span>
       <span class="pill">${esc(LEVEL_LABEL[e.autonomy_level] || e.autonomy_level)}</span>
@@ -106,6 +106,15 @@ const HIRE_EXAMPLES = () => window.LANG === 'en'
 /* o nível de autonomia dito pelo que ele faz (os padrões de employee_gate.AUTONOMY_DEFAULTS; o piso da empresa vale por cima) */
 const LEVEL_PLAIN = { intern: 'Pede aprovação para tudo que muda algo (recomendado)', junior: 'Muda dados internos e avisa; o resto pede aprovação',
   pleno: 'Muda dados internos sozinho; o resto pede aprovação', senior: 'Também roda código e envia mensagens para fora, avisando' };
+
+/* o nível ao lado do que ele significa na prática: "Estagiário" sozinho não diz o que o agente faz sem perguntar */
+const LEVEL_HINT = { intern: 'pede aprovação no que muda algo', junior: 'muda dados internos e avisa',
+  pleno: 'muda dados internos sozinho', senior: 'roda código e envia mensagens, avisando' };
+const levelChip = level => !LEVEL_LABEL[level] ? '' : `<span class="chip"><span>${LEVEL_LABEL[level]}</span><span class="mute">· ${LEVEL_HINT[level]}</span></span>`;
+/* as abas com nome do produto ganham uma frase: o que é, para quem chega pela primeira vez */
+const TAB_HINT = { shadow: 'Modo sombra: o que ele teria feito, simulado para você revisar antes de valer.',
+  authority: 'Alçada: o que ele pode fazer sozinho e o que precisa da aprovação de uma pessoa.',
+  probation: 'Experiência: os pedidos de teste que ele faz antes de ser admitido.' };
 
 async function employeeHirePage() {
   const teams = ME.teams || [];
@@ -251,14 +260,15 @@ async function employeeDetail(slug, tab = 'overview') {
   main.innerHTML = `<div class="row between"><div><a href="#/employees" class="mute small">← Digital employees</a>
     <h1>${esc(e.name)} ${empPill(e.status)}</h1><div class="sub" data-noi18n>${e.title !== e.name ? `${esc(e.title)} — ` : ''}${esc(e.mission)}</div>
     <div class="row small" style="margin:-10px 0 4px"><span class="chip">${icon('user')}${window.t('gestor')}: ${esc(e.manager || '—')}</span>
-      <span class="chip">${esc(LEVEL_LABEL[e.autonomy_level] || e.autonomy_level)}</span><a href="#/agents/${esc(slug)}/guide" class="small">Guia do agente →</a></div></div>
+      ${levelChip(e.autonomy_level)}<a href="#/agents/${esc(slug)}/guide" class="small">Guia do agente →</a></div></div>
     <div class="row">${e.can_manage ? `
       ${e.status === 'onboarding' ? '<button id="e-prob">Começar experiência</button>' : ''}
       ${['probation', 'active'].includes(e.status) ? '<button id="e-pause" class="danger">Pausar agora</button>' : ''}
       ${e.status === 'paused' ? '<button id="e-resume">Retomar</button>' : ''}` : ''}</div></div>
   ${e.status === 'paused' ? '<div class="card warn-card">Pausado: nenhuma ação passa pelo gate até alguém retomar.</div>' : ''}
   ${e.open_decisions ? `<div class="card warn-card">${e.open_decisions} decisão(ões) aberta(s) — veja na aba <a href="#/employees/${esc(slug)}/decisions">Decisões</a>.</div>` : ''}
-  <div class="tabs">${Object.entries(tabs).map(([k, v]) => `<a href="#/employees/${esc(slug)}/${k}" class="${k === key ? 'on' : ''}">${v}</a>`).join('')}</div>
+  <div class="tabs">${Object.entries(tabs).map(([k, v]) => `<a href="#/employees/${esc(slug)}/${k}" class="${k === key ? 'on' : ''}"${k === key ? ' aria-current="page"' : ''}${TAB_HINT[k] ? ` title="${TAB_HINT[k]}"` : ''}>${v}</a>`).join('')}</div>
+  ${TAB_HINT[key] && key !== 'shadow' ? `<p class="tab-hint mute small">${TAB_HINT[key]}</p>` : ''}
   <div id="tab"></div>`;
   const on = (id, fn) => { const b = $(id); if (b) b.onclick = fn; };
   const status = (to, msg, ask) => ev => (!ask || confirm(ask)) && act(ev.target, () => api(`/employees/${slug}/status`, { method: 'POST', body: { to } }).then(route), msg);

@@ -587,3 +587,4 @@ a.mk-card:hover{border-color:var(--ink);color:var(--ink)}
 .hire-sheet h3{margin-top:22px}
 .hire-sheet label.row{flex-wrap:nowrap;align-items:flex-start}.hire-sheet label.row input[type=checkbox]{margin-top:4px;flex-shrink:0}
 @media(max-width:860px){.hire{grid-template-columns:minmax(0,1fr)}.hire-ask{position:static}}
+.tab-hint{margin:-8px 0 14px;max-width:78ch}

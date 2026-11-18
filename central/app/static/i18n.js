@@ -2845,6 +2845,27 @@
     'Ficha preenchida. Revise e ajuste antes de criar.': 'Sheet filled in. Review and adjust before creating.',
     'Não há um modelo de IA conectado para escrever a ficha, então aproveitei só o que estava no seu texto. Complete o cargo e os pedidos de teste.': 'No AI model is connected to write the sheet, so I only used what was in your text. Fill in the job title and the test requests.',
     'Tudo pronto para criar.': 'All set to create.',
+    // os nomes do produto com a explicação em linguagem comum (item 4)
+    'Os seus agentes pessoais (só você vê) e os do time que você gerencia.': 'Your personal agents (only you see them) and the team ones you manage.',
+    'pede aprovação no que muda algo': 'asks for approval on anything that changes something',
+    'muda dados internos e avisa': 'changes internal data and notifies',
+    'muda dados internos sozinho': 'changes internal data on its own',
+    'roda código e envia mensagens, avisando': 'runs code and sends messages, notifying',
+    '· pede aprovação no que muda algo': '· asks for approval on anything that changes something',
+    '· muda dados internos e avisa': '· changes internal data and notifies',
+    '· muda dados internos sozinho': '· changes internal data on its own',
+    '· roda código e envia mensagens, avisando': '· runs code and sends messages, notifying',
+    'Modo sombra: o que ele teria feito, simulado para você revisar antes de valer.': 'Shadow mode: what it would have done, simulated for you to review before it counts.',
+    'Alçada: o que ele pode fazer sozinho e o que precisa da aprovação de uma pessoa.': 'Authority: what it can do on its own and what needs a person to approve.',
+    'Experiência: os pedidos de teste que ele faz antes de ser admitido.': 'Probation: the test requests it does before being admitted.',
+    'As ações que mudam algo são só simuladas, para você revisar': 'Actions that change something are only simulated, for you to review',
+    'As tarefas que você pediu ou acompanha, cada uma num cartão com quem está fazendo e em que pé está.': 'The tasks you asked for or follow, each on a card with who is doing it and where it stands.',
+    'Agentes prontos para copiar': 'Agents ready to copy',
+    'O que os agentes pediram para você aprovar ou responder': 'What the agents asked you to approve or answer',
+    'As tarefas que você pediu ou acompanha': 'The tasks you asked for or follow',
+    'Quem responde a quem, entre pessoas e agentes': 'Who reports to whom, among people and agents',
+    'Usar os seus agentes dentro do Claude, ChatGPT e outras ferramentas': 'Use your agents inside Claude, ChatGPT and other tools',
+    'Onde a sua conta está aberta e as suas chaves': 'Where your account is signed in, and your keys',
   };
   window.I18N = D;
   // seletor de idioma: no rodapé do menu e, na tela de login, no canto da página

@@ -86,11 +86,11 @@ async function myAgentsPage() {
       <div class="mute small" data-noi18n>${esc(a.title || '')}</div></div>
       <div class="row">${a.personal ? `<button class="ghost small mine-promote" data-slug="${esc(a.slug)}">Promover para o time</button>` : ''}
         <a href="#/employees/${esc(a.slug)}"><button class="ghost small">Abrir</button></a></div></div>
-    <div class="row small mt">${modelChip(a)}${harnessChip(a.harness)}<span class="chip">${esc(LEVEL_LABEL[a.level || a.autonomy_level] || a.level || a.autonomy_level || '')}</span>
+    <div class="row small mt">${modelChip(a)}${harnessChip(a.harness)}${levelChip(a.level || a.autonomy_level)}
       ${(a.specialists || []).map(s => `<span class="chip" title="${esc(s.harness || '')}">${icon('bot')}<span data-noi18n>${esc(s.name)}</span>${s.harness ? ` <span class="mute" data-noi18n>· ${esc(s.harness)}</span>` : ''}</span>`).join('')}
       ${workingChip(a.working_on)}</div></div>`;
   const left = Math.max(0, (w.personal_max || 0) - (w.personal_count || 0));
-  main.innerHTML = `<div class="row between"><div><h1>Meus agentes</h1><div class="sub">Os seus agentes pessoais (só você vê) e os do time que você gerencia — cada um com o modelo e o harness do seu papel.</div></div>
+  main.innerHTML = `<div class="row between"><div><h1>Meus agentes</h1><div class="sub">Os seus agentes pessoais (só você vê) e os do time que você gerencia.</div></div>
     <div class="row">${w.personal_allowed ? `<a href="#/employees/new?personal=1"><button ${left ? '' : 'disabled'}>+ Novo agente pessoal</button></a>` : ''}</div></div>
   ${w.personal_allowed ? `<div class="card hero"><h2>${icon('chat')} Ou peça para a sua IA</h2>
     <div class="mute small">No Claude, ChatGPT, Codex, Cursor ou Gemini conectados ao Hangar (<a href="#/connect-ai">Conectar minha IA</a>), cole:</div>
