@@ -3,6 +3,16 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.61.1] — 2026-11-18
+
+The images and the GitHub release of 0.61.0 were not published: the governed browser image stopped building. This
+release is 0.61.0 plus that fix.
+
+### Fixed
+- **Governed browser image** (`mcp-browser`): the build installs `libatomic1` before Playwright. The Node that
+  Playwright 1.65 brings needs it to run `playwright install`, and the slim Python image does not have it, so the image
+  failed to build on both architectures.
+
 ## [0.61.0] — 2026-11-18
 
 ### Added

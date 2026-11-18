@@ -8,9 +8,12 @@ ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PLAYWRIGHT_BROWSERS_PATH=/ms-playwrigh
 WORKDIR /srv
 COPY requirements.txt .
 RUN PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=8 pip install -r requirements.txt
-# Chromium e as bibliotecas do sistema; o apt tenta de novo se o espelho do Debian estiver no meio de uma sincronização
+# Chromium e as bibliotecas do sistema; o apt tenta de novo se o espelho do Debian estiver no meio de uma sincronização.
+# libatomic1 vem antes: o Node que o Playwright traz (driver) precisa dela para rodar o próprio "playwright install",
+# e a imagem slim não a tem
 RUN for i in 1 2 3 4 5; do \
-        apt-get -o Acquire::Retries=5 update && python -m playwright install --with-deps chromium && break; \
+        apt-get -o Acquire::Retries=5 update && apt-get install -y --no-install-recommends libatomic1 \
+            && python -m playwright install --with-deps chromium && break; \
         [ "$i" = 5 ] && exit 1; echo "instalação falhou (tentativa $i)"; rm -rf /var/lib/apt/lists/*; sleep $((i * 30)); \
     done && rm -rf /var/lib/apt/lists/*
 COPY app ./app
