@@ -186,6 +186,22 @@ def detail(slug: str, request: Request, db=Depends(db_dep)):
     return guard(go)
 
 
+# marketplace: a vitrine dos Digital employees admitidos e a cópia pessoal de um cargo (services/market.py)
+@router.get("/market")
+def market(request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.market.listing(db, acc(request, db)))
+
+
+@router.get("/market/{slug}")
+def market_detail(slug: str, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.market.detail(db, acc(request, db), slug))
+
+
+@router.post("/market/{slug}/use")
+def market_use(slug: str, request: Request, db=Depends(db_dep)):
+    return guard(lambda: svc.market.use(db, acc(request, db), slug))
+
+
 @router.patch("/employees/{slug}")
 def update(slug: str, body: dict, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.employees.update(db, acc(request, db), slug, body))

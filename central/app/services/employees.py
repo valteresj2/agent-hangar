@@ -233,7 +233,9 @@ def hire(db: Session, acc: Access, request: str = "", **f) -> dict:
              for i, t in enumerate(f["probation_tasks"])]
     out = compose(db, acc, f.get("name") or f["title"], f["mission"],
                   "Cada tarefa concluída, com o resultado." if pt else "Each task completed, with its result.",
-                  _instructions(f, pt), f.get("team") or "", f.get("visibility") or "", f.get("specialists"),
+                  # cópia do marketplace: as instruções do cargo já vêm na base, não se repetem
+                  "" if f.get("base") and f.get("instructions_from_base") else _instructions(f, pt),
+                  f.get("team") or "", f.get("visibility") or "", f.get("specialists"),
                   f.get("base") or "", f.get("skills"), f.get("new_skills"), f.get("mcps"), f.get("tools"), tests,
                   None, True, True, f.get("llm"), f.get("memory"), f.get("plan_id") or "", personal=personal,
                   default_llm=bool(f.get("default_llm")))

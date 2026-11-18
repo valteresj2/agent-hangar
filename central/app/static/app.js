@@ -942,7 +942,7 @@ async function auditPage() {
 /* ---------- roteamento ---------- */
 /* O portal (/app) é da pessoa: Início, issues, os agentes dela, organograma, decisões, caixa de entrada, conectar a IA,
    acessos — e as páginas que esses abrem (agente, tarefa, chaves, busca, consentimentos). O resto é do console (/ui). */
-const PORTAL_ROUTES = ['', 'my-issues', 'issues', 'mine', 'org', 'decisions', 'inbox', 'connect-ai', 'access', 'employees',
+const PORTAL_ROUTES = ['', 'my-issues', 'issues', 'mine', 'org', 'decisions', 'inbox', 'connect-ai', 'access', 'employees', 'market',
   'tasks', 'keys', 'search', 'agents', 'projects', 'oauth', 'vscode', 'login', 'work', 'runs'];
 const PORTAL_DETAIL_ONLY = ['agents', 'projects', 'employees', 'tasks', 'runs'];  // no portal, só a página de um (aberta por um link)
 let ROUTE_SEQ = 0;  // cada navegação ganha um número: a que foi substituída não escreve erro por cima da nova
@@ -974,6 +974,8 @@ async function renderRoute(seq) {
     else if (r === 'agents' && a) await agentDetail(a, b);
     else if (r === 'employees' && a === 'new') await employeeHirePage();
     else if (r === 'employees' && a) await employeeDetail(a, b);
+    else if (r === 'market' && a) await marketDetail(decodeURIComponent(a));
+    else if (r === 'market') await marketPage();
     else if (r === 'tasks' && a) await taskPage(a);
     else if (r === 'manager') await managerPage();
     else if (r === 'inbox') await inboxPage();
