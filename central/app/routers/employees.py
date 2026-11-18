@@ -290,6 +290,12 @@ def suggestion_apply(slug: str, sid: str, body: ApplyBody, request: Request, db=
     return guard(lambda: svc.employee_work.apply_suggestion(db, acc(request, db), slug, sid, body.text))
 
 
+@router.post("/employees/{slug}/curation")
+def curation_run(slug: str, request: Request, db=Depends(db_dep)):
+    """Roda agora a curadoria das lições (normalmente roda de madrugada); as propostas viram sugestões."""
+    return guard(lambda: svc.curation.run_now(db, acc(request, db), slug))
+
+
 @router.post("/employees/{slug}/suggestions/{sid}/dismiss")
 def suggestion_dismiss(slug: str, sid: str, request: Request, db=Depends(db_dep)):
     return guard(lambda: svc.employee_work.dismiss_suggestion(db, acc(request, db), slug, sid))

@@ -829,6 +829,8 @@ def tick() -> list[int]:
             org_learning.sweep(db)  # o que deu certo vira artigo ou procedimento (com aprovação)
             from . import self_org
             self_org.sweep(db)  # uma vez por dia: rotinas, rotas e colegas propostos com números
+            from . import curation
+            curation.sweep(db)  # de madrugada: a curadoria das lições de quem trabalhou
             from . import maximizer
             maximizer.sweep(db)  # projetos maximizadores: o relatório periódico para quem criou
             if retention_now:

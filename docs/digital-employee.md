@@ -737,6 +737,18 @@ dismisses them (*Authority* tab, or `employee_suggestions` / `apply_suggestion` 
   can rewrite it before applying.
   - Lessons go into the prompt of every new task, under "Lessons from your manager".
   - The *Settings* tab lists them (at most 20), removes them and accepts lessons written by hand.
+- **Nightly lesson curation.** Lessons repeat, go stale or contradict each other over time, and what people correct
+  task after task doesn't always become a lesson. Once a day, overnight (after 3 a.m., company time zone), for each
+  active employee with learning on and with new work since the last review, the platform looks at the period (tasks,
+  the manager's corrections, people's messages in the tasks, low quality notes, failures) and proposes up to five
+  changes: **merge** repeated lessons, **rewrite** one the work showed to be wrong, **remove** one that no longer
+  holds, or a **new** lesson from a pattern seen in two or more tasks.
+  - With the employee's model, the review is one call a day, only when there is new work; without a model, a rule
+    finds only repeated lessons.
+  - The proposals show up with the other suggestions (*Authority* tab), with the reason and the tasks behind them. The
+    manager applies (editing the text if needed) or dismisses; *Review now* runs it on demand
+    (`POST /api/employees/{slug}/curation`).
+  - The graph memory, when on, is not part of it: it already keeps each fact's validity and marks what was replaced.
 - A dismissed suggestion stays hidden for 30 days.
 
 ## Where it lives

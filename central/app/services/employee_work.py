@@ -400,6 +400,9 @@ def suggestions(db: Session, e: Employee) -> list[dict]:
                              "for its next tasks?") if en else
                             (f"O gestor corrigiu {len(rows)} ações de '{tool}' em 30 dias. Virar uma lição para as "
                              "próximas tarefas?")})
+    # 3) a curadoria noturna: juntar, reescrever ou retirar lições, e lições novas de padrões do trabalho
+    from . import curation
+    out += curation.suggestions(e, set(dismissed), en)
     return out
 
 
@@ -430,6 +433,9 @@ def apply_suggestion(db: Session, acc: Access, slug: str, suggestion_id: str, te
         raise PlatformError("sugestão não encontrada (já aplicada, dispensada ou sem evidência suficiente)")
     if sug["kind"] == "career":
         return apply_career(db, acc, e, slug, sug)
+    if sug["kind"] == "curation":
+        from . import curation
+        return curation.apply(db, acc, e, a, sug, text)
     if sug["kind"] == "authority":
         if acc.p.user_id != e.manager_user_id and not acc.p.is_admin:
             raise Forbidden("só o gestor (ou um admin) afrouxa a alçada")

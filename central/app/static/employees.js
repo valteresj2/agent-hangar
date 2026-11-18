@@ -418,7 +418,19 @@ async function empDecisions(t, e) {
   bindDecisions(t, () => route());
 }
 
+const CURATION_ACTION = { merge: 'juntar', rewrite: 'reescrever', remove: 'retirar', new: 'nova' };
+function curationBody(s, can) {
+  return `<div class="small mt"><span class="pill info">${esc(window.t(CURATION_ACTION[s.action] || s.action))}</span> <span data-noi18n>${esc(s.why || '')}</span>
+    ${(s.tasks || []).length ? ` · ${s.tasks.map(id => `<a href="#/tasks/${id}">#${id}</a>`).join(' ')}` : ''}</div>
+    ${(s.replaces || []).length ? `<ul class="small mt">${s.replaces.map(x => `<li class="mute"><s data-noi18n>${esc(x.text)}</s></li>`).join('')}</ul>` : ''}
+    ${s.action === 'remove' ? '' : can ? `<label class="mt">Lição (vai no prompt de cada tarefa nova)<textarea class="sg-text" rows="2" data-noi18n>${esc(s.lesson)}</textarea></label>`
+      : `<div class="small mt" data-noi18n>${esc(s.lesson)}</div>`}`;
+}
+
 function suggestionCard(s, can) {
+  if (s.kind === 'curation') return `<div class="card mt sg" data-id="${esc(s.id)}"><div class="row between"><b data-noi18n>${esc(s.text)}</b>
+      <span class="pill">curadoria</span></div>${curationBody(s, can)}
+    ${can ? `<div class="row mt"><button class="sg-apply">Aplicar</button><button class="ghost sg-dismiss">Dispensar</button></div>` : ''}</div>`;
   const body = s.kind === 'career'
     ? `<div class="mt">${s.to === 'live' ? '<span class="pill info">modo sombra</span> → <span class="pill ok">age de verdade</span>'
         : `<span class="pill">${esc(LEVEL_LABEL[s.from] || s.from)}</span> → <span class="pill ${s.id.startsWith('promote') ? 'ok' : 'warn'}">${esc(LEVEL_LABEL[s.to] || s.to)}</span>`}</div>`
@@ -441,9 +453,13 @@ async function empAuthority(t, e) {
     <td><input class="r-rev" data-noi18n value="${esc(r.review ? JSON.stringify(r.review) : '')}" placeholder='{"connection":"openrouter","model":"google/gemini-2.5-pro"}'></td>
     <td><button class="ghost r-del">×</button></td></tr>`;
   const draw = () => {
+    const cu = e.curation || {};
     t.innerHTML = `${sugs.length ? `<div class="card ok-card"><h2>O que as decisões ensinaram (${sugs.length})</h2>
-      <div class="mute small">Sugestões a partir das decisões dos últimos 30 dias. Nada muda sozinho: o gestor aplica ou dispensa.</div>
+      <div class="mute small">Sugestões a partir das decisões dos últimos 30 dias e da curadoria noturna das lições. Nada muda sozinho: o gestor aplica ou dispensa.</div>
       ${sugs.map(s => suggestionCard(s, e.can_manage)).join('')}</div>` : ''}
+    <div class="card ${sugs.length ? 'mt' : ''} row between"><span class="small"><b>Curadoria das lições</b> <span class="mute">— de madrugada, ele revisa o trabalho do dia e propõe juntar, reescrever, retirar ou criar lições.</span>
+      ${cu.at ? `<span class="mute">${window.t('Última')}:</span> <span data-noi18n>${esc(when(cu.at))}</span>` : `<span class="mute">${window.t('Ainda não rodou.')}</span>`}</span>
+      ${e.can_manage ? '<button class="ghost" id="cu-run">Revisar agora</button>' : ''}</div>
     <div class="grid g2 ${sugs.length ? 'mt' : ''}"><div class="card"><h2>Alçada efetiva</h2><div class="mute small">O que vale agora para cada tipo de ação — regras do cargo, padrão do nível e o piso da empresa (o mais restritivo ganha). Quem aplica é a plataforma, não o prompt.</div>
       <table class="mt"><tr><th>Tipo de ação</th><th>Modo</th><th>De onde vem</th></tr>${(e.authority || []).map(a => `<tr><td>${esc(ACTION_LABEL[a.action_type] || a.action_type)}</td>
         <td>${modePill(a.mode)}${a.separation ? ' <span class="pill">separação de funções</span>' : ''}${a.review ? ` <span class="pill info">${a.review.shadow ? 'revisor em observação' : 'com revisor de outro fornecedor'}</span>` : ''}</td><td class="mute small">${esc(a.source)}</td></tr>`).join('')}</table></div>
@@ -458,6 +474,8 @@ async function empAuthority(t, e) {
       <div class="mute small mt">Quem aprova: manager, team_maintainer ou user:&lt;e-mail&gt;. Condições: field + op (&gt;, &gt;=, &lt;, &lt;=, ==, !=, contains, not_contains, domain_not) + value.</div>
       <div class="mute small">Revisor (só em regras Sozinho ou Faz e avisa): um modelo de outro fornecedor confere a ação antes. Se ele discordar ou não responder, vale on_disagree (approve, approve_2 ou never). Começa em observação (shadow): quem decide é uma pessoa e a concordância é medida; use "shadow": false para ligar de verdade.</div><div id="r-warn"></div>`
       : (rules.length ? `<table>${rules.map(r => `<tr><td>${esc(ACTION_LABEL[r.action_type])}</td><td>${modePill(r.mode)}</td><td data-noi18n class="small">${esc(JSON.stringify(r.conditions))}</td></tr>`).join('')}</table>` : '<div class="mute">Sem regras próprias: vale o padrão do nível.</div>')}</div>`;
+    const cr = $('#cu-run', t);
+    if (cr) cr.onclick = ev => act(ev.target, () => api(`/employees/${e.slug}/curation`, { method: 'POST' }).then(route), 'Curadoria feita');
     t.querySelectorAll('.sg').forEach(c => {
       const id = c.dataset.id, txt = $('.sg-text', c);
       const ap = $('.sg-apply', c), dm = $('.sg-dismiss', c);

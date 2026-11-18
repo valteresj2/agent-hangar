@@ -751,6 +751,8 @@ class Employee(OrgScoped, Base):
     regression_mode: Mapped[str] = mapped_column(String(8), default="auto")  # auto: mudança no cargo roda as tarefas de ouro
     # ritmo das mensagens para as pessoas: {quiet: off|business, max_per_hour: 0..60, low: now|digest} (services/pacing.py)
     pacing: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # curadoria noturna das lições: {at, source, items: [{id, action, lessons, text, why, tasks}], looked_at} (curation.py)
+    curation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_by: Mapped[str] = mapped_column(String(254), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     hired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

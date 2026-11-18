@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Nightly lesson curation** for Digital employees: once a day, overnight, for those with new work, the platform
+  reviews the period (tasks, corrections, people's messages, quality notes, failures) and proposes merging repeated
+  lessons, rewriting or removing stale ones, and new lessons from patterns seen in two or more tasks. Proposals join
+  the learning suggestions (*Authority* tab) with the reason and the tasks; the manager applies or dismisses.
+  *Review now* / `POST /api/employees/{slug}/curation`. One model call a day per employee with new work; without a
+  model, only repeated lessons. Tested with deepseek through OpenRouter: it merged two lessons about the tax ID and
+  rewrote a stale e-mail template lesson from what the manager said in two tasks. Column `employees.curation`
+  (migration `0059_curation`).
 - **Message pacing per Digital employee** (*Settings → Message pacing*, `GET/PUT /api/employees/{slug}/pacing`):
   decision requests and due warnings can wait for the company's business hours, respect a maximum per hour to the same
   person, and, for low-priority tasks, wait for the daily digest. Urgent ones (about to expire, escalated, high

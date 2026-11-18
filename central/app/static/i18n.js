@@ -110,6 +110,11 @@
     // fase B: dependências, revisão, arquivos, continuar e o histórico do cargo
     'Esperando dependências': 'Waiting for dependencies',
     'Retorno marcado': 'Follow-up scheduled',
+    'juntar': 'merge', 'reescrever': 'rewrite', 'retirar': 'remove', 'curadoria': 'curation',
+    'Curadoria das lições': 'Lesson curation',
+    '— de madrugada, ele revisa o trabalho do dia e propõe juntar, reescrever, retirar ou criar lições.': '— overnight, it reviews the day’s work and proposes merging, rewriting, removing or creating lessons.',
+    'Última': 'Last', 'Ainda não rodou.': 'Hasn’t run yet.', 'Revisar agora': 'Review now', 'Curadoria feita': 'Curation done',
+    'Sugestões a partir das decisões dos últimos 30 dias e da curadoria noturna das lições. Nada muda sozinho: o gestor aplica ou dispensa.': 'Suggestions from the last 30 days of decisions and from the nightly lesson curation. Nothing changes on its own: the manager applies or dismisses.',
     'Ritmo das mensagens': 'Message pacing',
     'Quando ele pode chamar as pessoas (pedidos de decisão, avisos de prazo). O que esperou sai num resumo só; urgente sai na hora.': 'When it may reach people (decision requests, due warnings). What waited goes out in a single summary; urgent goes out right away.',
     'Só no expediente da empresa (calendário de dias úteis e horário)': 'Only during company business hours (business-day calendar and hours)',

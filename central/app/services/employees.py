@@ -398,7 +398,7 @@ def employee_dict(db: Session, e: Employee, acc: Access | None = None, detail: b
                  webhook=workmod.webhook_info(e, a.slug), career=workmod.career_status(db, e),
                  quality=qualitymod.stats(db, e),
                  colleagues=teamwork.colleagues_of(db, e), plan_policy=e.plan_policy or "auto", recall=bool(e.recall), review_policy=e.review_policy or "off",
-                 reports_to=_chief_slug(db, e), browser_domains=e.browser_domains or [], desktop_apps=e.desktop_apps or [], personal=bool(a.personal_owner_id), learning_mode=e.learning_mode or "on", critic_mode=e.critic_mode or "off", pacing={**{"quiet": "off", "max_per_hour": 0, "low": "now"}, **(e.pacing or {})},
+                 reports_to=_chief_slug(db, e), browser_domains=e.browser_domains or [], desktop_apps=e.desktop_apps or [], personal=bool(a.personal_owner_id), learning_mode=e.learning_mode or "on", critic_mode=e.critic_mode or "off", pacing={**{"quiet": "off", "max_per_hour": 0, "low": "now"}, **(e.pacing or {})}, curation={k: v for k, v in (e.curation or {}).items() if k != "items"},
                  decision_record=memosmod.record(db, e),
                  external=externalmod.info(e),
                  inbox=teamwork.inbox_view(e),

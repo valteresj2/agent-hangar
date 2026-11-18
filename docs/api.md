@@ -246,7 +246,8 @@ an admin.
 | GET | `/api/employees/{slug}/shadow` | Simulated actions (`?status=open` to review) and agreement stats |
 | POST | `/api/employees/{slug}/shadow` | `{on, reason}`: switch shadow mode (manager or admin) |
 | GET | `/api/employees/{slug}/career` | Level, criteria for the next one with values, warning signs, shadow stats, history |
-| GET | `/api/employees/{slug}/suggestions` | What the decisions of the last 30 days suggest (loosen an action type, or a lesson) |
+| GET | `/api/employees/{slug}/suggestions` | What the decisions of the last 30 days suggest (loosen an action type, or a lesson), plus the nightly lesson curation (`kind: curation`, `action: merge\|rewrite\|remove\|new`, `replaces`, `why`, `tasks`) |
+| POST | `/api/employees/{slug}/curation` | Runs the lesson curation now (manage); it normally runs overnight |
 | POST | `/api/employees/{slug}/suggestions/{id}/apply` | `{text?}` (manage; loosening authority: manager or admin only) |
 | POST | `/api/employees/{slug}/suggestions/{id}/dismiss` | Hides it for 30 days (manage) |
 | POST / DELETE | `/api/employees/{slug}/lessons[/{id}]` | Add `{text}` or remove a lesson (manage) |
